@@ -37,6 +37,12 @@
    "lemma": "friday",
    "misspelled": true
   },
+  "from": {
+   "english": true,
+   "function": true,
+   "lemma": "from",
+   "misspelled": false
+  },
   "getusername": {
    "english": false,
    "misspelled": true
@@ -106,6 +112,12 @@
    "english": false,
    "lemma": "monday",
    "misspelled": true
+  },
+  "of": {
+   "english": true,
+   "function": true,
+   "lemma": "of",
+   "misspelled": false
   },
   "paris": {
    "english": false,
@@ -185,6 +197,16 @@
    "lemma": "seem",
    "misspelled": false
   },
+  "suppose": {
+   "english": true,
+   "lemma": "suppose",
+   "misspelled": false
+  },
+  "supposed": {
+   "english": true,
+   "lemma": "suppose",
+   "misspelled": false
+  },
   "tacos": {
    "english": true,
    "lemma": "taco",
@@ -238,6 +260,16 @@
    "lemma": "too",
    "misspelled": false
   },
+  "use": {
+   "english": true,
+   "lemma": "use",
+   "misspelled": false
+  },
+  "used": {
+   "english": true,
+   "lemma": "use",
+   "misspelled": false
+  },
   "walk": {
    "english": true,
    "lemma": "walk",
@@ -286,6 +318,12 @@
    "lemma": "correctement",
    "misspelled": false
   },
+  "dans": {
+   "english": true,
+   "function": true,
+   "lemma": "dans",
+   "misspelled": false
+  },
   "deja": {
    "english": true,
    "function": true,
@@ -299,6 +337,12 @@
   "déroulent": {
    "english": false,
    "lemma": "dérouler",
+   "misspelled": false
+  },
+  "en": {
+   "english": true,
+   "function": true,
+   "lemma": "en",
    "misspelled": false
   },
   "envoyé": {
@@ -323,6 +367,11 @@
    "lemma": "fusionner",
    "misspelled": false
   },
+  "hergé": {
+   "english": false,
+   "lemma": "hergé",
+   "misspelled": true
+  },
   "jamais": {
    "english": false,
    "lemma": "jamais",
@@ -344,6 +393,11 @@
    "lemma": "lundi",
    "misspelled": false
   },
+  "marge": {
+   "english": true,
+   "lemma": "marge",
+   "misspelled": false
+  },
   "margé": {
    "english": false,
    "lemma": "marger",
@@ -354,6 +408,11 @@
    "english": false,
    "misspelled": true,
    "stem": "merge"
+  },
+  "merle": {
+   "english": true,
+   "lemma": "merle",
+   "misspelled": false
   },
   "operation": {
    "english": true,
@@ -538,6 +597,18 @@
    "english": false,
    "misspelled": true,
    "stem": "preview"
+  },
+  "reviert": {
+   "english": false,
+   "misspelled": false
+  },
+  "review": {
+   "english": true,
+   "misspelled": false
+  },
+  "reviews": {
+   "english": true,
+   "misspelled": false
   },
   "reviewt": {
    "english": false,

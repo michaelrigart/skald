@@ -10,7 +10,7 @@ public enum OutputCleaner {
     public static func clean(_ output: String, input: String) -> String {
         var text = removingThinkBlock(trimmed(output))
         while true {
-            let next = removingWrappingQuotes(removingPreamble(removingCodeFence(text, input: input)), input: input)
+            let next = removingWrappingQuotes(removingPreamble(removingCodeFence(text, input: input), input: input), input: input)
             if next == text { return text }
             text = next
         }
@@ -34,9 +34,11 @@ public enum OutputCleaner {
         return trimmed(String(body))
     }
 
-    private static func removingPreamble(_ text: String) -> String {
+    private static func removingPreamble(_ text: String, input: String) -> String {
         let whole = NSRange(location: 0, length: (text as NSString).length)
-        guard let match = preamble.firstMatch(in: text, range: whole) else { return text }
+        let source = trimmed(input)
+        guard preamble.firstMatch(in: source, range: NSRange(location: 0, length: (source as NSString).length)) == nil,
+              let match = preamble.firstMatch(in: text, range: whole) else { return text }
         return trimmed((text as NSString).substring(from: match.range.upperBound))
     }
 

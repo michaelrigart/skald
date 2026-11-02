@@ -60,9 +60,7 @@ private let outcomeTable: [Row] = [
     Row("frc2", "mergé", "fusionné", .drop(.borrowedWord)),
     Row("fr8", "tiens", "tiendrai", .drop(.tenseChange)),
     Row("A final period", .en, spike["enc4"]!.text, spike["enc4"]!.text + ".", .drop(.addedFormality)),
-    Row("nlc4", "reviewt", "Previewt", .drop(.borrowedWord), source: .spelling),
     Row("nlc3", "Sidekiq-jobs", "", .drop(.nameNumberURLOrCode), source: .spelling),
-    Row("frc2", "mergé", "Serge", .drop(.borrowedWord), source: .spelling),
     Row("enc1", "Talos", "Tacos", .drop(.nameNumberURLOrCode), source: .spelling),
     Row("en3", "Pieter", "Peter", .drop(.nameNumberURLOrCode), source: .spelling),
     Row("en2", "run", "runs", .drop(.neverTouch), neverTouch: ["run"]),
@@ -103,6 +101,13 @@ private let outcomeTable: [Row] = [
     Row("A French adverb is not a function word", .fr, "Je ne le fais plus.", "Je ne le fais jamais.", .drop(.borrowedWord)),
     Row("A preposition swap is not a function-word fix", .nl, "Ik laat je iets weten tegen vrijdag.",
         "Ik laat je iets weten voor vrijdag.", .undecided),
+    Row("A preposition replaced by a verb", .en, "I could of fixed it.", "I could have fixed it.", .undecided),
+    Row("A preposition replaced by a preposition", .en, "I am afraid from dogs.", "I am afraid of dogs.", .undecided),
+    Row("A French preposition swap", .fr, "Je travaille dans France.", "Je travaille en France.", .undecided),
+    Row("A fixed expression: suppose to", .en, "I'm suppose to deploy.", "I'm supposed to deploy.", .keep),
+    Row("A fixed expression: use to", .en, "I use to work there.", "I used to work there.", .keep),
+    Row("An ambiguous contraction", .en, "I'd walk there.", "I'd walked there.", .undecided),
+    Row("A final period after a sentence starting with I", .en, "lol. I'll ship it", "lol. I'll ship it.", .drop(.addedFormality)),
     Row("A tense change in English", .en, "I walk to the office.", "I walked to the office.", .drop(.tenseChange)),
     Row("A participle after an auxiliary in English", .en, "I have walk home.", "I have walked home.", .keep),
     Row("A participle after a negated auxiliary", .en, "I haven't went there.", "I haven't gone there.", .keep),
@@ -122,11 +127,15 @@ private let outcomeTable: [Row] = [
     Row("fr7", "ces", "c'est", .keep),
 ]
 
+private let measuredGuesses: [Row] =
+    ["reviews", "review", "reviert", "Previewt"].map { Row("nlc4", "reviewt", $0, .drop(.borrowedWord), source: .spelling) }
+    + ["Serge", "marge", "Hergé", "merle", "margé"].map { Row("frc2", "mergé", $0, .drop(.borrowedWord), source: .spelling) }
+
 private func edits(_ row: Row) -> [Edit] {
     TextDiff.edits(from: row.paragraph, to: row.revised)
 }
 
-@Test("The spec's outcome table", arguments: outcomeTable)
+@Test("The spec's outcome table", arguments: outcomeTable + measuredGuesses)
 private func outcome(_ row: Row) async throws {
     let found = edits(row)
     try #require(found.count == 1)
@@ -223,6 +232,18 @@ private func output(_ run: String, _ id: String) throws -> String {
     let result = EditGuard(neverTouch: [])
         .judgeWhole(original: original, revised: revised, language: .en, revisedLanguage: .en)
     #expect(result == .discarded(.tooManyChanges))
+}
+
+@Test(arguments: [
+    ("Lets ship it.", "Let's ship it."),
+    ("Its not working on staging.", "It's not working on staging."),
+    ("dont merge yet", "don't merge yet"),
+    ("teh", "the"),
+])
+private func aSmallFixIsNeverTooManyChanges(_ pair: (String, String)) {
+    let result = EditGuard(neverTouch: [])
+        .judgeWhole(original: pair.0, revised: pair.1, language: .en, revisedLanguage: .en)
+    #expect(result == .accepted)
 }
 
 @Test func theWholeResultIsKeptWhenNoLanguageWasDetected() {

@@ -56,6 +56,11 @@ private func aPreambleIsRemoved(_ output: String) {
     #expect(OutputCleaner.clean("Corrected text: \"Hallo\"", input: "Halo") == "Hallo")
 }
 
+@Test func aPreambleTheInputHadIsKept() {
+    #expect(OutputCleaner.clean("Corrected: the typo in the README", input: "Corrected: teh typo in the README")
+        == "Corrected: the typo in the README")
+}
+
 @Test func aCodeFenceTheInputLackedIsRemoved() {
     #expect(OutputCleaner.clean("```\nHallo\n```", input: "Halo") == "Hallo")
     #expect(OutputCleaner.clean("```text\nHallo wereld\n```", input: "Halo wereld") == "Hallo wereld")

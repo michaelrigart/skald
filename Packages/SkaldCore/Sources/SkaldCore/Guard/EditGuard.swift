@@ -28,9 +28,14 @@ public struct EditGuard: Sendable {
     public func judgeWhole(original: String, revised: String, language: Language, revisedLanguage: Language?) -> WholeResult {
         if revised.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .discarded(.empty) }
         if let revisedLanguage, revisedLanguage != language { return .discarded(.languageChanged) }
-        let total = Tokenizer.tokens(in: original).count
-        let changed = TextDiff.edits(from: original, to: revised).reduce(0) { $0 + max($1.tokenSpan.count, $1.replacementTokens.count) }
-        if total > 0, Double(changed) / Double(total) > maxChangeShare { return .discarded(.tooManyChanges) }
+        func wordCount<S: StringProtocol>(_ text: S) -> Int { text.split(whereSeparator: \.isWhitespace).count }
+        let source = original as NSString
+        let changed = TextDiff.edits(from: original, to: revised).reduce(0) {
+            let splice = source.substring(with: NSRange(location: $1.spliceRange.location, length: $1.spliceRange.length))
+            return $0 + max(wordCount(splice), wordCount($1.spliceText))
+        }
+        let total = wordCount(original)
+        if changed > 2, total > 0, Double(changed) / Double(total) > maxChangeShare { return .discarded(.tooManyChanges) }
         return .accepted
     }
 
@@ -76,8 +81,8 @@ public struct EditGuard: Sendable {
         if original.contains(where: facts.misspelled.contains) { return .keep }
         let words = original + replacement
         if !words.contains(where: { FunctionWords.isPreposition($0, language) }) && words.allSatisfy(isFunctionWord) { return .keep }
-        let afterAuxiliary = Self.precededByAuxiliary(edit, tokens, language)
-        return Self.contentVerdict(original, replacement, facts, language, isFunctionWord, afterAuxiliary)
+        let auxiliary = Self.auxiliaryContext(edit, tokens, language)
+        return Self.contentVerdict(original, replacement, facts, language, isFunctionWord, auxiliary)
     }
 
     static func words(in text: String) -> [String] {
@@ -120,15 +125,22 @@ public struct EditGuard: Sendable {
         return index > 0 && [".", "!", "?"].contains(tokens[index - 1].text)
     }
 
-    private static func precededByAuxiliary(_ edit: Edit, _ tokens: [Token], _ language: Language) -> Bool {
+    private enum AuxiliaryContext { case auxiliary, ambiguous, none }
+
+    private static func auxiliaryContext(_ edit: Edit, _ tokens: [Token], _ language: Language) -> AuxiliaryContext {
         var before = edit.tokenSpan.lowerBound - 1
         while tokens.indices.contains(before), ["'", "’", "t", "not"].contains(tokens[before].text.lowercased()) { before -= 1 }
-        guard tokens.indices.contains(before) else { return false }
-        let word = tokens[before].text.lowercased()
-        if ["ve", "s", "d"].contains(word) {
-            return language == .en && before > 0 && ["'", "’"].contains(tokens[before - 1].text)
+        if language == .en, edit.tokenSpan.upperBound < tokens.count, tokens[edit.tokenSpan.upperBound].text.lowercased() == "to",
+           ["use", "suppose"].contains(edit.original.lowercased()), edit.replacement.lowercased() == edit.original.lowercased() + "d" {
+            return .auxiliary
         }
-        return FunctionWords.isAuxiliary(word, language)
+        guard tokens.indices.contains(before) else { return .none }
+        let word = tokens[before].text.lowercased()
+        if ["ve", "s", "m", "re", "d"].contains(word) {
+            guard language == .en, before > 0, ["'", "’"].contains(tokens[before - 1].text) else { return .none }
+            return word == "d" ? .ambiguous : .auxiliary
+        }
+        return FunctionWords.isAuxiliary(word, language) ? .auxiliary : .none
     }
 
     // MARK: Numbers, URLs, code and names
@@ -181,6 +193,7 @@ public struct EditGuard: Sendable {
         let endsWithFinal = tokens.last.map { final.contains($0.text) } ?? false
         let otherSentenceEnds = tokens.indices.dropLast().contains {
             final.contains(tokens[$0].text) && isWord(tokens[$0 + 1].text) && tokens[$0 + 1].text.first?.isUppercase == true
+                && tokens[$0 + 1].text != "I"
         }
         return addsFinal && !endsWithFinal && !otherSentenceEnds ? .drop(.addedFormality) : .keep
     }
@@ -199,7 +212,7 @@ public struct EditGuard: Sendable {
         let index = edit.tokenSpan.lowerBound
         guard isSentenceStart(index, tokens) else { return .undecided }
         let others = tokens.indices.filter {
-            $0 != index && isSentenceStart($0, tokens) && tokens[$0].text.first?.isLetter == true
+            $0 != index && isSentenceStart($0, tokens) && tokens[$0].text.first?.isLetter == true && tokens[$0].text != "I"
         }
         let othersAreLowercase = !others.isEmpty && others.allSatisfy { tokens[$0].text.first?.isLowercase == true }
         return othersAreLowercase ? .drop(.addedFormality) : .keep
@@ -230,6 +243,7 @@ public struct EditGuard: Sendable {
         guard original.count == replacement.count else { return .drop(.borrowedWord) }
         for (index, stem) in stems.enumerated() {
             guard let stem else { continue }
+            if facts.englishStems[original[index]] != nil && facts.englishStems[replacement[index]] == nil { return .drop(.borrowedWord) }
             let replacementStem = facts.englishStems[replacement[index]] ?? replacement[index]
             guard !stemKeys(stem).isDisjoint(with: stemKeys(replacementStem)), distance(original[index], replacement[index]) <= 2 else {
                 return .drop(.borrowedWord)
@@ -244,7 +258,7 @@ public struct EditGuard: Sendable {
         _ facts: WordFacts,
         _ language: Language,
         _ isFunctionWord: (String) -> Bool,
-        _ afterAuxiliary: Bool
+        _ auxiliary: AuxiliaryContext
     ) -> GuardVerdict {
         var from = original, to = replacement
         if from.count != to.count {
@@ -252,7 +266,7 @@ public struct EditGuard: Sendable {
             to = to.filter { !isFunctionWord($0) }
         }
         guard from.count == to.count, !from.isEmpty else { return .undecided }
-        let verdicts = zip(from, to).map { pairVerdict($0, $1, facts, language, isFunctionWord, afterAuxiliary) }
+        let verdicts = zip(from, to).map { pairVerdict($0, $1, facts, language, isFunctionWord, auxiliary) }
         if let drop = verdicts.first(where: { if case .drop = $0 { true } else { false } }) { return drop }
         return verdicts.contains(.undecided) ? .undecided : .keep
     }
@@ -263,19 +277,24 @@ public struct EditGuard: Sendable {
         _ facts: WordFacts,
         _ language: Language,
         _ isFunctionWord: (String) -> Bool,
-        _ afterAuxiliary: Bool
+        _ auxiliary: AuxiliaryContext
     ) -> GuardVerdict {
         if from == to { return .keep }
         let sameLemma = facts.lemmas[from] != nil && facts.lemmas[from] == facts.lemmas[to]
-        if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) {
-            return afterAuxiliary ? .keep : .drop(.tenseChange)
-        }
+        if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) { return tenseVerdict(auxiliary) }
         if distance(from, to) <= 2 { return .keep }
-        let prepositions = [from, to].contains { FunctionWords.isPreposition($0, language) }
-        if !prepositions && isFunctionWord(from) && isFunctionWord(to) { return .keep }
+        if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) { return .undecided }
+        if isFunctionWord(from) && isFunctionWord(to) { return .keep }
         guard let fromLemma = facts.lemmas[from], let toLemma = facts.lemmas[to] else { return .undecided }
-        if fromLemma != toLemma { return .drop(.replacement) }
-        return afterAuxiliary ? .keep : .drop(.tenseChange)
+        return fromLemma == toLemma ? tenseVerdict(auxiliary) : .drop(.replacement)
+    }
+
+    private static func tenseVerdict(_ auxiliary: AuxiliaryContext) -> GuardVerdict {
+        switch auxiliary {
+        case .auxiliary: .keep
+        case .ambiguous: .undecided
+        case .none: .drop(.tenseChange)
+        }
     }
 
     private static func isPastTense(_ word: String, _ facts: WordFacts) -> Bool {
