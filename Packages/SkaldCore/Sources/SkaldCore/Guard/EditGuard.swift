@@ -28,7 +28,7 @@ public struct EditGuard: Sendable {
     public func judgeWhole(original: String, revised: String, language: Language, revisedLanguage: Language?) -> WholeResult {
         if revised.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .discarded(.empty) }
         if let revisedLanguage, revisedLanguage != language { return .discarded(.languageChanged) }
-        func wordCount<S: StringProtocol>(_ text: S) -> Int { text.split(whereSeparator: \.isWhitespace).count }
+        func wordCount<S: StringProtocol>(_ text: S) -> Int { text.split(whereSeparator: \.isWhitespace).filter { $0.contains { $0.isLetter || $0.isNumber } }.count }
         let source = original as NSString
         let changed = TextDiff.edits(from: original, to: revised).reduce(0) {
             let splice = source.substring(with: NSRange(location: $1.spliceRange.location, length: $1.spliceRange.length))
@@ -280,10 +280,10 @@ public struct EditGuard: Sendable {
         _ auxiliary: AuxiliaryContext
     ) -> GuardVerdict {
         if from == to { return .keep }
+        if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) { return .undecided }
         let sameLemma = facts.lemmas[from] != nil && facts.lemmas[from] == facts.lemmas[to]
         if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) { return tenseVerdict(auxiliary) }
         if distance(from, to) <= 2 { return .keep }
-        if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) { return .undecided }
         if isFunctionWord(from) && isFunctionWord(to) { return .keep }
         guard let fromLemma = facts.lemmas[from], let toLemma = facts.lemmas[to] else { return .undecided }
         return fromLemma == toLemma ? tenseVerdict(auxiliary) : .drop(.replacement)

@@ -103,6 +103,8 @@ private let outcomeTable: [Row] = [
         "Ik laat je iets weten voor vrijdag.", .undecided),
     Row("A preposition replaced by a verb", .en, "I could of fixed it.", "I could have fixed it.", .undecided),
     Row("A preposition replaced by a preposition", .en, "I am afraid from dogs.", "I am afraid of dogs.", .undecided),
+    Row("A near-homophone preposition", .en, "It is in the repo.", "It is on the repo.", .undecided),
+    Row("A near-homophone Dutch preposition", .nl, "Het werkt voor vrijdag.", "Het werkt door vrijdag.", .undecided),
     Row("A French preposition swap", .fr, "Je travaille dans France.", "Je travaille en France.", .undecided),
     Row("A fixed expression: suppose to", .en, "I'm suppose to deploy.", "I'm supposed to deploy.", .keep),
     Row("A fixed expression: use to", .en, "I use to work there.", "I used to work there.", .keep),
@@ -239,6 +241,8 @@ private func output(_ run: String, _ id: String) throws -> String {
     ("Its not working on staging.", "It's not working on staging."),
     ("dont merge yet", "don't merge yet"),
     ("teh", "the"),
+    ("Hi Sarah thanks for the fix", "Hi Sarah, thanks, for the fix."),
+    ("hey sarah can you deploy it today", "Hey Sarah, can you deploy it today?"),
 ])
 private func aSmallFixIsNeverTooManyChanges(_ pair: (String, String)) {
     let result = EditGuard(neverTouch: [])
@@ -362,12 +366,14 @@ private func resolveDropsAnUndecidedEditTheConfirmerDoesNotApprove(_ answer: Boo
     #expect(await confirmer.asked == ["voorvallen"])
 }
 
+private let prepositionFixes: Set<String> = ["en8: to → too", "fr2: a → à"]
+
 @Test func theGuardKeepsTheTrueFixesAndDropsTheFalseAlarmsOfTheSpikeRun() async throws {
     let outputs: [EvalOutput] = try EvalScorer.loadJSONL(Fixtures.url("out-apple-v3"))
     let oracle = try FakeWordOracle.measured()
     let guardrail = EditGuard(neverTouch: [])
     var trueFixes = 0, falseAlarms = 0
-    var droppedTrue: [String] = [], keptFalse: [String] = []
+    var droppedTrue: [String] = [], undecidedTrue: Set<String> = [], keptFalse: [String] = []
     for row in outputs {
         guard let c = spike[row.id], let revised = row.output?.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
         let reference = EvalScorer.keys(c.text, c.ref)
@@ -377,7 +383,11 @@ private func resolveDropsAnUndecidedEditTheConfirmerDoesNotApprove(_ answer: Boo
             let label = "\(c.id): \(edit.original) → \(edit.replacement)"
             if reference.contains(EvalScorer.key(of: edit)) {
                 trueFixes += 1
-                if !kept.contains(edit) { droppedTrue.append(label) }
+                if !kept.contains(edit) {
+                    let facts = await oracle.facts(for: EditGuard.words(in: [edit]), language: c.lang)
+                    let verdict = guardrail.verdict(for: edit, in: c.text, language: c.lang, source: .model, facts: facts)
+                    if verdict == .undecided { undecidedTrue.insert(label) } else { droppedTrue.append(label) }
+                }
             } else {
                 falseAlarms += 1
                 if kept.contains(edit) { keptFalse.append(label) }
@@ -385,6 +395,7 @@ private func resolveDropsAnUndecidedEditTheConfirmerDoesNotApprove(_ answer: Boo
         }
     }
     #expect(droppedTrue.isEmpty, "dropped true fixes: \(droppedTrue)")
+    #expect(undecidedTrue == prepositionFixes, "undecided true fixes: \(undecidedTrue)")
     #expect(keptFalse.isEmpty, "kept false alarms: \(keptFalse)")
     #expect((trueFixes, falseAlarms) == (34, 6))
     #expect(await oracle.unknownWords.isEmpty)

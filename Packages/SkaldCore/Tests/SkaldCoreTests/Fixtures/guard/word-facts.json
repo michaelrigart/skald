@@ -67,6 +67,12 @@
    "lemma": "hello",
    "misspelled": false
   },
+  "in": {
+   "english": true,
+   "function": true,
+   "lemma": "in",
+   "misspelled": false
+  },
   "it": {
    "english": true,
    "function": true,
@@ -117,6 +123,12 @@
    "english": true,
    "function": true,
    "lemma": "of",
+   "misspelled": false
+  },
+  "on": {
+   "english": true,
+   "function": true,
+   "lemma": "on",
    "misspelled": false
   },
   "paris": {
@@ -525,6 +537,10 @@
    "misspelled": false
   },
   "dan": {
+   "english": true,
+   "misspelled": false
+  },
+  "door": {
    "english": true,
    "misspelled": false
   },
