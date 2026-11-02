@@ -1,0 +1,39 @@
+name: Skald
+options:
+  bundleIdPrefix: com.michaelrigart
+  deploymentTarget:
+    macOS: "27.0"
+packages:
+  SkaldCore:
+    path: Packages/SkaldCore
+  SkaldPlatform27:
+    path: Packages/SkaldPlatform27
+targets:
+  Skald:
+    type: application
+    platform: macOS
+    sources: [Skald]
+    dependencies:
+      - package: SkaldCore
+      - package: SkaldPlatform27
+    info:
+      path: Skald/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleDisplayName: Skald
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+    entitlements:
+      path: Skald/Skald.entitlements
+      properties: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michaelrigart.skald
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_DEBUG_DYLIB: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        OTHER_CODE_SIGN_FLAGS: "--options=runtime"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
