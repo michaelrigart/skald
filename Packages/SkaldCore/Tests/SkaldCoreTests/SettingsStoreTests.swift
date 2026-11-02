@@ -49,7 +49,8 @@ private func write(_ text: String, to directory: URL) throws {
     #expect(settings.pausedUntil == nil)
     #expect(settings.appOverrides.isEmpty)
     #expect(settings.neverTouch.isEmpty)
-    #expect(Language.allCases.allSatisfy { settings.modelChecks[$0] == true && settings.typingChecks[$0] == true })
+    #expect(settings.modelChecks == [.en: true, .nl: false, .fr: false])
+    #expect(settings.typingChecks == [.en: true, .nl: true, .fr: false])
     #expect(settings.panelDefaultEngine == .thisMac)
     #expect(settings.studio == StudioEndpoint())
     #expect(settings.claudeModel == "claude-opus-5-5")
@@ -103,7 +104,7 @@ private func write(_ text: String, to directory: URL) throws {
     let data = try JSONEncoder().encode(Settings())
     let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     let checks = try #require(object["modelChecks"] as? [String: Bool])
-    #expect(checks == ["en": true, "nl": true, "fr": true])
+    #expect(checks == ["en": true, "nl": false, "fr": false])
 }
 
 @Test func defaultOffAppsAreOffUnlessOverridden() {
@@ -157,8 +158,8 @@ private func write(_ text: String, to directory: URL) throws {
 }
 
 @Test func partialLanguageMapKeepsOtherDefaults() throws {
-    let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"modelChecks":{"nl":false}}"#.utf8))
-    #expect(settings.modelChecks == [.en: true, .fr: true, .nl: false])
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"modelChecks":{"nl":true}}"#.utf8))
+    #expect(settings.modelChecks == [.en: true, .fr: false, .nl: true])
 }
 
 @Test func unknownValuesFallBackWithoutDiscardingTheFile() throws {

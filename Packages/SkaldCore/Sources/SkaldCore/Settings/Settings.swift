@@ -76,8 +76,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var pausedUntil: Date?
     public var appOverrides: [String: Bool] = [:]
     public private(set) var neverTouch: [String] = []
-    public var modelChecks: [Language: Bool] = Settings.allLanguagesOn
-    public var typingChecks: [Language: Bool] = Settings.allLanguagesOn
+    public var modelChecks: [Language: Bool] = Settings.defaultModelChecks
+    public var typingChecks: [Language: Bool] = Settings.defaultTypingChecks
     public var panelDefaultEngine = EngineKind.thisMac
     public var studio = StudioEndpoint()
     public var claudeModel = "claude-opus-5-5"
@@ -97,7 +97,8 @@ public struct Settings: Codable, Equatable, Sendable {
         neverTouch.removeAll { $0.lowercased() == key }
     }
 
-    private static let allLanguagesOn = Dictionary(uniqueKeysWithValues: Language.allCases.map { ($0, true) })
+    private static let defaultModelChecks: [Language: Bool] = [.en: true, .nl: false, .fr: false]
+    private static let defaultTypingChecks: [Language: Bool] = [.en: true, .nl: true, .fr: false]
 
     private static func normalised(_ words: [String]) -> [String] {
         var seen = Set<String>()

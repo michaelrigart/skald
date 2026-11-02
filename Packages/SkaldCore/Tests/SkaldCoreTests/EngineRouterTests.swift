@@ -10,6 +10,10 @@ private func router(
     key: Bool = false
 ) -> EngineRouter {
     var settings = Settings()
+    for language in Language.allCases {
+        settings.modelChecks[language] = true
+        settings.typingChecks[language] = true
+    }
     configure(&settings)
     return EngineRouter(settings: settings, appleAvailability: apple, thermalPaused: thermalPaused, claudeKeyPresent: key)
 }
