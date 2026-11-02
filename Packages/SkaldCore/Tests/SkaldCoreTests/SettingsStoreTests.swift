@@ -95,7 +95,7 @@ private func write(_ text: String, to directory: URL) throws {
         return
     }
     #expect(settings.launchAtLogin == false)
-    #expect(Language.allCases.allSatisfy { settings.typingChecks[$0] == true })
+    #expect(settings.typingChecks == Settings().typingChecks)
     #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("settings.corrupt.json").path))
 }
 
@@ -138,4 +138,89 @@ private func write(_ text: String, to directory: URL) throws {
     #expect(!StudioEndpoint(api: .ollama, baseURL: "http://host:11434", model: "").isConfigured)
     #expect(!StudioEndpoint(api: .ollama, baseURL: "ftp://host", model: "m").isConfigured)
     #expect(!StudioEndpoint(api: .ollama, baseURL: "not a url", model: "m").isConfigured)
+}
+
+@Test func removingANeverTouchWordIgnoresCase() {
+    var settings = Settings()
+    settings.addNeverTouch("Talos")
+    settings.addNeverTouch("Argo")
+    settings.removeNeverTouch("talos")
+    #expect(settings.neverTouch == ["Argo"])
+}
+
+@Test func neverTouchWordsAreTrimmedAndEmptyOnesDropped() {
+    var settings = Settings()
+    settings.addNeverTouch("Talos")
+    settings.addNeverTouch(" Talos")
+    settings.addNeverTouch("   ")
+    #expect(settings.neverTouch == ["Talos"])
+}
+
+@Test func partialLanguageMapKeepsOtherDefaults() throws {
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"modelChecks":{"nl":false}}"#.utf8))
+    #expect(settings.modelChecks == [.en: true, .fr: true, .nl: false])
+}
+
+@Test func unknownValuesFallBackWithoutDiscardingTheFile() throws {
+    let json = #"{"launchAtLogin":false,"modelChecks":{"de":false},"panelDefaultEngine":"quantum","studio":{"api":"grpc","model":"m"}}"#
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+    #expect(settings.launchAtLogin == false)
+    #expect(settings.modelChecks == Settings().modelChecks)
+    #expect(settings.panelDefaultEngine == .thisMac)
+    #expect(settings.studio.api == .ollama)
+    #expect(settings.studio.model == "m")
+}
+
+@Test func aSecondCorruptionReplacesTheFirstCorruptCopy() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = SettingsStore(directory: directory)
+    try write("first garbage", to: directory)
+    _ = store.load()
+    try write("second garbage", to: directory)
+    guard case .recoveredFromCorrupt = store.load() else {
+        Issue.record("expected .recoveredFromCorrupt")
+        return
+    }
+    let corrupt = directory.appendingPathComponent("settings.corrupt.json")
+    #expect(try String(contentsOf: corrupt, encoding: .utf8) == "second garbage")
+    try store.save(Settings())
+}
+
+@Test func unreadableFileLeavesTheStoreReadOnly() throws {
+    let directory = makeDirectory()
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: settingsFile(directory).path)
+        try? FileManager.default.removeItem(at: directory)
+    }
+    try write("{}", to: directory)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: settingsFile(directory).path)
+    let store = SettingsStore(directory: directory)
+    guard case .recoveredFromCorrupt(let settings) = store.load() else {
+        Issue.record("expected .recoveredFromCorrupt")
+        return
+    }
+    #expect(settings == Settings())
+    #expect(throws: SettingsStoreError.readOnly) { try store.save(Settings()) }
+}
+
+@Test func aSuccessfulLoadClearsTheReadOnlyFlag() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = SettingsStore(directory: directory)
+    try write(#"{"version": 2}"#, to: directory)
+    _ = store.load()
+    try write(#"{"version": 1}"#, to: directory)
+    _ = store.load()
+    try store.save(Settings())
+}
+
+@Test func fractionalSecondsSurviveARoundTrip() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    var settings = Settings()
+    settings.pausedUntil = Date(timeIntervalSince1970: 1_800_000_000.25)
+    let store = SettingsStore(directory: directory)
+    try store.save(settings)
+    #expect(store.load() == .loaded(settings))
 }

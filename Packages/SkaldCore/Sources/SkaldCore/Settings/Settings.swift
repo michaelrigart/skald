@@ -19,6 +19,18 @@ public struct StudioEndpoint: Codable, Equatable, Sendable {
         self.model = model
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case api, baseURL, model
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = StudioEndpoint()
+        api = Settings.lenient(API.self, in: container, forKey: .api) ?? defaults.api
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? defaults.baseURL
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? defaults.model
+    }
+
     public var isConfigured: Bool {
         guard let url = URL(string: baseURL),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
@@ -80,16 +92,37 @@ public struct Settings: Codable, Equatable, Sendable {
         neverTouch = Settings.normalised(neverTouch + [word])
     }
 
+    public mutating func removeNeverTouch(_ word: String) {
+        let key = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        neverTouch.removeAll { $0.lowercased() == key }
+    }
+
     private static let allLanguagesOn = Dictionary(uniqueKeysWithValues: Language.allCases.map { ($0, true) })
 
     private static func normalised(_ words: [String]) -> [String] {
         var seen = Set<String>()
-        let unique = words.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        let unique = words
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
         return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
-    private static func languageChecks(_ stored: [Language: Bool]?) -> [Language: Bool] {
-        allLanguagesOn.merging(stored ?? [:]) { _, new in new }
+    fileprivate static func lenient<Value: RawRepresentable<String>, Key: CodingKey>(
+        _ type: Value.Type, in container: KeyedDecodingContainer<Key>, forKey key: Key
+    ) -> Value? {
+        guard let raw = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return Value(rawValue: raw)
+    }
+
+    private static func languageChecks(
+        in container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys, defaults: [Language: Bool]
+    ) -> [Language: Bool] {
+        guard let stored = (try? container.decodeIfPresent([String: Bool].self, forKey: key)) ?? nil else { return defaults }
+        var checks = defaults
+        for (code, value) in stored {
+            if let language = Language(rawValue: code) { checks[language] = value }
+        }
+        return checks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -106,9 +139,9 @@ public struct Settings: Codable, Equatable, Sendable {
         pausedUntil = try container.decodeIfPresent(Date.self, forKey: .pausedUntil)
         appOverrides = try container.decodeIfPresent([String: Bool].self, forKey: .appOverrides) ?? defaults.appOverrides
         neverTouch = Settings.normalised(try container.decodeIfPresent([String].self, forKey: .neverTouch) ?? [])
-        modelChecks = Settings.languageChecks(try container.decodeIfPresent([Language: Bool].self, forKey: .modelChecks))
-        typingChecks = Settings.languageChecks(try container.decodeIfPresent([Language: Bool].self, forKey: .typingChecks))
-        panelDefaultEngine = try container.decodeIfPresent(EngineKind.self, forKey: .panelDefaultEngine) ?? defaults.panelDefaultEngine
+        modelChecks = Settings.languageChecks(in: container, forKey: .modelChecks, defaults: defaults.modelChecks)
+        typingChecks = Settings.languageChecks(in: container, forKey: .typingChecks, defaults: defaults.typingChecks)
+        panelDefaultEngine = Settings.lenient(EngineKind.self, in: container, forKey: .panelDefaultEngine) ?? defaults.panelDefaultEngine
         studio = try container.decodeIfPresent(StudioEndpoint.self, forKey: .studio) ?? defaults.studio
         claudeModel = try container.decodeIfPresent(String.self, forKey: .claudeModel) ?? defaults.claudeModel
     }
