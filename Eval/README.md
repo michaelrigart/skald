@@ -70,8 +70,10 @@ outcome table. The shipped rules:
   dropped. A restored apostrophe ("cant" → "can't") is not a split, and the model's splits are
   judged as fixes.
 - A word of two or more letters without a vowel is an abbreviation and never touched, unless the
-  fix keeps its letters as typed ("vpn" → "van" and "vpn" → "VPN" are dropped; "th" → "the" is a
-  fix).
+  fix keeps its letters as typed and adds at most two ("vpn" → "van", "vpn" → "VPN" and "pls" →
+  "please" are dropped; "th" → "the" is a fix). The two-letter bound came after the second grading;
+  none of the 231 edits the guard judged on the tuning part and the held-out part has a vowel-less
+  word that a fix keeps while adding three or more letters, so no grading changes.
 
 No result was discarded for changing too much, so `maxChangeShare` stays at 0.4.
 

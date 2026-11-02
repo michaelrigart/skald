@@ -178,14 +178,15 @@ public struct EditGuard: Sendable {
         return edit.tokenSpan.contains { index in
             let word = tokens[index].text
             guard isWord(word) else { return false }
-            return (word.first?.isUppercase == true && !isSentenceStart(index, tokens)) || isAbbreviation(word, fixedAs: edit.replacement)
+            return (word.first?.isUppercase == true && !isSentenceStart(index, tokens)) || isAbbreviation(word, in: edit)
         }
     }
 
-    private static func isAbbreviation(_ word: String, fixedAs replacement: String) -> Bool {
+    private static func isAbbreviation(_ word: String, in edit: Edit) -> Bool {
         let letters = word.filter(\.isLetter)
         guard letters.count >= 2, !fold(letters).contains(where: "aeiouy".contains) else { return false }
-        var rest = Substring(replacement)
+        guard edit.replacement.filter(\.isLetter).count - edit.original.filter(\.isLetter).count <= 2 else { return true }
+        var rest = Substring(edit.replacement)
         for letter in letters {
             guard let found = rest.firstIndex(of: letter) else { return true }
             rest = rest[rest.index(after: found)...]

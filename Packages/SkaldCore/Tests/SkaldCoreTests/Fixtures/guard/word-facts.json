@@ -74,6 +74,11 @@
    "lemma": "fallback",
    "misspelled": false
   },
+  "final": {
+   "english": true,
+   "lemma": "final",
+   "misspelled": false
+  },
   "fixd": {
    "english": false,
    "misspelled": true
@@ -82,6 +87,10 @@
    "english": true,
    "lemma": "fix",
    "misspelled": false
+  },
+  "fnl": {
+   "english": false,
+   "misspelled": true
   },
   "friday": {
    "english": false,
@@ -217,6 +226,15 @@
    "lemma": "ping",
    "misspelled": false
   },
+  "please": {
+   "english": true,
+   "lemma": "please",
+   "misspelled": false
+  },
+  "pls": {
+   "english": true,
+   "misspelled": false
+  },
   "prem": {
    "english": false,
    "misspelled": true
@@ -344,6 +362,10 @@
    "english": true,
    "function": true,
    "lemma": "there",
+   "misspelled": false
+  },
+  "thx": {
+   "english": true,
    "misspelled": false
   },
   "to": {

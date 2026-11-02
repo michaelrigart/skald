@@ -151,6 +151,9 @@ public let outcomeTable: [Row] = [
         .drop(.nameNumberURLOrCode), source: .spelling),
     Row("A vowel-less typo whose letters the fix keeps", .en, "I checked th logs.", "I checked the logs.", .keep, source: .spelling),
     Row("A lowercase abbreviation keeps its case", .en, "fyi the vpn is down", "fyi the VPN is down", .drop(.nameNumberURLOrCode)),
+    Row("A chat abbreviation the fix spells out", .en, "pls check the logs", "please check the logs", .drop(.nameNumberURLOrCode)),
+    Row("A chat abbreviation with a letter the fix lacks", .en, "thx for checking", "thanks for checking", .drop(.nameNumberURLOrCode)),
+    Row("A vowel-less typo two letters short", .en, "Send the fnl version.", "Send the final version.", .keep, source: .spelling),
 ]
 
 /// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".
