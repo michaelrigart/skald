@@ -5,4 +5,9 @@ enum Fixtures {
         Bundle.module.url(forResource: "Fixtures", withExtension: nil)!
             .appending(path: "spike/\(name).jsonl")
     }
+
+    static var wordFacts: URL {
+        Bundle.module.url(forResource: "Fixtures", withExtension: nil)!
+            .appending(path: "guard/word-facts.json")
+    }
 }

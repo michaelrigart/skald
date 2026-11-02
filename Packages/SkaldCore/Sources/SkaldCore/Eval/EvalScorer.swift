@@ -2,13 +2,17 @@ import Foundation
 
 /// Reproduces the spike's `score.py`: an edit is the token span it replaces plus the replacement tokens.
 public enum EvalScorer {
-    private struct Key: Hashable {
+    struct Key: Hashable {
         let span: Range<Int>
         let replacement: [String]
     }
 
-    private static func keys(_ original: String, _ revised: String) -> Set<Key> {
-        Set(TextDiff.edits(from: original, to: revised).map { Key(span: $0.tokenSpan, replacement: $0.replacementTokens) })
+    static func key(of edit: Edit) -> Key {
+        Key(span: edit.tokenSpan, replacement: edit.replacementTokens)
+    }
+
+    static func keys(_ original: String, _ revised: String) -> Set<Key> {
+        Set(TextDiff.edits(from: original, to: revised).map(key(of:)))
     }
 
     public static func score(_ cases: [EvalCase], _ outputs: [EvalOutput]) -> EvalScore {
