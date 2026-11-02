@@ -21,7 +21,11 @@ public struct AppleEngine: Engine {
             let session = LanguageModelSession(model: model, instructions: instructions)
             return try await session.respond(to: prompt, options: options).content
         }
-        let cleaned = OutputCleaner.clean(text, input: r.text)
+        return try Self.answer(text, input: r.text)
+    }
+
+    static func answer(_ text: String, input: String) throws(EngineFailure) -> String {
+        let cleaned = OutputCleaner.clean(text, input: input)
         guard !cleaned.isEmpty else { throw .failed }
         return cleaned
     }
@@ -37,7 +41,7 @@ public struct AppleEngine: Engine {
         operation: @escaping @Sendable () async throws -> String
     ) async throws(EngineFailure) -> String {
         do {
-            return try await withThrowingTaskGroup(of: String?.self) { group in
+            let text = try await withThrowingTaskGroup(of: String?.self) { group in
                 group.addTask { try await operation() }
                 group.addTask {
                     try await Task.sleep(for: timeout)
@@ -47,8 +51,10 @@ public struct AppleEngine: Engine {
                 guard let first = try await group.next(), let text = first else { throw TimedOut() }
                 return text
             }
+            try Task.checkCancellation()
+            return text
         } catch {
-            throw failure(for: error)
+            throw Task.isCancelled ? .cancelled : failure(for: error)
         }
     }
 
@@ -57,7 +63,7 @@ public struct AppleEngine: Engine {
         case is CancellationError: .cancelled
         case is TimedOut: .timedOut
         case let error as LanguageModelError: failure(for: error)
-        case let error as LanguageModelSession.GenerationError: failure(for: error)
+        case is SystemLanguageModel.Error: .unavailable(.modelNotReady)
         default: .failed
         }
     }
@@ -67,14 +73,6 @@ public struct AppleEngine: Engine {
         case .guardrailViolation, .refusal: .refused
         case .contextSizeExceeded: .truncated
         case .timeout: .timedOut
-        default: .failed
-        }
-    }
-
-    private static func failure(for error: LanguageModelSession.GenerationError) -> EngineFailure {
-        switch error {
-        case .guardrailViolation, .refusal: .refused
-        case .exceededContextWindowSize: .truncated
         default: .failed
         }
     }

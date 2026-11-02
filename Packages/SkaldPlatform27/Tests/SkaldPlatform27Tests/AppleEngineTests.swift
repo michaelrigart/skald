@@ -19,21 +19,15 @@ struct AppleAvailabilityTests {
 }
 
 struct AppleEngineFailureTests {
-    private static let context = LanguageModelSession.GenerationError.Context(debugDescription: "test")
-
-    @Test("Guardrail and refusal errors, in both error families, are refused")
+    @Test("Guardrail and refusal errors are refused")
     func refusals() {
-        let refusal = LanguageModelSession.GenerationError.Refusal(transcriptEntries: [])
-        #expect(AppleEngine.failure(for: LanguageModelSession.GenerationError.guardrailViolation(Self.context)) == .refused)
-        #expect(AppleEngine.failure(for: LanguageModelSession.GenerationError.refusal(refusal, Self.context)) == .refused)
         #expect(AppleEngine.failure(for: LanguageModelError.guardrailViolation(.init(debugDescription: "test"))) == .refused)
         #expect(AppleEngine.failure(for: LanguageModelError.refusal(.init(explanation: "no", debugDescription: "test"))) == .refused)
     }
 
-    @Test("An exceeded context window, in both error families, is truncated")
+    @Test("An exceeded context size is truncated")
     func truncation() {
-        #expect(AppleEngine.failure(for: LanguageModelSession.GenerationError.exceededContextWindowSize(Self.context)) == .truncated)
-        let exceeded = LanguageModelError.ContextSizeExceeded(contextSize: 4096, tokenCount: 5000, debugDescription: "test")
+        let exceeded = LanguageModelError.ContextSizeExceeded(contextSize: 8192, tokenCount: 40061, debugDescription: "test")
         #expect(AppleEngine.failure(for: LanguageModelError.contextSizeExceeded(exceeded)) == .truncated)
     }
 
@@ -47,12 +41,32 @@ struct AppleEngineFailureTests {
         #expect(AppleEngine.failure(for: LanguageModelError.timeout(.init(debugDescription: "test"))) == .timedOut)
     }
 
+    @Test("Unavailable model assets map to unavailable(modelNotReady)")
+    func assetsUnavailable() {
+        let error = SystemLanguageModel.Error.assetsUnavailable(.init(debugDescription: "test"))
+        #expect(AppleEngine.failure(for: error) == .unavailable(.modelNotReady))
+    }
+
     @Test("Any other error maps to failed")
     func everythingElse() {
-        #expect(AppleEngine.failure(for: LanguageModelSession.GenerationError.assetsUnavailable(Self.context)) == .failed)
-        #expect(AppleEngine.failure(for: LanguageModelSession.GenerationError.rateLimited(Self.context)) == .failed)
         #expect(AppleEngine.failure(for: LanguageModelError.rateLimited(.init(resetDate: nil, debugDescription: "test"))) == .failed)
+        let unsupported = LanguageModelError.UnsupportedLanguageOrLocale(languageCode: .english, debugDescription: "test")
+        #expect(AppleEngine.failure(for: LanguageModelError.unsupportedLanguageOrLocale(unsupported)) == .failed)
         #expect(AppleEngine.failure(for: URLError(.badServerResponse)) == .failed)
+    }
+}
+
+struct AppleEngineAnswerTests {
+    @Test("Empty or whitespace-only output is a failure, never an applied result")
+    func emptyOutput() {
+        for output in ["", "   ", "\n\t\n"] {
+            #expect(throws: EngineFailure.failed) { try AppleEngine.answer(output, input: "their is") }
+        }
+    }
+
+    @Test("A wrapper the input did not have is stripped")
+    func quoteWrapped() throws {
+        #expect(try AppleEngine.answer("\"there is\"", input: "their is") == "there is")
     }
 }
 
@@ -73,19 +87,23 @@ struct AppleEngineRaceTests {
         #expect(result == "done")
     }
 
-    @Test("Cancelling the caller throws cancelled, never timedOut")
+    @Test("Cancelling the caller throws cancelled, even when the operation swallows the cancellation")
     func callerCancellation() async {
+        let (started, signal) = AsyncStream.makeStream(of: Void.self)
         let task = Task<EngineFailure?, Never> {
             do throws(EngineFailure) {
                 _ = try await AppleEngine.race(timeout: .seconds(30)) {
-                    try await Task.sleep(for: .seconds(30))
-                    return "late"
+                    signal.yield()
+                    do { try await Task.sleep(for: .seconds(30)) } catch {}
+                    return "swallowed"
                 }
                 return nil
             } catch {
                 return error
             }
         }
+        var iterator = started.makeAsyncIterator()
+        await iterator.next()
         task.cancel()
         #expect(await task.value == .cancelled)
     }
@@ -94,7 +112,7 @@ struct AppleEngineRaceTests {
     func operationError() async {
         await #expect(throws: EngineFailure.refused) {
             try await AppleEngine.race(timeout: .seconds(30)) {
-                throw LanguageModelSession.GenerationError.guardrailViolation(.init(debugDescription: "test"))
+                throw LanguageModelError.guardrailViolation(.init(debugDescription: "test"))
             }
         }
     }
