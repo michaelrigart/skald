@@ -9,6 +9,10 @@ let package = Package(
     ],
     targets: [
         .target(name: "SkaldCore"),
-        .testTarget(name: "SkaldCoreTests", dependencies: ["SkaldCore"]),
+        .testTarget(
+            name: "SkaldCoreTests",
+            dependencies: ["SkaldCore"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
