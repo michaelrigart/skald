@@ -23,6 +23,7 @@ let package = Package(
         .testTarget(name: "SkaldPlatform27Tests", dependencies: [
             "SkaldPlatform27",
             .product(name: "SkaldCore", package: "SkaldCore"),
+            .product(name: "SkaldCoreTestSupport", package: "SkaldCore"),
         ]),
     ]
 )

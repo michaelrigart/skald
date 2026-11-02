@@ -6,12 +6,18 @@ let package = Package(
     platforms: [.macOS(.v27)],
     products: [
         .library(name: "SkaldCore", targets: ["SkaldCore"]),
+        .library(name: "SkaldCoreTestSupport", targets: ["SkaldCoreTestSupport"]),
     ],
     targets: [
         .target(name: "SkaldCore"),
+        .target(
+            name: "SkaldCoreTestSupport",
+            dependencies: ["SkaldCore"],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(
             name: "SkaldCoreTests",
-            dependencies: ["SkaldCore"],
+            dependencies: ["SkaldCore", "SkaldCoreTestSupport"],
             resources: [.copy("Fixtures")]
         ),
     ]
