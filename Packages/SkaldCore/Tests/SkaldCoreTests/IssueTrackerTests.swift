@@ -275,3 +275,28 @@ private func longParagraph() -> String {
     #expect(tracker.revalidate(windowSnapshot(edited, TextRange(location: 0, length: 100))) == [key])
     #expect(tracker.visible(in: fieldA).isEmpty)
 }
+
+@Test func windowedModelResultSurvivesOutOfViewAndDropsWhenItsParagraphIsEditedAway() {
+    let filler = String(repeating: String(repeating: "a", count: 99) + "\n", count: 590)
+    let full = "They is ready\n" + filler + "Zij zijn klaar"
+    let total = full.utf16.count
+    let windowA = TextRange(location: 0, length: 10_000)
+    let windowB = ReadWindow.range(totalLength: total, caret: total - 5, limit: 100, radius: 5_000)
+    #expect(windowB.location > windowA.end)
+
+    let first = windowSnapshot(full, windowA)
+    let keyA = ParagraphKeys.keyed(first)[0].0
+    #expect(keyA.position == .location(0))
+    let flag = { issue(in: first, replacing: "is", with: "are") }
+    var tracker = IssueTracker()
+    tracker.setModel([], for: keyA)
+
+    #expect(tracker.revalidate(windowSnapshot(full, windowB)).isEmpty)
+    tracker.setSpelling([flag()], for: keyA)
+    #expect(tracker.visible(in: fieldA).isEmpty)
+
+    let edited = "He is ready\n" + filler + "Zij zijn klaar"
+    #expect(tracker.revalidate(windowSnapshot(edited, windowA)).isEmpty)
+    tracker.setSpelling([flag()], for: keyA)
+    #expect(tracker.visible(in: fieldA).map(\.word) == ["is"])
+}
