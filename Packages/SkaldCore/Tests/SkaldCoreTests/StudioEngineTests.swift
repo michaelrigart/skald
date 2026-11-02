@@ -44,7 +44,7 @@ struct StudioEngineTests {
         let sent = try #require(await transport.requests.first)
         #expect(sent.url?.absoluteString == "http://studio.local:11434/api/chat")
         #expect(sent.httpMethod == "POST")
-        #expect(sent.value(forHTTPHeaderField: "content-type") == "application/json")
+        #expect(sent.allHTTPHeaderFields == ["Content-Type": "application/json"])
         let expected: NSDictionary = [
             "model": "qwen3:14b",
             "stream": false,
@@ -92,6 +92,32 @@ struct StudioEngineTests {
     func cleansReply() async throws {
         let transport = StubTransport(json: #"{"message":{"content":"<think></think>\nIk heb het gedownload."}}"#)
         #expect(try await engine(transport).run(Self.request) == "Ik heb het gedownload.")
+    }
+
+    @Test("a reply that is empty once cleaned is failed, not an empty success", arguments: ["  \\n", "\\\"\\\"", "<think></think>"])
+    func emptyAfterCleaning(text: String) async {
+        let ollama = StubTransport(json: #"{"message":{"content":"\#(text)"},"done":true}"#)
+        #expect(await failure(engine(ollama)) == .failed)
+        let openAI = StubTransport(json: #"{"choices":[{"message":{"content":"\#(text)"}}]}"#)
+        #expect(await failure(engine(openAI, api: .openAICompatible)) == .failed)
+    }
+
+    @Test("Ollama done_reason length is truncated, so a cut-off rewrite is never applied")
+    func ollamaTruncation() async {
+        let transport = StubTransport(json: #"{"message":{"content":"Ik heb"},"done":true,"done_reason":"length"}"#)
+        #expect(await failure(engine(transport)) == .truncated)
+    }
+
+    @Test("OpenAI-compatible finish_reason length is truncated, so a cut-off rewrite is never applied")
+    func openAITruncation() async {
+        let transport = StubTransport(json: #"{"choices":[{"message":{"content":"Ik heb"},"finish_reason":"length"}]}"#)
+        #expect(await failure(engine(transport, api: .openAICompatible)) == .truncated)
+    }
+
+    @Test("a normal stop reason is not truncated")
+    func normalStop() async throws {
+        let transport = StubTransport(json: #"{"message":{"content":"Ik heb."},"done":true,"done_reason":"stop"}"#)
+        #expect(try await engine(transport).run(Self.request) == "Ik heb.")
     }
 
     @Test("connection errors are unreachable", arguments: [

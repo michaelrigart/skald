@@ -33,12 +33,18 @@ public struct StudioEngine: Engine {
             if let code = (error as? URLError)?.code, Self.unreachable.contains(code) { return .unavailable(.studioUnreachable) }
             return .failed
         }
-        let text: String? = switch endpoint.api {
-        case .ollama: (try? JSONDecoder().decode(OllamaReply.self, from: data))?.message.content
-        case .openAICompatible: (try? JSONDecoder().decode(OpenAIReply.self, from: data))?.choices.first?.message.content
+        let reply: (text: String, cutOff: Bool)?
+        switch endpoint.api {
+        case .ollama:
+            reply = (try? JSONDecoder().decode(OllamaReply.self, from: data)).map { ($0.message.content, $0.doneReason == "length") }
+        case .openAICompatible:
+            reply = (try? JSONDecoder().decode(OpenAIReply.self, from: data))?.choices.first.map { ($0.message.content, $0.finishReason == "length") }
         }
-        guard let text, !text.isEmpty else { throw .failed }
-        return OutputCleaner.clean(text, input: r.text)
+        guard let reply else { throw .failed }
+        if reply.cutOff { throw .truncated }
+        let cleaned = OutputCleaner.clean(reply.text, input: r.text)
+        guard !cleaned.isEmpty else { throw .failed }
+        return cleaned
     }
 
     private func post(_ path: String, _ body: some Encodable) throws(EngineFailure) -> URLRequest {
@@ -92,11 +98,23 @@ public struct StudioEngine: Engine {
 
     private struct OllamaReply: Decodable {
         let message: ReplyMessage
+        let doneReason: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case message
+            case doneReason = "done_reason"
+        }
     }
 
     private struct OpenAIReply: Decodable {
         struct Choice: Decodable {
             let message: ReplyMessage
+            let finishReason: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case message
+                case finishReason = "finish_reason"
+            }
         }
 
         let choices: [Choice]

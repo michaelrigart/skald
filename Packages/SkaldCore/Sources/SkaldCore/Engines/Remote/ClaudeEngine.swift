@@ -44,8 +44,9 @@ public struct ClaudeEngine: Engine {
         default: break
         }
         let text = reply.content.filter { $0.type == "text" }.compactMap(\.text).joined()
-        guard !text.isEmpty else { throw .failed }
-        return OutputCleaner.clean(text, input: input)
+        let cleaned = OutputCleaner.clean(text, input: input)
+        guard !cleaned.isEmpty else { throw .failed }
+        return cleaned
     }
 
     private struct Message: Encodable {

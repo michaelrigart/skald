@@ -7,6 +7,8 @@ public protocol HTTPTransport: Sendable {
 public struct URLSessionTransport: HTTPTransport {
     private let session: URLSession
 
+    var configuration: URLSessionConfiguration { session.configuration }
+
     public init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30

@@ -32,10 +32,12 @@ struct ClaudeEngineTests {
         #expect(await transport.requests.count == 1)
         #expect(sent.url?.absoluteString == "https://api.anthropic.com/v1/messages")
         #expect(sent.httpMethod == "POST")
-        #expect(sent.value(forHTTPHeaderField: "x-api-key") == "sk-test-key")
-        #expect(sent.value(forHTTPHeaderField: "anthropic-version") == "2026-10-21")
-        #expect(sent.value(forHTTPHeaderField: "anthropic-beta") == "server-side-fallback-2026-07-01")
-        #expect(sent.value(forHTTPHeaderField: "content-type") == "application/json")
+        #expect(sent.allHTTPHeaderFields == [
+            "x-api-key": "sk-test-key",
+            "anthropic-version": "2026-10-21",
+            "anthropic-beta": "server-side-fallback-2026-07-01",
+            "Content-Type": "application/json",
+        ])
 
         let body = try #require(sent.httpBody)
         let decoded = try #require(try JSONSerialization.jsonObject(with: body) as? NSDictionary)
@@ -61,6 +63,12 @@ struct ClaudeEngineTests {
     func cleansReply() async throws {
         let transport = StubTransport(json: reply(content: #"[{"type":"text","text":"\"Bonjour à tous.\""}]"#))
         #expect(try await engine(transport).run(Self.request) == "Bonjour à tous.")
+    }
+
+    @Test("a reply that is empty once cleaned is failed, not an empty success", arguments: ["  \\n", "\\\"\\\"", "<think></think>"])
+    func emptyAfterCleaning(text: String) async {
+        let transport = StubTransport(json: reply(content: #"[{"type":"text","text":"\#(text)"}]"#))
+        #expect(await failure(engine(transport)) == .failed)
     }
 
     @Test("a refusal stop reason is refused even when text is present")
