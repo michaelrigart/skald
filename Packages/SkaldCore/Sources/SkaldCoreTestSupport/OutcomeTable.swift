@@ -132,6 +132,8 @@ public let outcomeTable: [Row] = [
     Row("fr7", "ces", "c'est", .keep),
     Row("A lone lowercase sentence stays lowercase", .en, "sure, I can take that one", "Sure, I can take that one",
         .drop(.addedFormality)),
+    Row("A lone question keeps its lowercase start", .en, "can you take that one?", "Can you take that one?", .drop(.addedFormality)),
+    Row("A lone sentence ending in a period gets its capital", .en, "thanks for the quick fix.", "Thanks for the quick fix.", .keep),
     Row("A contraction fragment is not a misspelling", .en, "We didn't received the alerts.", "We did not receive the alerts.",
         .drop(.tenseChange)),
     Row("Two separate letter changes are not a near-homophone", .nl, "We moeten de kelder nog opkuisen.",
@@ -141,8 +143,14 @@ public let outcomeTable: [Row] = [
     Row("A guess that splits a word into content words", .en, "Check the runbook first.", "Check the run book first.",
         .drop(.compoundSplit), source: .spelling),
     Row("A guess that splits off a function word", .en, "It took alot of time.", "It took a lot of time.", .keep, source: .spelling),
+    Row("A restored apostrophe is not a split", .en, "I cant make it today.", "I can't make it today.", .undecided),
+    Row("A restored apostrophe inside a word is not a split", .fr, "Je regarde ça aujourdhui.", "Je regarde ça aujourd'hui.", .keep,
+        source: .spelling),
+    Row("The model splitting a compound is not a guess", .en, "We fallback to the replica.", "We fall back to the replica.", .undecided),
     Row("A word without vowels is an abbreviation", .en, "fyi the vpn is down", "fyi the van is down",
         .drop(.nameNumberURLOrCode), source: .spelling),
+    Row("A vowel-less typo whose letters the fix keeps", .en, "I checked th logs.", "I checked the logs.", .keep, source: .spelling),
+    Row("A lowercase abbreviation keeps its case", .en, "fyi the vpn is down", "fyi the VPN is down", .drop(.nameNumberURLOrCode)),
 ]
 
 /// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".
@@ -175,6 +183,10 @@ public let resolveTable: [ResolveRow] = [
                ["Les documents sont sur mon bureau, prends-les."], kept: []),
     ResolveRow("A fix two tokens from a replaced verb", .fr, "Les tests passent et les serveur sont à jour.",
                ["Les tests se déroulent et les serveurs sont à jour."], kept: ["serveur → serveurs"]),
+    ResolveRow("A misspelling fix one token from a replaced verb", .fr, "Les tests passent sans probleme.",
+               ["Les tests se déroulent sans problème."], kept: ["probleme → problème"]),
+    ResolveRow("A capital one token from a replaced verb", .fr, "Les tests passent. il faut encore voir.",
+               ["Les tests se déroulent. Il faut encore voir."], kept: ["il → Il"]),
     ResolveRow("Spelling flags never take their neighbours", .fr, "J'ai mergé deja le correctif.",
                ["J'ai Serge deja le correctif.", "J'ai mergé déjà le correctif."], source: .spelling, kept: ["deja → déjà"]),
 ]

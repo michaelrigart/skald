@@ -25,9 +25,24 @@
    "lemma": "although",
    "misspelled": false
   },
+  "back": {
+   "english": true,
+   "lemma": "back",
+   "misspelled": false
+  },
   "book": {
    "english": true,
    "lemma": "book",
+   "misspelled": false
+  },
+  "can": {
+   "english": true,
+   "lemma": "can",
+   "misspelled": false
+  },
+  "cant": {
+   "english": true,
+   "lemma": "cant",
    "misspelled": false
   },
   "deploy_app": {
@@ -48,6 +63,16 @@
    "english": false,
    "function": true,
    "misspelled": true
+  },
+  "fall": {
+   "english": true,
+   "lemma": "fall",
+   "misspelled": false
+  },
+  "fallback": {
+   "english": true,
+   "lemma": "fallback",
+   "misspelled": false
   },
   "fixd": {
    "english": false,
@@ -283,10 +308,19 @@
    "english": false,
    "misspelled": true
   },
+  "th": {
+   "english": false,
+   "misspelled": true
+  },
   "than": {
    "english": true,
    "function": true,
    "lemma": "than",
+   "misspelled": false
+  },
+  "thanks": {
+   "english": true,
+   "lemma": "thanks",
    "misspelled": false
   },
   "the": {
@@ -375,6 +409,14 @@
    "lemma": "avoir",
    "misspelled": false
   },
+  "aujourd": {
+   "english": false,
+   "misspelled": true
+  },
+  "aujourdhui": {
+   "english": false,
+   "misspelled": true
+  },
   "c": {
    "english": true,
    "misspelled": false
@@ -443,6 +485,16 @@
    "english": false,
    "lemma": "hergé",
    "misspelled": true
+  },
+  "hui": {
+   "english": true,
+   "misspelled": false
+  },
+  "il": {
+   "english": true,
+   "function": true,
+   "lemma": "il",
+   "misspelled": false
   },
   "jamais": {
    "english": false,
@@ -526,6 +578,15 @@
   "prends": {
    "english": false,
    "lemma": "prendre",
+   "misspelled": false
+  },
+  "probleme": {
+   "english": false,
+   "misspelled": true
+  },
+  "problème": {
+   "english": false,
+   "lemma": "problème",
    "misspelled": false
   },
   "proprement": {

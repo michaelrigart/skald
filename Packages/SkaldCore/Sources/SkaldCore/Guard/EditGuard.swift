@@ -52,8 +52,10 @@ public struct EditGuard: Sendable {
         let verdicts = edits.map { verdict(for: $0, in: paragraph, language: language, source: source, facts: facts) }
         let rewrites = source == .model ? zip(edits, verdicts).filter { Self.isRewrite($0.1) }.map(\.0.tokenSpan) : []
         var kept: [Edit] = []
-        for (edit, verdict) in zip(edits, verdicts) where !rewrites.contains(where: { Self.areNeighbours($0, edit.tokenSpan) }) {
+        for (edit, verdict) in zip(edits, verdicts) {
             switch verdict {
+            case .keep where Self.isAbsorbed(edit, by: rewrites, language, facts):
+                break
             case .keep:
                 kept.append(edit)
             case .drop:
@@ -73,25 +75,28 @@ public struct EditGuard: Sendable {
         b.lowerBound - a.upperBound <= 1 && a.lowerBound - b.upperBound <= 1
     }
 
+    private static func isAbsorbed(_ edit: Edit, by rewrites: [Range<Int>], _ language: Language, _ facts: WordFacts) -> Bool {
+        rewrites.contains { areNeighbours($0, edit.tokenSpan) } && !isCapitalisationOnly(edit) && swapsOnlyFunctionWords(edit, language, facts)
+    }
+
     public func verdict(for edit: Edit, in paragraph: String, language: Language, source: IssueSource, facts: WordFacts) -> GuardVerdict {
         let tokens = Tokenizer.tokens(in: paragraph)
         let original = Self.words(in: edit.original)
         let replacement = Self.words(in: edit.replacement)
-        let isFunctionWord = { (word: String) in facts.functionWords.contains(word) || FunctionWords.contains(word, language) }
+        let isFunctionWord = { (word: String) in Self.isFunctionWord(word, language, facts) }
 
         if touchesNeverTouch(edit, in: paragraph, replacement) { return .drop(.neverTouch) }
         if Self.isNumberURLCodeOrName(edit, in: paragraph, tokens: tokens) { return .drop(.nameNumberURLOrCode) }
         if source == .spelling && edit.replacement.isEmpty { return .drop(.noSuggestion) }
         if original.isEmpty && replacement.isEmpty { return Self.punctuationVerdict(edit, tokens) }
         if Self.isCapitalisationOnly(edit) { return Self.capitalisationVerdict(edit, tokens, language) }
-        if Self.isCompoundSplit(original, replacement, isFunctionWord) { return .drop(.compoundSplit) }
+        if source == .spelling && Self.isCompoundSplit(edit, replacement, isFunctionWord) { return .drop(.compoundSplit) }
         if language != .en,
            let verdict = Self.borrowedWordVerdict(original.filter { !isFunctionWord($0) }, replacement.filter { !isFunctionWord($0) }, facts) {
             return verdict
         }
         if original.contains(where: { facts.misspelled.contains($0) && !isFunctionWord($0) }) { return .keep }
-        let words = original + replacement
-        if !words.contains(where: { FunctionWords.isPreposition($0, language) }) && words.allSatisfy(isFunctionWord) { return .keep }
+        if Self.swapsOnlyFunctionWords(edit, language, facts) { return .keep }
         let auxiliary = Self.auxiliaryContext(edit, tokens, language)
         return Self.contentVerdict(original, replacement, facts, language, isFunctionWord, auxiliary)
     }
@@ -102,6 +107,16 @@ public struct EditGuard: Sendable {
 
     static func words(in edits: [Edit]) -> Set<String> {
         Set(edits.flatMap { words(in: $0.original) + words(in: $0.replacement) })
+    }
+
+    private static func isFunctionWord(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
+        facts.functionWords.contains(word) || FunctionWords.contains(word, language)
+    }
+
+    private static func swapsOnlyFunctionWords(_ edit: Edit, _ language: Language, _ facts: WordFacts) -> Bool {
+        let words = words(in: edit.original) + words(in: edit.replacement)
+        return !words.isEmpty && !words.contains { FunctionWords.isPreposition($0, language) }
+            && words.allSatisfy { isFunctionWord($0, language, facts) }
     }
 
     private func touchesNeverTouch(_ edit: Edit, in paragraph: String, _ replacement: [String]) -> Bool {
@@ -163,13 +178,19 @@ public struct EditGuard: Sendable {
         return edit.tokenSpan.contains { index in
             let word = tokens[index].text
             guard isWord(word) else { return false }
-            return (word.first?.isUppercase == true && !isSentenceStart(index, tokens)) || isAbbreviation(word)
+            return (word.first?.isUppercase == true && !isSentenceStart(index, tokens)) || isAbbreviation(word, fixedAs: edit.replacement)
         }
     }
 
-    private static func isAbbreviation(_ word: String) -> Bool {
-        let letters = fold(word).filter(\.isLetter)
-        return letters.count >= 2 && !letters.contains { "aeiouy".contains($0) }
+    private static func isAbbreviation(_ word: String, fixedAs replacement: String) -> Bool {
+        let letters = word.filter(\.isLetter)
+        guard letters.count >= 2, !fold(letters).contains(where: "aeiouy".contains) else { return false }
+        var rest = Substring(replacement)
+        for letter in letters {
+            guard let found = rest.firstIndex(of: letter) else { return true }
+            rest = rest[rest.index(after: found)...]
+        }
+        return false
     }
 
     private static func chunk(around range: TextRange, in paragraph: String) -> String {
@@ -232,8 +253,8 @@ public struct EditGuard: Sendable {
         let others = tokens.indices.filter {
             $0 != index && isSentenceStart($0, tokens) && tokens[$0].text.first?.isLetter == true && tokens[$0].text != "I"
         }
-        let othersAreLowercase = others.allSatisfy { tokens[$0].text.first?.isLowercase == true }
-        return othersAreLowercase ? .drop(.addedFormality) : .keep
+        if others.isEmpty { return tokens.last?.text == "." ? .keep : .drop(.addedFormality) }
+        return others.allSatisfy { tokens[$0].text.first?.isLowercase == true } ? .drop(.addedFormality) : .keep
     }
 
     // MARK: Words
@@ -242,8 +263,9 @@ public struct EditGuard: Sendable {
         word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     }
 
-    private static func isCompoundSplit(_ original: [String], _ replacement: [String], _ isFunctionWord: (String) -> Bool) -> Bool {
-        original.count == 1 && replacement.count > 1 && replacement.joined() == original[0] && !replacement.contains(where: isFunctionWord)
+    private static func isCompoundSplit(_ edit: Edit, _ replacement: [String], _ isFunctionWord: (String) -> Bool) -> Bool {
+        guard !edit.original.contains(where: \.isWhitespace), edit.replacement.contains(where: \.isWhitespace) else { return false }
+        return edit.replacement.filter { !$0.isWhitespace }.lowercased() == edit.original.lowercased() && !replacement.contains(where: isFunctionWord)
     }
 
     private static func isNearHomophone(_ a: String, _ b: String) -> Bool {
