@@ -119,8 +119,11 @@ enum FieldProbe {
             ? field.attributedString(for: CFRange(location: beforeLocation, length: beforeLength)).map(AttributedSnapshot.init)
             : nil
         let markerRange = CFRange(location: markerLocation, length: markerLength)
+        let originalSelection = field.selectedRange
         guard field.setSelectedRange(markerRange) == .success else { return .aborted(reason: "selection rejected") }
-        guard selectionIsMarker(field, markerRange) else { return .aborted(reason: "selection does not cover the marker") }
+        guard selectionIsMarker(field, markerRange) else {
+            return .aborted(reason: "selection does not cover the marker; \(restore(originalSelection, in: field))")
+        }
         _ = field.setSelectedText(ProbeMarker.replacement)
         return .started(WriteStart(
             original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength
@@ -144,6 +147,11 @@ enum FieldProbe {
 
     static func isSecure(_ field: AXElement) -> Bool {
         field.role == ProbeLine.secureRole || field.subrole == ProbeLine.secureRole
+    }
+
+    private static func restore(_ selection: CFRange?, in field: AXElement) -> String {
+        guard let selection else { return "no original selection to restore" }
+        return field.setSelectedRange(selection) == .success ? "original selection restored" : "restoring the selection failed"
     }
 
     private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange) -> Bool {

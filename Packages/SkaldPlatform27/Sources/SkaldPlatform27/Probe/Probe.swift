@@ -183,6 +183,7 @@ public final class Probe {
                 PlatformLog.probe.notice("no focused element: \(bundleID, privacy: .public)")
                 enabledPIDs.insert(pid)
                 await queue.run { mode.enable(on: AXElement.application(pid: pid).element) }
+                if let session = current, session.pid == pid { moveToForced(session) }
                 await retarget(pid: pid)
                 reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
                 guard generation == focusGeneration, running else { return }
@@ -277,7 +278,7 @@ public final class Probe {
             await evaluate(session)
         case let .aborted(reason):
             session.observation.recordWriteAborted()
-            PlatformLog.probe.notice("write aborted: \(reason, privacy: .public)")
+            PlatformLog.probe.notice("write aborted: \(session.observation.line.app, privacy: .public): \(reason, privacy: .public)")
         }
     }
 
@@ -307,7 +308,6 @@ public final class Probe {
     private func beginWindow(_ session: FieldSession, _ phase: WindowPhase) {
         session.timer?.cancel()
         session.stage = .starting
-        session.typedWhileStarting = false
         let pid = session.pid
         session.timer = Task {
             let start = await queue.run { CPUSample.take(tree: pid) }
@@ -343,6 +343,20 @@ public final class Probe {
         case let .typingForced(start):
             session.observation.line.cpuTypingForced = end.percent(since: start)
             session.stage = .done
+        default:
+            break
+        }
+    }
+
+    private func moveToForced(_ session: FieldSession) {
+        switch session.stage {
+        case .starting, .idle:
+            beginWindow(session, .idleForced)
+        case .typing:
+            beginWindow(session, .typingForced)
+        case .awaitingTyping:
+            session.timer?.cancel()
+            session.stage = .awaitingTypingForced
         default:
             break
         }

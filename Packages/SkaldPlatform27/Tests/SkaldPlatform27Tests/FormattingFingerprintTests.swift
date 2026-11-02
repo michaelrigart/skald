@@ -37,3 +37,22 @@ private var bold: NSFont { NSFont.boldSystemFont(ofSize: 12) }
     #expect(!FormattingFingerprint.kept(before: text([key: boldName]), after: text([key: regularName])))
     #expect(FormattingFingerprint.kept(before: text([key: boldName]), after: text([key: boldName])))
 }
+
+private func slateColour() -> CGColor {
+    NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1).cgColor
+}
+
+@Test func separatelyCreatedEqualColoursCountAsKept() {
+    let key = NSAttributedString.Key("AXForegroundColor")
+    let (first, second) = (slateColour(), slateColour())
+    #expect(CFEqual(first, second))
+    #expect(String(describing: first) != String(describing: second))
+    #expect(FormattingFingerprint.signature(of: [key: first]) == FormattingFingerprint.signature(of: [key: second]))
+    #expect(FormattingFingerprint.kept(before: text([key: first]), after: text([key: second])))
+}
+
+@Test func differentColoursCountAsLostFormatting() {
+    let key = NSAttributedString.Key("AXForegroundColor")
+    let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)
+    #expect(!FormattingFingerprint.kept(before: text([key: slateColour()]), after: text([key: red])))
+}

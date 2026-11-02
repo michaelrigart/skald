@@ -7,8 +7,16 @@ enum FormattingFingerprint {
         var italic = false
         var underline = false
         var strikethrough = false
-        var colour: String?
+        var colour: ColourValue?
         var link = false
+    }
+
+    struct ColourValue: Equatable {
+        let value: Any
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            CFEqual(lhs.value as AnyObject, rhs.value as AnyObject)
+        }
     }
 
     private static let font = NSAttributedString.Key("AXFont")
@@ -36,7 +44,7 @@ enum FormattingFingerprint {
         return runs
     }
 
-    private static func signature(of attributes: [NSAttributedString.Key: Any]) -> Run {
+    static func signature(of attributes: [NSAttributedString.Key: Any]) -> Run {
         var run = Run(length: 0)
         for candidate in [attributes[.font], attributes[font]] {
             if let nsFont = candidate as? NSFont {
@@ -51,7 +59,7 @@ enum FormattingFingerprint {
         }
         run.underline = isOn(attributes[.underlineStyle]) || isOn(attributes[underline])
         run.strikethrough = isOn(attributes[.strikethroughStyle]) || isOn(attributes[strikethrough])
-        run.colour = (attributes[.foregroundColor] ?? attributes[colour]).map { String(describing: $0) }
+        run.colour = (attributes[.foregroundColor] ?? attributes[colour]).map(ColourValue.init)
         run.link = attributes[.link] != nil || attributes[link] != nil
         return run
     }
