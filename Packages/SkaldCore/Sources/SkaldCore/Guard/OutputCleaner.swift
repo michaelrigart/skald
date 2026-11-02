@@ -8,11 +8,12 @@ public enum OutputCleaner {
     )
 
     public static func clean(_ output: String, input: String) -> String {
-        var text = trimmed(output)
-        text = removingThinkBlock(text)
-        text = removingCodeFence(text, input: input)
-        text = removingPreamble(text)
-        return removingWrappingQuotes(text, input: input)
+        var text = removingThinkBlock(trimmed(output))
+        while true {
+            let next = removingWrappingQuotes(removingPreamble(removingCodeFence(text, input: input)), input: input)
+            if next == text { return text }
+            text = next
+        }
     }
 
     private static func trimmed(_ text: String) -> String {

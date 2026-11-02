@@ -84,6 +84,30 @@ private let outcomeTable: [Row] = [
     Row("A name capitalised elsewhere", .en, "Thanks to Pieter for the review. I will ask pieter again.",
         "Thanks to Pieter for the review. I will ask Pieter again.", .keep),
     Row("A capital on an unknown word", .en, "I will visit paris again.", "I will visit Paris again.", .undecided),
+    Row("A question mark ending an unpunctuated last sentence", .en, "Thanks for the fix. Can you deploy it",
+        "Thanks for the fix. Can you deploy it?", .keep),
+    Row("A period ending an unpunctuated last sentence", .en, "We shipped it. The logs look fine",
+        "We shipped it. The logs look fine.", .keep),
+    Row("A cognate in the plural", .fr, "Les nouvelles version sont prêtes", "Les nouvelles versions sont prêtes", .keep),
+    Row("A cognate in the plural, Dutch", .nl, "Er zijn drie bug gevonden.", "Er zijn drie bugs gevonden.", .keep),
+    Row("A cognate with its accent", .fr, "Cette operation est lente.", "Cette opération est lente.", .keep),
+    Row("A never-touch phrase with a dot", .en, "We run Node.js in production.", "We run Node.JS in production.",
+        .drop(.neverTouch), neverTouch: ["Node.js"]),
+    Row("A hyphenated never-touch phrase", .en, "We keep it on-prem for now.", "We keep it on-premise for now.",
+        .drop(.neverTouch), neverTouch: ["on-prem"]),
+    Row("en2", "it's", "its", .keep, neverTouch: ["run"]),
+    Row("A French weekday is lowercase", .fr, "On se voit lundi.", "On se voit Lundi.", .drop(.addedFormality)),
+    Row("A Dutch weekday is lowercase", .nl, "Op maandag", "Op Maandag", .drop(.addedFormality)),
+    Row("A Dutch adverb is not a function word", .nl, "Het werkt wel.", "Het werkt niet.", .undecided),
+    Row("An English adverb is not a function word", .en, "I also checked the logs.", "I just checked the logs.", .drop(.replacement)),
+    Row("A French adverb is not a function word", .fr, "Je ne le fais plus.", "Je ne le fais jamais.", .drop(.borrowedWord)),
+    Row("A preposition swap is not a function-word fix", .nl, "Ik laat je iets weten tegen vrijdag.",
+        "Ik laat je iets weten voor vrijdag.", .undecided),
+    Row("A tense change in English", .en, "I walk to the office.", "I walked to the office.", .drop(.tenseChange)),
+    Row("A participle after an auxiliary in English", .en, "I have walk home.", "I have walked home.", .keep),
+    Row("A participle after a negated auxiliary", .en, "I haven't went there.", "I haven't gone there.", .keep),
+    Row("A participle after a contracted auxiliary", .en, "She's went home.", "She's gone home.", .keep),
+    Row("A first word after a bullet starts a sentence", .en, "- Fixd the bug", "- Fixed the bug", .keep, source: .spelling),
     Row("en1", "Hi Sarah", "Hi, Sarah", .keep),
     Row("en3", "the the", "the", .keep),
     Row("en6", "recieve", "receive", .keep),
@@ -191,6 +215,14 @@ private func output(_ run: String, _ id: String) throws -> String {
     let result = EditGuard(neverTouch: [])
         .judgeWhole(original: c.text, revised: revised, language: .en, revisedLanguage: .en)
     #expect(result == .accepted)
+}
+
+@Test func theWholeResultIsDiscardedWhenTheModelAppendedText() {
+    let original = "Thanks for the fix."
+    let revised = original + " I also updated the runbook and the dashboards so everybody can find them."
+    let result = EditGuard(neverTouch: [])
+        .judgeWhole(original: original, revised: revised, language: .en, revisedLanguage: .en)
+    #expect(result == .discarded(.tooManyChanges))
 }
 
 @Test func theWholeResultIsKeptWhenNoLanguageWasDetected() {

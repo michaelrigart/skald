@@ -42,9 +42,14 @@ private func aPreambleIsRemoved(_ output: String) {
     #expect(OutputCleaner.clean(output, input: "Halo") == "Hallo")
 }
 
-@Test func aPreambleIsRemovedOnceAndOnlyAtTheStart() {
-    #expect(OutputCleaner.clean("Corrected text: Corrected text: Hallo", input: "Halo") == "Corrected text: Hallo")
+@Test func aPreambleIsRemovedOnlyAtTheStart() {
     #expect(OutputCleaner.clean("Hallo. Corrected text: ok", input: "Halo") == "Hallo. Corrected text: ok")
+}
+
+@Test func wrappersAreRemovedUntilNothingChanges() {
+    #expect(OutputCleaner.clean("Corrected text: Corrected text: Hallo", input: "Halo") == "Hallo")
+    #expect(OutputCleaner.clean("Here is the corrected text:\n```\nHallo\n```", input: "Halo") == "Hallo")
+    #expect(OutputCleaner.clean("\"Corrected text: Hallo\"", input: "Halo") == "Hallo")
 }
 
 @Test func aPreambleAndWrappingQuotesAreBothRemoved() {

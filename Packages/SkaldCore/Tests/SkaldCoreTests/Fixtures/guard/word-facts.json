@@ -4,6 +4,11 @@
    "english": false,
    "misspelled": true
   },
+  "also": {
+   "english": true,
+   "lemma": "also",
+   "misspelled": false
+  },
   "although": {
    "english": true,
    "function": true,
@@ -16,6 +21,15 @@
   },
   "deploy_apps": {
    "english": true,
+   "misspelled": false
+  },
+  "fixd": {
+   "english": false,
+   "misspelled": true
+  },
+  "fixed": {
+   "english": true,
+   "lemma": "fix",
    "misspelled": false
   },
   "friday": {
@@ -57,6 +71,15 @@
    "english": true,
    "function": true,
    "lemma": "its",
+   "misspelled": false
+  },
+  "js": {
+   "english": false,
+   "misspelled": true
+  },
+  "just": {
+   "english": true,
+   "lemma": "just",
    "misspelled": false
   },
   "let": {
@@ -101,6 +124,15 @@
   "ping": {
    "english": true,
    "lemma": "ping",
+   "misspelled": false
+  },
+  "prem": {
+   "english": false,
+   "misspelled": true
+  },
+  "premise": {
+   "english": true,
+   "lemma": "premise",
    "misspelled": false
   },
   "receive": {
@@ -206,6 +238,16 @@
    "lemma": "too",
    "misspelled": false
   },
+  "walk": {
+   "english": true,
+   "lemma": "walk",
+   "misspelled": false
+  },
+  "walked": {
+   "english": true,
+   "lemma": "walk",
+   "misspelled": false
+  },
   "we": {
    "english": true,
    "function": true,
@@ -281,6 +323,11 @@
    "lemma": "fusionner",
    "misspelled": false
   },
+  "jamais": {
+   "english": false,
+   "lemma": "jamais",
+   "misspelled": false
+  },
   "lente": {
    "english": false,
    "function": true,
@@ -290,6 +337,11 @@
   "lentes": {
    "english": false,
    "lemma": "lent",
+   "misspelled": false
+  },
+  "lundi": {
+   "english": false,
+   "lemma": "lundi",
    "misspelled": false
   },
   "margé": {
@@ -302,6 +354,15 @@
    "english": false,
    "misspelled": true,
    "stem": "merge"
+  },
+  "operation": {
+   "english": true,
+   "misspelled": true
+  },
+  "opération": {
+   "english": false,
+   "lemma": "opération",
+   "misspelled": false
   },
   "ou": {
    "english": false,
@@ -318,6 +379,11 @@
   "passent": {
    "english": false,
    "lemma": "passer",
+   "misspelled": false
+  },
+  "plus": {
+   "english": true,
+   "lemma": "plus",
    "misspelled": false
   },
   "proprement": {
@@ -361,6 +427,16 @@
    "lemma": "tenir",
    "misspelled": false
   },
+  "version": {
+   "english": true,
+   "lemma": "version",
+   "misspelled": false
+  },
+  "versions": {
+   "english": true,
+   "lemma": "version",
+   "misspelled": false
+  },
   "à": {
    "english": true,
    "function": true,
@@ -379,6 +455,14 @@
   },
   "als": {
    "english": false,
+   "misspelled": false
+  },
+  "bug": {
+   "english": true,
+   "misspelled": false
+  },
+  "bugs": {
+   "english": true,
    "misspelled": false
   },
   "dan": {
@@ -434,6 +518,14 @@
    "english": true,
    "misspelled": false
   },
+  "maandag": {
+   "english": false,
+   "misspelled": false
+  },
+  "niet": {
+   "english": false,
+   "misspelled": false
+  },
   "onmiddelijk": {
    "english": false,
    "misspelled": true
@@ -460,11 +552,23 @@
    "english": false,
    "misspelled": true
   },
+  "tegen": {
+   "english": false,
+   "misspelled": false
+  },
+  "voor": {
+   "english": false,
+   "misspelled": false
+  },
   "voorkomen": {
    "english": false,
    "misspelled": false
   },
   "voorvallen": {
+   "english": false,
+   "misspelled": false
+  },
+  "wel": {
    "english": false,
    "misspelled": false
   },

@@ -29,7 +29,7 @@ public struct EditGuard: Sendable {
         if revised.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .discarded(.empty) }
         if let revisedLanguage, revisedLanguage != language { return .discarded(.languageChanged) }
         let total = Tokenizer.tokens(in: original).count
-        let changed = TextDiff.edits(from: original, to: revised).reduce(0) { $0 + $1.tokenSpan.count }
+        let changed = TextDiff.edits(from: original, to: revised).reduce(0) { $0 + max($1.tokenSpan.count, $1.replacementTokens.count) }
         if total > 0, Double(changed) / Double(total) > maxChangeShare { return .discarded(.tooManyChanges) }
         return .accepted
     }
@@ -64,7 +64,7 @@ public struct EditGuard: Sendable {
         let replacement = Self.words(in: edit.replacement)
         let isFunctionWord = { (word: String) in facts.functionWords.contains(word) || FunctionWords.contains(word, language) }
 
-        if touchesNeverTouch(edit, original, replacement) { return .drop(.neverTouch) }
+        if touchesNeverTouch(edit, in: paragraph, replacement) { return .drop(.neverTouch) }
         if Self.isNumberURLCodeOrName(edit, in: paragraph, tokens: tokens) { return .drop(.nameNumberURLOrCode) }
         if source == .spelling && edit.replacement.isEmpty { return .drop(.noSuggestion) }
         if original.isEmpty && replacement.isEmpty { return Self.punctuationVerdict(edit, tokens) }
@@ -74,9 +74,10 @@ public struct EditGuard: Sendable {
             return verdict
         }
         if original.contains(where: facts.misspelled.contains) { return .keep }
-        if (original + replacement).allSatisfy(isFunctionWord) { return .keep }
+        let words = original + replacement
+        if !words.contains(where: { FunctionWords.isPreposition($0, language) }) && words.allSatisfy(isFunctionWord) { return .keep }
         let afterAuxiliary = Self.precededByAuxiliary(edit, tokens, language)
-        return Self.contentVerdict(original, replacement, facts, isFunctionWord, afterAuxiliary)
+        return Self.contentVerdict(original, replacement, facts, language, isFunctionWord, afterAuxiliary)
     }
 
     static func words(in text: String) -> [String] {
@@ -87,9 +88,27 @@ public struct EditGuard: Sendable {
         Set(edits.flatMap { words(in: $0.original) + words(in: $0.replacement) })
     }
 
-    private func touchesNeverTouch(_ edit: Edit, _ original: [String], _ replacement: [String]) -> Bool {
-        let phrases = [edit.original.lowercased(), edit.replacement.lowercased()]
-        return !neverTouch.isDisjoint(with: original + replacement + phrases)
+    private func touchesNeverTouch(_ edit: Edit, in paragraph: String, _ replacement: [String]) -> Bool {
+        if !neverTouch.isDisjoint(with: replacement + [edit.replacement.lowercased()]) { return true }
+        let text = paragraph as NSString
+        func isWordCharacter(_ position: Int) -> Bool {
+            guard position >= 0, position < text.length else { return false }
+            return Unicode.Scalar(text.character(at: position)).map { CharacterSet.alphanumerics.contains($0) || $0 == "_" } ?? false
+        }
+        func overlapsEdit(_ found: NSRange) -> Bool {
+            if edit.range.length == 0 { return found.location < edit.range.location && edit.range.location < found.location + found.length }
+            return found.location < edit.range.end && edit.range.location < found.location + found.length
+        }
+        for entry in neverTouch where !entry.isEmpty {
+            var from = 0
+            while from < text.length {
+                let found = text.range(of: entry, options: .caseInsensitive, range: NSRange(location: from, length: text.length - from))
+                if found.location == NSNotFound { break }
+                if !isWordCharacter(found.location - 1), !isWordCharacter(found.location + found.length), overlapsEdit(found) { return true }
+                from = found.location + 1
+            }
+        }
+        return false
     }
 
     private static func isWord(_ token: String) -> Bool {
@@ -97,12 +116,19 @@ public struct EditGuard: Sendable {
     }
 
     private static func isSentenceStart(_ index: Int, _ tokens: [Token]) -> Bool {
-        index == 0 || [".", "!", "?"].contains(tokens[index - 1].text)
+        if index == tokens.firstIndex(where: { isWord($0.text) }) { return true }
+        return index > 0 && [".", "!", "?"].contains(tokens[index - 1].text)
     }
 
     private static func precededByAuxiliary(_ edit: Edit, _ tokens: [Token], _ language: Language) -> Bool {
-        let before = edit.tokenSpan.lowerBound - 1
-        return tokens.indices.contains(before) && FunctionWords.isAuxiliary(tokens[before].text, language)
+        var before = edit.tokenSpan.lowerBound - 1
+        while tokens.indices.contains(before), ["'", "’", "t", "not"].contains(tokens[before].text.lowercased()) { before -= 1 }
+        guard tokens.indices.contains(before) else { return false }
+        let word = tokens[before].text.lowercased()
+        if ["ve", "s", "d"].contains(word) {
+            return language == .en && before > 0 && ["'", "’"].contains(tokens[before - 1].text)
+        }
+        return FunctionWords.isAuxiliary(word, language)
     }
 
     // MARK: Numbers, URLs, code and names
@@ -153,7 +179,10 @@ public struct EditGuard: Sendable {
         let addsFinal = edit.tokenSpan.isEmpty && edit.tokenSpan.lowerBound == tokens.count
             && !edit.replacementTokens.isEmpty && edit.replacementTokens.allSatisfy(final.contains)
         let endsWithFinal = tokens.last.map { final.contains($0.text) } ?? false
-        return addsFinal && !endsWithFinal ? .drop(.addedFormality) : .keep
+        let otherSentenceEnds = tokens.indices.dropLast().contains {
+            final.contains(tokens[$0].text) && isWord(tokens[$0 + 1].text) && tokens[$0 + 1].text.first?.isUppercase == true
+        }
+        return addsFinal && !endsWithFinal && !otherSentenceEnds ? .drop(.addedFormality) : .keep
     }
 
     private static func isCapitalisationOnly(_ edit: Edit) -> Bool {
@@ -162,7 +191,7 @@ public struct EditGuard: Sendable {
 
     private static func capitalisationVerdict(_ edit: Edit, _ tokens: [Token], _ language: Language) -> GuardVerdict {
         guard edit.original.first?.isLowercase == true, edit.replacement.first?.isUppercase == true else { return .undecided }
-        if CalendarNames.contains(edit.original, language) { return .keep }
+        if CalendarNames.contains(edit.original, language) { return language == .en ? .keep : .drop(.addedFormality) }
         let isKnownName = tokens.indices.contains {
             !edit.tokenSpan.contains($0) && tokens[$0].text == edit.replacement && !isSentenceStart($0, tokens)
         }
@@ -183,8 +212,16 @@ public struct EditGuard: Sendable {
     }
 
     private static func englishStem(_ word: String, _ facts: WordFacts) -> String? {
-        if let stem = facts.englishStems[word] { return fold(stem) }
-        return facts.english.contains(word) ? fold(word) : nil
+        if let stem = facts.englishStems[word] { return stem }
+        return facts.english.contains(word) ? word : nil
+    }
+
+    private static func stemKeys(_ stem: String) -> Set<String> {
+        let folded = fold(stem)
+        var keys: Set<String> = [folded]
+        if folded.hasSuffix("es"), folded.count > 3 { keys.insert(String(folded.dropLast(2))) }
+        if folded.hasSuffix("s"), folded.count > 2 { keys.insert(String(folded.dropLast())) }
+        return keys
     }
 
     private static func borrowedWordVerdict(_ original: [String], _ replacement: [String], _ facts: WordFacts) -> GuardVerdict? {
@@ -193,7 +230,8 @@ public struct EditGuard: Sendable {
         guard original.count == replacement.count else { return .drop(.borrowedWord) }
         for (index, stem) in stems.enumerated() {
             guard let stem else { continue }
-            guard englishStem(replacement[index], facts) == stem, distance(original[index], replacement[index]) <= 2 else {
+            let replacementStem = facts.englishStems[replacement[index]] ?? replacement[index]
+            guard !stemKeys(stem).isDisjoint(with: stemKeys(replacementStem)), distance(original[index], replacement[index]) <= 2 else {
                 return .drop(.borrowedWord)
             }
         }
@@ -204,6 +242,7 @@ public struct EditGuard: Sendable {
         _ original: [String],
         _ replacement: [String],
         _ facts: WordFacts,
+        _ language: Language,
         _ isFunctionWord: (String) -> Bool,
         _ afterAuxiliary: Bool
     ) -> GuardVerdict {
@@ -213,7 +252,7 @@ public struct EditGuard: Sendable {
             to = to.filter { !isFunctionWord($0) }
         }
         guard from.count == to.count, !from.isEmpty else { return .undecided }
-        let verdicts = zip(from, to).map { pairVerdict($0, $1, facts, isFunctionWord, afterAuxiliary) }
+        let verdicts = zip(from, to).map { pairVerdict($0, $1, facts, language, isFunctionWord, afterAuxiliary) }
         if let drop = verdicts.first(where: { if case .drop = $0 { true } else { false } }) { return drop }
         return verdicts.contains(.undecided) ? .undecided : .keep
     }
@@ -222,13 +261,25 @@ public struct EditGuard: Sendable {
         _ from: String,
         _ to: String,
         _ facts: WordFacts,
+        _ language: Language,
         _ isFunctionWord: (String) -> Bool,
         _ afterAuxiliary: Bool
     ) -> GuardVerdict {
-        if from == to || distance(from, to) <= 2 || (isFunctionWord(from) && isFunctionWord(to)) { return .keep }
+        if from == to { return .keep }
+        let sameLemma = facts.lemmas[from] != nil && facts.lemmas[from] == facts.lemmas[to]
+        if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) {
+            return afterAuxiliary ? .keep : .drop(.tenseChange)
+        }
+        if distance(from, to) <= 2 { return .keep }
+        let prepositions = [from, to].contains { FunctionWords.isPreposition($0, language) }
+        if !prepositions && isFunctionWord(from) && isFunctionWord(to) { return .keep }
         guard let fromLemma = facts.lemmas[from], let toLemma = facts.lemmas[to] else { return .undecided }
         if fromLemma != toLemma { return .drop(.replacement) }
         return afterAuxiliary ? .keep : .drop(.tenseChange)
+    }
+
+    private static func isPastTense(_ word: String, _ facts: WordFacts) -> Bool {
+        word.hasSuffix("ed") && facts.lemmas[word].map { $0 != word } == true
     }
 
     private static func distance(_ a: String, _ b: String) -> Int {
