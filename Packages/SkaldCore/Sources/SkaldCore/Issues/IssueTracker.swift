@@ -9,20 +9,27 @@ public struct IssueTracker: Sendable {
     private var issues: [Issue] = []
     private var suspended: Set<FieldID> = []
     private var ignored: Set<Ignored> = []
+    private var modelResults: [ParagraphKey: [TextRange]] = [:]
 
     public init() {}
 
     public mutating func setSpelling(_ issues: [Issue], for key: ParagraphKey) {
-        replace(.spelling, with: issues, for: key)
+        self.issues.removeAll { $0.key == key && $0.source == .spelling }
+        let modelRanges = modelResults[key]
+        self.issues.append(contentsOf: issues.filter { issue in
+            !ignored.contains(Ignored(key: issue.key, edit: issue.edit))
+                && (modelRanges.map { Self.survives(issue, modelRanges: $0) } ?? true)
+        })
     }
 
     public mutating func setModel(_ issues: [Issue], for key: ParagraphKey) {
-        replace(.model, with: issues, for: key)
-        let modelRanges = self.issues.filter { $0.key == key && $0.source == .model }.map(\.fieldRange)
+        let kept = issues.filter { !ignored.contains(Ignored(key: $0.key, edit: $0.edit)) }
+        let modelRanges = issues.map(\.edit.range)
+        modelResults[key] = modelRanges
         self.issues.removeAll { issue in
-            issue.key == key && issue.source == .spelling
-                && !modelRanges.contains { Self.overlap($0, issue.fieldRange) }
+            issue.key == key && (issue.source == .model || !Self.survives(issue, modelRanges: modelRanges))
         }
+        self.issues.append(contentsOf: kept)
     }
 
     /// Returns the keys whose issues were dropped.
@@ -31,6 +38,10 @@ public struct IssueTracker: Sendable {
         suspended.remove(s.field)
         let parents = Dictionary(ParagraphKeys.keyed(s).map { ($0.0, $0.1) }, uniquingKeysWith: { first, _ in first })
         let window = s.offset...(s.offset + s.text.utf16.count)
+
+        func isGone(_ old: TextRange) -> Bool {
+            s.holdsWholeField || old.end > s.totalLength || (window.contains(old.location) && window.contains(old.end))
+        }
 
         var kept: [Issue] = []
         var dropped: [ParagraphKey] = []
@@ -54,14 +65,22 @@ public struct IssueTracker: Sendable {
                     continue
                 }
             }
-            let old = issue.parent.range
-            if s.holdsWholeField || old.end > s.totalLength || (window.contains(old.location) && window.contains(old.end)) {
+            if isGone(issue.parent.range) {
                 if !dropped.contains(issue.key) { dropped.append(issue.key) }
             } else {
                 kept.append(issue)
             }
         }
         issues = kept
+
+        for key in modelResults.keys where key.field == s.field {
+            if let parent = parents[key.withChunk(0)], key.chunk < Paragraphs.chunks(parent).count { continue }
+            switch key.position {
+            case .occurrence: modelResults[key] = nil
+            case .location(let location):
+                if isGone(TextRange(location: location, length: key.text.utf16.count)) { modelResults[key] = nil }
+            }
+        }
         return dropped
     }
 
@@ -71,16 +90,19 @@ public struct IssueTracker: Sendable {
 
     public mutating func clear() {
         issues.removeAll()
+        modelResults.removeAll()
     }
 
     public mutating func clear(_ key: ParagraphKey) {
         issues.removeAll { $0.key == key }
+        modelResults[key] = nil
     }
 
     public mutating func ignore(_ id: UUID) {
         guard let issue = issue(id) else { return }
-        ignored.insert(Ignored(key: issue.key, edit: issue.edit))
-        issues.removeAll { $0.id == id }
+        let entry = Ignored(key: issue.key, edit: issue.edit)
+        ignored.insert(entry)
+        issues.removeAll { Ignored(key: $0.key, edit: $0.edit) == entry }
     }
 
     public mutating func removeAll(word: String) {
@@ -98,15 +120,14 @@ public struct IssueTracker: Sendable {
         issues.first { $0.id == id }
     }
 
-    private mutating func replace(_ source: IssueSource, with new: [Issue], for key: ParagraphKey) {
-        issues.removeAll { $0.key == key && $0.source == source }
-        issues.append(contentsOf: new.filter { !ignored.contains(Ignored(key: $0.key, edit: $0.edit)) })
+    private static func survives(_ spelling: Issue, modelRanges: [TextRange]) -> Bool {
+        modelRanges.contains { overlap($0, spelling.edit.range) }
     }
 
+    /// A zero-length edit sits on a token boundary and overlaps only when strictly inside the other range.
     private static func overlap(_ a: TextRange, _ b: TextRange) -> Bool {
-        if a.length == 0 || b.length == 0 {
-            return a.location <= b.end && b.location <= a.end
-        }
+        if a.length == 0 { return b.location < a.location && a.location < b.end }
+        if b.length == 0 { return a.location < b.location && b.location < a.end }
         return a.location < b.end && b.location < a.end
     }
 }

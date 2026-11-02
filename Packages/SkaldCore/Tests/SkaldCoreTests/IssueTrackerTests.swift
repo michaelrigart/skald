@@ -34,6 +34,12 @@ private func issue(in snapshot: FieldSnapshot, paragraph index: Int = 0, replaci
     return makeIssue(key: key, parent: parent, replacing: word, with: correction, source: source)
 }
 
+private func issue(in snapshot: FieldSnapshot, revisedTo revised: String, source: IssueSource) -> Issue {
+    let (key, parent) = ParagraphKeys.keyed(snapshot)[0]
+    let edit = TextDiff.edits(from: parent.text, to: revised)[0]
+    return Issue(key: key, parent: parent, chunk: parent, edit: edit, source: source, language: .en)
+}
+
 private func longParagraph() -> String {
     (0..<10).map { "Teh\($0) " + String(repeating: "x", count: 293) + ". " }.joined()
 }
@@ -53,7 +59,7 @@ private func longParagraph() -> String {
     #expect(words.filter { $0 == "onmiddelijk" }.count == 2)
 }
 
-@Test func modelResultTouchedByAZeroLengthInsertionKeepsTheSpellingIssue() {
+@Test func modelReplacementOnTheSameWordKeepsTheSpellingIssue() {
     let snapshot = wholeSnapshot("a teh b")
     let key = ParagraphKeys.keyed(snapshot)[0].0
     var tracker = IssueTracker()
@@ -62,11 +68,72 @@ private func longParagraph() -> String {
     #expect(tracker.visible(in: fieldA).count == 2)
 }
 
+@Test func modelInsertionOnTheWordBoundaryWithdrawsTheSpellingIssue() {
+    let snapshot = wholeSnapshot("Northwind reviewt")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    let insertion = issue(in: snapshot, revisedTo: "Northwind reviewt.", source: .model)
+    #expect(insertion.edit.range == TextRange(location: 17, length: 0))
+    var tracker = IssueTracker()
+    tracker.setSpelling([issue(in: snapshot, replacing: "reviewt", with: "reviewed")], for: key)
+    tracker.setModel([insertion], for: key)
+    #expect(tracker.visible(in: fieldA).map(\.word) == [""])
+}
+
+@Test func withdrawalDoesNotDependOnArrivalOrder() {
+    let snapshot = wholeSnapshot("Ik heb reviewt en onmiddelijk gedaan")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    let spelling = [
+        issue(in: snapshot, replacing: "reviewt", with: "reviewed"),
+        issue(in: snapshot, replacing: "onmiddelijk", with: "onmiddellijk"),
+    ]
+
+    var empty = IssueTracker()
+    empty.setModel([], for: key)
+    empty.setSpelling(spelling, for: key)
+    #expect(empty.visible(in: fieldA).isEmpty)
+
+    var partial = IssueTracker()
+    partial.setModel([issue(in: snapshot, replacing: "onmiddelijk", with: "onmiddellijk", source: .model)], for: key)
+    partial.setSpelling(spelling, for: key)
+    let words = partial.visible(in: fieldA).map(\.word)
+    #expect(!words.contains("reviewt"))
+    #expect(words.filter { $0 == "onmiddelijk" }.count == 2)
+}
+
+@Test func clearingAKeyForgetsItsModelResult() {
+    let snapshot = wholeSnapshot("Ik heb reviewt")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    var tracker = IssueTracker()
+    tracker.setModel([], for: key)
+    tracker.clear(key)
+    tracker.setSpelling([issue(in: snapshot, replacing: "reviewt", with: "reviewed")], for: key)
+    #expect(tracker.visible(in: fieldA).count == 1)
+
+    tracker.clear(key)
+    tracker.setModel([], for: key)
+    tracker.clear()
+    tracker.setSpelling([issue(in: snapshot, replacing: "reviewt", with: "reviewed")], for: key)
+    #expect(tracker.visible(in: fieldA).count == 1)
+}
+
+@Test func revalidateForgetsTheModelResultOfAVanishedParagraph() {
+    let snapshot = wholeSnapshot("Ik heb reviewt\nsecond")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    var tracker = IssueTracker()
+    tracker.setModel([], for: key)
+    #expect(tracker.revalidate(wholeSnapshot("second")).isEmpty)
+    tracker.setSpelling([issue(in: snapshot, replacing: "reviewt", with: "reviewed")], for: key)
+    #expect(tracker.visible(in: fieldA).count == 1)
+}
+
 @Test func revalidateDropsIssuesWhenTheParagraphChangedAndReportsTheirKeys() {
     let before = wholeSnapshot("They is ready\nanother wrng line")
     let keyed = ParagraphKeys.keyed(before)
     var tracker = IssueTracker()
-    tracker.setSpelling([issue(in: before, paragraph: 0, replacing: "is", with: "are")], for: keyed[0].0)
+    tracker.setSpelling([
+        issue(in: before, paragraph: 0, replacing: "is", with: "are"),
+        issue(in: before, paragraph: 0, replacing: "They", with: "These"),
+    ], for: keyed[0].0)
     tracker.setSpelling([issue(in: before, paragraph: 1, replacing: "wrng", with: "wrong")], for: keyed[1].0)
     let dropped = tracker.revalidate(wholeSnapshot("He is ready\nanother wrng line"))
     #expect(dropped == [keyed[0].0])
@@ -113,17 +180,28 @@ private func longParagraph() -> String {
 }
 
 @Test func ignoredIssueDoesNotComeBackForTheSameKey() {
-    let snapshot = wholeSnapshot("They is ready")
+    let snapshot = wholeSnapshot("Ik heb onmiddelijk gedaan")
     let key = ParagraphKeys.keyed(snapshot)[0].0
+    func correction(_ source: IssueSource) -> Issue {
+        issue(in: snapshot, replacing: "onmiddelijk", with: "onmiddellijk", source: source)
+    }
+    func other(_ source: IssueSource) -> Issue {
+        issue(in: snapshot, replacing: "gedaan", with: "gedaen", source: source)
+    }
     var tracker = IssueTracker()
-    let first = issue(in: snapshot, replacing: "is", with: "are")
-    tracker.setSpelling([first], for: key)
-    tracker.ignore(first.id)
-    #expect(tracker.visible(in: fieldA).isEmpty)
-    tracker.setSpelling([issue(in: snapshot, replacing: "is", with: "are"), issue(in: snapshot, replacing: "ready", with: "set")], for: key)
-    #expect(tracker.visible(in: fieldA).map(\.word) == ["ready"])
+    let spelling = correction(.spelling)
+    tracker.setSpelling([spelling, other(.spelling)], for: key)
+    tracker.setModel([correction(.model), other(.model)], for: key)
+    #expect(tracker.visible(in: fieldA).map(\.word).filter { $0 == "onmiddelijk" }.count == 2)
+
+    tracker.ignore(spelling.id)
+    #expect(tracker.visible(in: fieldA).map(\.word) == ["gedaan", "gedaan"])
+
+    tracker.setSpelling([correction(.spelling), other(.spelling)], for: key)
+    tracker.setModel([correction(.model), other(.model)], for: key)
+    #expect(tracker.visible(in: fieldA).map(\.word) == ["gedaan", "gedaan"])
     tracker.clear()
-    tracker.setModel([issue(in: snapshot, replacing: "is", with: "are", source: .model)], for: key)
+    tracker.setModel([correction(.model)], for: key)
     #expect(tracker.visible(in: fieldA).isEmpty)
 }
 
