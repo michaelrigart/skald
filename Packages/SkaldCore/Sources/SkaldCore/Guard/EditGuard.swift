@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DropReason: Equatable, Sendable {
-    case neverTouch, nameNumberURLOrCode, borrowedWord, replacement, tenseChange, addedFormality, noSuggestion
+    case neverTouch, nameNumberURLOrCode, borrowedWord, replacement, tenseChange, addedFormality, noSuggestion, compoundSplit
 }
 
 public enum GuardVerdict: Equatable, Sendable {
@@ -49,9 +49,11 @@ public struct EditGuard: Sendable {
     ) async -> [Edit] {
         guard !edits.isEmpty else { return [] }
         let facts = await oracle.facts(for: Self.words(in: edits), language: language)
+        let verdicts = edits.map { verdict(for: $0, in: paragraph, language: language, source: source, facts: facts) }
+        let rewrites = source == .model ? zip(edits, verdicts).filter { Self.isRewrite($0.1) }.map(\.0.tokenSpan) : []
         var kept: [Edit] = []
-        for edit in edits {
-            switch verdict(for: edit, in: paragraph, language: language, source: source, facts: facts) {
+        for (edit, verdict) in zip(edits, verdicts) where !rewrites.contains(where: { Self.areNeighbours($0, edit.tokenSpan) }) {
+            switch verdict {
             case .keep:
                 kept.append(edit)
             case .drop:
@@ -61,6 +63,14 @@ public struct EditGuard: Sendable {
             }
         }
         return kept
+    }
+
+    private static func isRewrite(_ verdict: GuardVerdict) -> Bool {
+        [.drop(.replacement), .drop(.borrowedWord), .drop(.tenseChange)].contains(verdict)
+    }
+
+    private static func areNeighbours(_ a: Range<Int>, _ b: Range<Int>) -> Bool {
+        b.lowerBound - a.upperBound <= 1 && a.lowerBound - b.upperBound <= 1
     }
 
     public func verdict(for edit: Edit, in paragraph: String, language: Language, source: IssueSource, facts: WordFacts) -> GuardVerdict {
@@ -74,11 +84,12 @@ public struct EditGuard: Sendable {
         if source == .spelling && edit.replacement.isEmpty { return .drop(.noSuggestion) }
         if original.isEmpty && replacement.isEmpty { return Self.punctuationVerdict(edit, tokens) }
         if Self.isCapitalisationOnly(edit) { return Self.capitalisationVerdict(edit, tokens, language) }
+        if Self.isCompoundSplit(original, replacement, isFunctionWord) { return .drop(.compoundSplit) }
         if language != .en,
            let verdict = Self.borrowedWordVerdict(original.filter { !isFunctionWord($0) }, replacement.filter { !isFunctionWord($0) }, facts) {
             return verdict
         }
-        if original.contains(where: facts.misspelled.contains) { return .keep }
+        if original.contains(where: { facts.misspelled.contains($0) && !isFunctionWord($0) }) { return .keep }
         let words = original + replacement
         if !words.contains(where: { FunctionWords.isPreposition($0, language) }) && words.allSatisfy(isFunctionWord) { return .keep }
         let auxiliary = Self.auxiliaryContext(edit, tokens, language)
@@ -150,8 +161,15 @@ public struct EditGuard: Sendable {
         if looksLikeNumberURLOrCode(chunk) || looksLikeNumberURLOrCode(edit.replacement) { return true }
         if isHyphenatedName(chunk) { return true }
         return edit.tokenSpan.contains { index in
-            isWord(tokens[index].text) && tokens[index].text.first?.isUppercase == true && !isSentenceStart(index, tokens)
+            let word = tokens[index].text
+            guard isWord(word) else { return false }
+            return (word.first?.isUppercase == true && !isSentenceStart(index, tokens)) || isAbbreviation(word)
         }
+    }
+
+    private static func isAbbreviation(_ word: String) -> Bool {
+        let letters = fold(word).filter(\.isLetter)
+        return letters.count >= 2 && !letters.contains { "aeiouy".contains($0) }
     }
 
     private static func chunk(around range: TextRange, in paragraph: String) -> String {
@@ -214,7 +232,7 @@ public struct EditGuard: Sendable {
         let others = tokens.indices.filter {
             $0 != index && isSentenceStart($0, tokens) && tokens[$0].text.first?.isLetter == true && tokens[$0].text != "I"
         }
-        let othersAreLowercase = !others.isEmpty && others.allSatisfy { tokens[$0].text.first?.isLowercase == true }
+        let othersAreLowercase = others.allSatisfy { tokens[$0].text.first?.isLowercase == true }
         return othersAreLowercase ? .drop(.addedFormality) : .keep
     }
 
@@ -222,6 +240,17 @@ public struct EditGuard: Sendable {
 
     private static func fold(_ word: String) -> String {
         word.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+    }
+
+    private static func isCompoundSplit(_ original: [String], _ replacement: [String], _ isFunctionWord: (String) -> Bool) -> Bool {
+        original.count == 1 && replacement.count > 1 && replacement.joined() == original[0] && !replacement.contains(where: isFunctionWord)
+    }
+
+    private static func isNearHomophone(_ a: String, _ b: String) -> Bool {
+        let x = Array(fold(a)), y = Array(fold(b))
+        let prefix = zip(x, y).prefix { $0 == $1 }.count
+        let suffix = zip(x[prefix...].reversed(), y[prefix...].reversed()).prefix { $0 == $1 }.count
+        return x.count - prefix - suffix <= 2 && y.count - prefix - suffix <= 2
     }
 
     private static func englishStem(_ word: String, _ facts: WordFacts) -> String? {
@@ -281,14 +310,15 @@ public struct EditGuard: Sendable {
     ) -> GuardVerdict {
         if from == to { return .keep }
         if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) {
-            return fold(from) == fold(to) || isFinalLetterDoubled(from, to) ? .keep : .undecided
+            if fold(from) == fold(to) || isFinalLetterDoubled(from, to) { return .keep }
+            return isFunctionWord(from) && isFunctionWord(to) || isNearHomophone(from, to) ? .undecided : .drop(.replacement)
         }
         let sameLemma = facts.lemmas[from] != nil && facts.lemmas[from] == facts.lemmas[to]
         if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) { return tenseVerdict(auxiliary) }
-        if distance(from, to) <= 2 { return .keep }
+        if isNearHomophone(from, to) { return .keep }
         if isFunctionWord(from) && isFunctionWord(to) { return .keep }
-        guard let fromLemma = facts.lemmas[from], let toLemma = facts.lemmas[to] else { return .undecided }
-        return fromLemma == toLemma ? tenseVerdict(auxiliary) : .drop(.replacement)
+        guard let lemma = facts.lemmas[from], facts.lemmas[to] == lemma else { return .drop(.replacement) }
+        return tenseVerdict(auxiliary)
     }
 
     private static func tenseVerdict(_ auxiliary: AuxiliaryContext) -> GuardVerdict {

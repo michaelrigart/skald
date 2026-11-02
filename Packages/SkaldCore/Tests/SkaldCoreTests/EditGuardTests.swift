@@ -34,7 +34,7 @@ private func outcome(_ row: Row) async throws {
     let paragraph = "Ik zie foo hier."
     let found = TextDiff.edits(from: paragraph, to: "Ik zie bar hier.")
     let guardrail = EditGuard(neverTouch: [])
-    #expect(guardrail.verdict(for: found[0], in: paragraph, language: .nl, source: .model, facts: WordFacts()) == .undecided)
+    #expect(guardrail.verdict(for: found[0], in: paragraph, language: .nl, source: .model, facts: WordFacts()) == .drop(.replacement))
     let facts = WordFacts(functionWords: ["foo", "bar"])
     #expect(guardrail.verdict(for: found[0], in: paragraph, language: .nl, source: .model, facts: facts) == .keep)
 }
@@ -205,35 +205,44 @@ private func resolve(_ id: String, confirmer: StubConfirmer?) async throws -> (k
     #expect(await oracle.requests.isEmpty)
 }
 
-private func gebeurdAndVoorkomen() -> (paragraph: String, edits: [Edit]) {
-    let c = spike["nl5"]!
-    return (c.text, TextDiff.edits(from: c.text, to: swap(c.ref, "voorvallen", "voorkomen")))
+private func wordtAndVoor() -> (paragraph: String, edits: [Edit]) {
+    let c = spike["nl1"]!
+    return (c.text, TextDiff.edits(from: c.text, to: swap(c.ref, "om", "voor")))
 }
 
 @Test func resolveDropsAnUndecidedEditWhenThereIsNoConfirmer() async throws {
-    let (paragraph, edits) = gebeurdAndVoorkomen()
+    let (paragraph, edits) = wordtAndVoor()
     let kept = await EditGuard(neverTouch: [])
         .resolve(edits, in: paragraph, language: .nl, source: .model, oracle: try FakeWordOracle.measured(), confirmer: nil)
-    #expect(kept.map(\.original) == ["gebeurt"])
+    #expect(kept.map(\.original) == ["word"])
 }
 
 @Test(arguments: [nil, false] as [Bool?])
 private func resolveDropsAnUndecidedEditTheConfirmerDoesNotApprove(_ answer: Bool?) async throws {
-    let (paragraph, edits) = gebeurdAndVoorkomen()
+    let (paragraph, edits) = wordtAndVoor()
     let confirmer = StubConfirmer(answer)
     let kept = await EditGuard(neverTouch: [])
         .resolve(edits, in: paragraph, language: .nl, source: .model, oracle: try FakeWordOracle.measured(), confirmer: confirmer)
-    #expect(kept.map(\.original) == ["gebeurt"])
-    #expect(await confirmer.asked == ["voorvallen"])
+    #expect(kept.map(\.original) == ["word"])
+    #expect(await confirmer.asked == ["om"])
 }
 
 @Test func resolveKeepsAnUndecidedEditTheConfirmerApproves() async throws {
-    let (paragraph, edits) = gebeurdAndVoorkomen()
+    let (paragraph, edits) = wordtAndVoor()
     let confirmer = StubConfirmer(true)
     let kept = await EditGuard(neverTouch: [])
         .resolve(edits, in: paragraph, language: .nl, source: .model, oracle: try FakeWordOracle.measured(), confirmer: confirmer)
-    #expect(kept.map(\.replacement) == ["gebeurd", "voorkomen"])
-    #expect(await confirmer.asked == ["voorvallen"])
+    #expect(kept.map(\.replacement) == ["wordt", "voor"])
+    #expect(await confirmer.asked == ["om"])
+}
+
+@Test("Proposals judged together", arguments: resolveTable)
+private func resolveRow(_ row: ResolveRow) async throws {
+    let oracle = try FakeWordOracle.measured()
+    let kept = await EditGuard(neverTouch: [])
+        .resolve(row.edits, in: row.paragraph, language: row.language, source: row.source, oracle: oracle, confirmer: nil)
+    #expect(kept.map { "\($0.original) → \($0.replacement)" } == row.kept)
+    #expect(await oracle.unknownWords.isEmpty)
 }
 
 @Test func theGuardKeepsTheTrueFixesAndDropsTheFalseAlarmsOfTheSpikeRun() async throws {

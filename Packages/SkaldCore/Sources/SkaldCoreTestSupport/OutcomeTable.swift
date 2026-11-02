@@ -52,7 +52,7 @@ public let outcomeTable: [Row] = [
     Row("fr8", "regarderais", "regarderai", .keep),
     Row("nl2", "gedownloaded", "gedownload", .keep),
     Row("en3", "friday", "Friday", .keep),
-    Row("nl5", "voorvallen", "voorkomen", .undecided),
+    Row("nl5", "voorvallen", "voorkomen", .drop(.replacement)),
     Row("fr3", "passent", "se déroulent", .drop(.replacement)),
     Row("frc2", "proprement", "correctement", .drop(.replacement)),
     Row("nlc1", "gemerged", "gemerkt", .drop(.borrowedWord)),
@@ -95,12 +95,14 @@ public let outcomeTable: [Row] = [
     Row("en2", "it's", "its", .keep, neverTouch: ["run"]),
     Row("A French weekday is lowercase", .fr, "On se voit lundi.", "On se voit Lundi.", .drop(.addedFormality)),
     Row("A Dutch weekday is lowercase", .nl, "Op maandag", "Op Maandag", .drop(.addedFormality)),
-    Row("A Dutch adverb is not a function word", .nl, "Het werkt wel.", "Het werkt niet.", .undecided),
+    Row("A Dutch adverb is not a function word", .nl, "Het werkt wel.", "Het werkt niet.", .drop(.replacement)),
     Row("An English adverb is not a function word", .en, "I also checked the logs.", "I just checked the logs.", .drop(.replacement)),
     Row("A French adverb is not a function word", .fr, "Je ne le fais plus.", "Je ne le fais jamais.", .drop(.borrowedWord)),
     Row("A preposition swap is not a function-word fix", .nl, "Ik laat je iets weten tegen vrijdag.",
         "Ik laat je iets weten voor vrijdag.", .undecided),
     Row("A preposition replaced by a verb", .en, "I could of fixed it.", "I could have fixed it.", .undecided),
+    Row("A preposition replaced by a content word", .nl, "De release schuift een week op.", "De release schuift een week uitgesteld.",
+        .drop(.replacement)),
     Row("A preposition replaced by a preposition", .en, "I am afraid from dogs.", "I am afraid of dogs.", .undecided),
     Row("A preposition that differs by an accent", .fr, "Il va a Paris", "Il va à Paris", .keep),
     Row("A preposition with its final letter doubled", .en, "it looks of", "it looks off", .keep),
@@ -128,6 +130,53 @@ public let outcomeTable: [Row] = [
     Row("fr6", "lente", "lentes", .keep),
     Row("fr5", "envoyé", "envoyée", .keep),
     Row("fr7", "ces", "c'est", .keep),
+    Row("A lone lowercase sentence stays lowercase", .en, "sure, I can take that one", "Sure, I can take that one",
+        .drop(.addedFormality)),
+    Row("A contraction fragment is not a misspelling", .en, "We didn't received the alerts.", "We did not receive the alerts.",
+        .drop(.tenseChange)),
+    Row("Two separate letter changes are not a near-homophone", .nl, "We moeten de kelder nog opkuisen.",
+        "We moeten de kelder nog opruimen.", .drop(.replacement)),
+    Row("A content word with an unknown lemma is a replacement", .fr, "Le budget reste à septante mille euros.",
+        "Le budget reste à soixante mille euros.", .drop(.replacement)),
+    Row("A guess that splits a word into content words", .en, "Check the runbook first.", "Check the run book first.",
+        .drop(.compoundSplit), source: .spelling),
+    Row("A guess that splits off a function word", .en, "It took alot of time.", "It took a lot of time.", .keep, source: .spelling),
+    Row("A word without vowels is an abbreviation", .en, "fyi the vpn is down", "fyi the van is down",
+        .drop(.nameNumberURLOrCode), source: .spelling),
+]
+
+/// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".
+public struct ResolveRow: Sendable, CustomStringConvertible {
+    let name: String
+    public let language: Language
+    public let paragraph: String
+    public let source: IssueSource
+    public let kept: [String]
+    private let proposals: [String]
+    public var description: String { name }
+
+    public init(_ name: String, _ language: Language, _ paragraph: String, _ proposals: [String], source: IssueSource = .model,
+                kept: [String]) {
+        self.name = name
+        self.language = language
+        self.paragraph = paragraph
+        self.proposals = proposals
+        self.source = source
+        self.kept = kept
+    }
+
+    public var edits: [Edit] {
+        proposals.flatMap { TextDiff.edits(from: paragraph, to: $0) }
+    }
+}
+
+public let resolveTable: [ResolveRow] = [
+    ResolveRow("A function word one token from a replaced verb", .fr, "Les documents sont sur mon bureau, sers-toi.",
+               ["Les documents sont sur mon bureau, prends-les."], kept: []),
+    ResolveRow("A fix two tokens from a replaced verb", .fr, "Les tests passent et les serveur sont à jour.",
+               ["Les tests se déroulent et les serveurs sont à jour."], kept: ["serveur → serveurs"]),
+    ResolveRow("Spelling flags never take their neighbours", .fr, "J'ai mergé deja le correctif.",
+               ["J'ai Serge deja le correctif.", "J'ai mergé déjà le correctif."], source: .spelling, kept: ["deja → déjà"]),
 ]
 
 public let measuredGuesses: [Row] =

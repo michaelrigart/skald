@@ -12,3 +12,10 @@ private func outcome(_ row: Row) async throws {
         .verdict(for: found[0], in: row.paragraph, language: row.language, source: row.source, facts: facts)
     #expect(verdict == row.expected)
 }
+
+@Test("Proposals judged together, with the system's word facts", .tags(.requiresSystem), arguments: resolveTable)
+private func resolveRow(_ row: ResolveRow) async {
+    let kept = await EditGuard(neverTouch: [])
+        .resolve(row.edits, in: row.paragraph, language: row.language, source: row.source, oracle: SystemWordOracle(), confirmer: nil)
+    #expect(kept.map { "\($0.original) → \($0.replacement)" } == row.kept)
+}
