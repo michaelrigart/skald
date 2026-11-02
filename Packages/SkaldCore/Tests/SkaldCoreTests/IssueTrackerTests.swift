@@ -211,9 +211,23 @@ private func longParagraph() -> String {
     var tracker = IssueTracker()
     tracker.setSpelling([issue(in: a, replacing: "Talos", with: "Talus"), issue(in: a, replacing: "up", with: "down")], for: ParagraphKeys.keyed(a)[0].0)
     tracker.setSpelling([issue(in: b, replacing: "talos", with: "talus")], for: ParagraphKeys.keyed(b)[0].0)
-    tracker.removeAll(word: "Talos")
+    #expect(tracker.removeAll(word: "Talos") == [ParagraphKeys.keyed(a)[0].0, ParagraphKeys.keyed(b)[0].0])
     #expect(tracker.visible(in: fieldA).map(\.word) == ["up"])
     #expect(tracker.visible(in: fieldB).isEmpty)
+}
+
+@Test func removeAllWhereReportsEachDroppedKeyOnce() {
+    let snapshot = wholeSnapshot("Talos is up\nthe rest")
+    let keyed = ParagraphKeys.keyed(snapshot)
+    var tracker = IssueTracker()
+    tracker.setSpelling([
+        issue(in: snapshot, replacing: "Talos", with: "Talus"),
+        issue(in: snapshot, replacing: "up", with: "down"),
+    ], for: keyed[0].0)
+    tracker.setSpelling([issue(in: snapshot, paragraph: 1, replacing: "rest", with: "best")], for: keyed[1].0)
+    #expect(tracker.removeAll { $0.key == keyed[0].0 } == [keyed[0].0])
+    #expect(tracker.visible(in: fieldA).map(\.word) == ["rest"])
+    #expect(tracker.removeAll { _ in false } == [])
 }
 
 @Test func suspendedFieldShowsNothingUntilRevalidate() {

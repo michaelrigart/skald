@@ -105,8 +105,22 @@ public struct IssueTracker: Sendable {
         issues.removeAll { Ignored(key: $0.key, edit: $0.edit) == entry }
     }
 
-    public mutating func removeAll(word: String) {
-        issues.removeAll { $0.word.caseInsensitiveCompare(word) == .orderedSame }
+    /// Returns the keys whose issues were dropped.
+    @discardableResult
+    public mutating func removeAll(word: String) -> [ParagraphKey] {
+        removeAll { $0.word.caseInsensitiveCompare(word) == .orderedSame }
+    }
+
+    /// Returns the keys whose issues were dropped.
+    @discardableResult
+    public mutating func removeAll(where shouldDrop: (Issue) -> Bool) -> [ParagraphKey] {
+        var dropped: [ParagraphKey] = []
+        issues.removeAll { issue in
+            guard shouldDrop(issue) else { return false }
+            if !dropped.contains(issue.key) { dropped.append(issue.key) }
+            return true
+        }
+        return dropped
     }
 
     public func visible(in field: FieldID) -> [Issue] {
