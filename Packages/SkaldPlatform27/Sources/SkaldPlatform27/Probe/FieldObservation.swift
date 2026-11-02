@@ -14,7 +14,9 @@ struct FieldObservation {
 
     private var notifications: Set<String> = []
     private var write: WriteStart?
-    private var boundsChecks: [Bool] = []
+    private var writeAborted = false
+    private var movedChecks = 0
+    private var failedChecks = 0
 
     init(app: String, reading: FieldReading) {
         line = ProbeLine(app: app, role: reading.role, subrole: reading.subrole)
@@ -28,7 +30,7 @@ struct FieldObservation {
     }
 
     func shouldWrite(for reading: FieldReading) -> Bool {
-        !line.isSecure && write == nil && reading.value?.hasSuffix(ProbeMarker.pending) == true
+        !line.isSecure && write == nil && !writeAborted && reading.value?.hasSuffix(ProbeMarker.pending) == true
     }
 
     var finishedLine: ProbeLine {
@@ -39,9 +41,15 @@ struct FieldObservation {
 
     mutating func recordWrite(_ start: WriteStart) {
         write = start
+        undoPresses = 0
+    }
+
+    mutating func recordWriteAborted() {
+        writeAborted = true
     }
 
     mutating func recordUndo() {
+        guard write != nil else { return }
         undoPresses += 1
     }
 
@@ -50,9 +58,10 @@ struct FieldObservation {
         notifications.insert(name)
     }
 
-    mutating func recordBoundsCheck(stable: Bool, baseline updated: BoundsBaseline?) {
-        boundsChecks.append(stable)
-        line.boundsStable = boundsChecks.allSatisfy { $0 }
+    mutating func recordBoundsCheck(_ kind: RecheckKind, stable: Bool, baseline updated: BoundsBaseline?) {
+        if !stable { failedChecks += 1 }
+        if kind == .windowMoved { movedChecks += 1 }
+        line.boundsStable = movedChecks > 0 && failedChecks == 0
         if let updated { baseline = updated }
     }
 
@@ -71,7 +80,7 @@ struct FieldObservation {
         }
         guard let write, let value = reading.value else { return }
 
-        if !line.canWrite, value.hasSuffix(ProbeMarker.replacement) {
+        if !line.canWrite, value == write.expectedAfterWrite {
             line.canWrite = true
             line.formattingKept = Self.formattingKept(before: write.before, after: reading.formatted)
         }
@@ -79,13 +88,15 @@ struct FieldObservation {
         if undoPresses >= 1, !line.undoExact, value == write.original {
             line.undoExact = true
         }
-        if undoPresses >= 2, line.undoExact, !line.undoEarlierHistory, !value.contains(ProbeMarker.earlierWord) {
+        if undoPresses >= 2, line.undoExact, !line.undoEarlierHistory, write.hadEarlierWord,
+           value != write.original, value.range(of: ProbeMarker.earlierWord, options: .caseInsensitive) == nil
+        {
             line.undoEarlierHistory = true
         }
     }
 
     private static func formattingKept(before: AttributedSnapshot?, after: AttributedSnapshot?) -> Bool? {
         guard let before, let after else { return nil }
-        return before.value.isEqual(to: after.value)
+        return FormattingFingerprint.kept(before: before.value, after: after.value)
     }
 }

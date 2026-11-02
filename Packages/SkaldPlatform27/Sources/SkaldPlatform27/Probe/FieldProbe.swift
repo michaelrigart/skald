@@ -62,6 +62,19 @@ struct WriteStart: Sendable {
     var before: AttributedSnapshot?
     var beforeLocation: Int
     var beforeLength: Int
+
+    var expectedAfterWrite: String {
+        String(original.dropLast(ProbeMarker.pending.count)) + ProbeMarker.replacement
+    }
+
+    var hadEarlierWord: Bool {
+        original.range(of: ProbeMarker.earlierWord, options: .caseInsensitive) != nil
+    }
+}
+
+enum WriteAttempt: Sendable {
+    case started(WriteStart)
+    case aborted(reason: String)
 }
 
 enum BoundsRecheck: Sendable {
@@ -94,7 +107,7 @@ enum FieldProbe {
         return reading
     }
 
-    static func write(pid: pid_t) -> WriteStart? {
+    static func write(pid: pid_t) -> WriteAttempt? {
         guard let field = AXElement.focused(inApp: pid), !isSecure(field),
               let value = field.value, value.hasSuffix(ProbeMarker.pending)
         else { return nil }
@@ -105,11 +118,13 @@ enum FieldProbe {
         let before = beforeLength > 0
             ? field.attributedString(for: CFRange(location: beforeLocation, length: beforeLength)).map(AttributedSnapshot.init)
             : nil
-        let selected = field.setSelectedRange(CFRange(location: markerLocation, length: markerLength))
-        if selected == .success {
-            _ = field.setSelectedText(ProbeMarker.replacement)
-        }
-        return WriteStart(original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength)
+        let markerRange = CFRange(location: markerLocation, length: markerLength)
+        guard field.setSelectedRange(markerRange) == .success else { return .aborted(reason: "selection rejected") }
+        guard selectionIsMarker(field, markerRange) else { return .aborted(reason: "selection does not cover the marker") }
+        _ = field.setSelectedText(ProbeMarker.replacement)
+        return .started(WriteStart(
+            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength
+        ))
     }
 
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {
@@ -129,6 +144,13 @@ enum FieldProbe {
 
     static func isSecure(_ field: AXElement) -> Bool {
         field.role == ProbeLine.secureRole || field.subrole == ProbeLine.secureRole
+    }
+
+    private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange) -> Bool {
+        if let selectedText = field.selectedText { return selectedText == ProbeMarker.pending }
+        guard let selected = field.selectedRange else { return false }
+        return selected.location == markerRange.location && selected.length == markerRange.length
+            && field.string(for: markerRange) == ProbeMarker.pending
     }
 
     private static func length(of field: AXElement, value: String?) -> Int? {

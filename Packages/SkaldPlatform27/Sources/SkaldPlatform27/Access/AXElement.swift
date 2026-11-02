@@ -22,6 +22,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     public var role: String? { stringAttribute(kAXRoleAttribute) }
     public var subrole: String? { stringAttribute(kAXSubroleAttribute) }
     public var value: String? { stringAttribute(kAXValueAttribute) }
+    public var selectedText: String? { stringAttribute(kAXSelectedTextAttribute) }
     public var window: AXElement? { elementAttribute(kAXWindowAttribute) }
 
     public var numberOfCharacters: Int? {

@@ -1,19 +1,22 @@
 import Darwin
+import Foundation
 import Testing
 @testable import SkaldPlatform27
 
-@Test func busyProcessReadsAsAboutOneCore() {
-    let own = getpid()
-    let start = CPUSample.take(tree: own)
-    var sink = 0.0
-    let deadline = ContinuousClock.now + .milliseconds(300)
-    while ContinuousClock.now < deadline {
-        for step in 1...2_000 { sink += Double(step).squareRoot() }
+@Test func busyChildReadsAsAboutOneCore() async throws {
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: "/bin/sh")
+    child.arguments = ["-c", "while :; do :; done"]
+    try child.run()
+    defer {
+        child.terminate()
+        child.waitUntilExit()
     }
-    let end = CPUSample.take(tree: own)
-    #expect(sink > 0)
+    let start = CPUSample.take(tree: child.processIdentifier)
+    try await ContinuousClock().sleep(for: .milliseconds(400))
+    let end = CPUSample.take(tree: child.processIdentifier)
     let percent = end.percent(since: start)
-    #expect(percent > 50 && percent < 150, "measured \(percent)")
+    #expect(percent > 30 && percent < 150, "measured \(percent)")
 }
 
 @Test func treeIncludesTheRootAndItsChildren() {

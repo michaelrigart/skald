@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import SkaldCore
 
 private enum CPUStage {
     case starting
@@ -13,6 +14,27 @@ private enum CPUStage {
     case done
 }
 
+private enum WindowPhase: Sendable {
+    case idle, typing, idleForced, typingForced
+
+    var typed: WindowPhase {
+        switch self {
+        case .idle: .typing
+        case .idleForced: .typingForced
+        default: self
+        }
+    }
+
+    func stage(_ start: CPUSample) -> CPUStage {
+        switch self {
+        case .idle: .idle(start)
+        case .typing: .typing(start)
+        case .idleForced: .idleForced(start)
+        case .typingForced: .typingForced(start)
+        }
+    }
+}
+
 @MainActor
 private final class FieldSession {
     let pid: pid_t
@@ -20,6 +42,7 @@ private final class FieldSession {
     var observation: FieldObservation
     var stage = CPUStage.starting
     var timer: Task<Void, Never>?
+    var typedWhileStarting = false
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -34,10 +57,7 @@ public final class Probe {
     private static let cpuWindow: Duration = .seconds(10)
     private static let evaluationDelay: Duration = .milliseconds(400)
     private static let focusSettle: Duration = .seconds(3)
-    private static let excludedApps: Set<String> = [
-        "com.mitchellh.ghostty", "com.apple.Terminal", "com.googlecode.iterm2", "com.microsoft.VSCode",
-        "com.apple.dt.Xcode", "dev.zed.Zed", "com.1password.1password", "com.bitwarden.desktop",
-    ]
+    private static let grantWait: Duration = .seconds(5 * 60)
 
     private let queue = AXQueue()
     private let clock = ContinuousClock()
@@ -64,7 +84,7 @@ public final class Probe {
         PlatformLog.probe.notice("accessibility trusted at launch: \(trusted)")
         await ProbeModelRun.run()
 
-        let giveUp = clock.now + duration
+        let giveUp = clock.now + Self.grantWait
         while !AXIsProcessTrusted(), clock.now < giveUp {
             try? await clock.sleep(for: .seconds(1))
         }
@@ -98,16 +118,17 @@ public final class Probe {
 
     func received(notification name: String, pid: pid_t) {
         guard running else { return }
-        if let session = current, session.pid == pid {
+        let ownSession = current.flatMap { $0.pid == pid ? $0 : nil }
+        if let session = ownSession {
             let recent = lastKeystroke.map { $0.duration(to: clock.now) <= FieldObservation.notificationWindow } ?? false
             session.observation.record(notification: name, afterKeystroke: recent)
         }
         switch name {
         case "AXFocusedUIElementChanged":
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { focusChanged(pid: pid) }
-        case "AXValueChanged":
+        case "AXValueChanged" where ownSession != nil:
             scheduleEvaluation()
-        case "AXWindowMoved":
+        case "AXWindowMoved" where ownSession != nil:
             scheduleRecheck(.windowMoved)
         default:
             break
@@ -149,14 +170,23 @@ public final class Probe {
         focusGeneration += 1
         let generation = focusGeneration
         let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
-        guard !Self.excludedApps.contains(bundleID) else {
+        guard !Settings.defaultOffApps.contains(bundleID) else {
             if let old = current { finish(old) }
             current = nil
             return
         }
         Task {
-            let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
+            var reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
             guard generation == focusGeneration, running else { return }
+            let mode = AppAccessibilityMode.forBundleID(bundleID)
+            if reading == nil, mode != .native, !enabledPIDs.contains(pid) {
+                PlatformLog.probe.notice("no focused element: \(bundleID, privacy: .public)")
+                enabledPIDs.insert(pid)
+                await queue.run { mode.enable(on: AXElement.application(pid: pid).element) }
+                await retarget(pid: pid)
+                reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
+                guard generation == focusGeneration, running else { return }
+            }
             guard let reading else {
                 if let old = current, old.pid != pid { finish(old); current = nil }
                 return
@@ -183,11 +213,7 @@ public final class Probe {
         if session.observation.line.isSecure { return }
         await retarget(pid: pid)
         guard session === current else { return }
-        if enabledPIDs.contains(pid) {
-            beginWindow(session) { .idleForced($0) }
-        } else {
-            beginWindow(session) { .idle($0) }
-        }
+        beginWindow(session, enabledPIDs.contains(pid) ? .idleForced : .idle)
     }
 
     private func finish(_ session: FieldSession) {
@@ -211,10 +237,12 @@ public final class Probe {
         guard let session = current, !session.observation.line.isSecure else { return }
         if isUndo { session.observation.recordUndo() }
         switch session.stage {
+        case .starting:
+            session.typedWhileStarting = true
         case .idle, .awaitingTyping:
-            beginWindow(session) { .typing($0) }
+            beginWindow(session, .typing)
         case .idleForced, .awaitingTypingForced:
-            beginWindow(session) { .typingForced($0) }
+            beginWindow(session, .typingForced)
         default:
             break
         }
@@ -241,10 +269,16 @@ public final class Probe {
         session.observation.absorb(reading)
         guard shouldWrite else { return }
 
-        let start = await queue.run { FieldProbe.write(pid: pid) }
-        guard session === current, let start else { return }
-        session.observation.recordWrite(start)
-        await evaluate(session)
+        let attempt = await queue.run { FieldProbe.write(pid: pid) }
+        guard session === current, let attempt else { return }
+        switch attempt {
+        case let .started(start):
+            session.observation.recordWrite(start)
+            await evaluate(session)
+        case let .aborted(reason):
+            session.observation.recordWriteAborted()
+            PlatformLog.probe.notice("write aborted: \(reason, privacy: .public)")
+        }
     }
 
     private func scheduleRecheck(_ kind: RecheckKind) {
@@ -267,17 +301,19 @@ public final class Probe {
         let pid = session.pid
         let result = await queue.run { FieldProbe.recheck(pid: pid, baseline: baseline, kind: kind) }
         guard session === current, case let .result(stable, updated) = result else { return }
-        session.observation.recordBoundsCheck(stable: stable, baseline: updated)
+        session.observation.recordBoundsCheck(kind, stable: stable, baseline: updated)
     }
 
-    private func beginWindow(_ session: FieldSession, _ stage: @escaping @Sendable (CPUSample) -> CPUStage) {
+    private func beginWindow(_ session: FieldSession, _ phase: WindowPhase) {
         session.timer?.cancel()
         session.stage = .starting
+        session.typedWhileStarting = false
         let pid = session.pid
         session.timer = Task {
             let start = await queue.run { CPUSample.take(tree: pid) }
             guard !Task.isCancelled, session === current else { return }
-            session.stage = stage(start)
+            session.stage = (session.typedWhileStarting ? phase.typed : phase).stage(start)
+            session.typedWhileStarting = false
             try? await clock.sleep(for: Self.cpuWindow)
             guard !Task.isCancelled, session === current else { return }
             await finishWindow(session)
@@ -300,7 +336,7 @@ public final class Probe {
             }
             await enableAccessibility(session)
             guard session === current else { return }
-            beginWindow(session) { .idleForced($0) }
+            beginWindow(session, .idleForced)
         case let .idleForced(start):
             session.observation.line.cpuIdleForced = end.percent(since: start)
             session.stage = .awaitingTypingForced
