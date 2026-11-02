@@ -304,13 +304,18 @@ struct CheckPipelineTests {
         let text = ["alpha", "beta", "gamma"].map(sentence).joined(separator: " ")
         let chunks = chunkTexts(text)
         #expect(chunks.count == 3)
-        let rig = Rig(makeSettings(), engine: .correcting(["teh": "the"], gated: true))
+        let rig = Rig(makeSettings(), engine: .correcting(["teh": "the"], gated: true), oracleGated: true)
+        var published = rig.pipeline.issues.makeAsyncIterator()
         await rig.focus(text)
         rig.pass()
+        await rig.oracle.waitForCalls(3)
+        await rig.oracle.open()
+        _ = await next(&published) { $0.issues.filter { $0.source == .spelling }.count == 3 }
 
         await rig.engine.waitForRequests(1)
         #expect(await rig.engine.texts == [chunks[0]])
         await rig.engine.release(0)
+        _ = await next(&published) { $0.issues.contains { $0.source == .model } }
         await rig.engine.waitForRequests(2)
         #expect(await rig.engine.texts == [chunks[0], chunks[1]])
         await rig.engine.release(1)
@@ -321,6 +326,19 @@ struct CheckPipelineTests {
 
         #expect(await rig.modelIssues().map(\.key.chunk) == [0, 1, 2])
         #expect(await rig.modelIssues().map(\.chunk.text) == chunks)
+    }
+
+    @Test func aResultInAnotherLanguageIsDiscardedWholeAndCountsAsChecked() async {
+        let rig = Rig(makeSettings(), engine: FakeEngine { request, _ in
+            .success(replacingWords(in: request.text, ["teh": "the"]) + " J'ai")
+        })
+        await rig.focus(flew)
+        await rig.check()
+        #expect(await rig.modelIssues().isEmpty)
+        #expect(await rig.visible().map(\.source) == [.spelling])
+
+        await rig.recheckAtCaret()
+        #expect(await rig.engine.texts == [flew])
     }
 
     @Test func aDistantParagraphKeepsItsIssuesAndIsNotCheckedAgainWhenUnchanged() async {
@@ -585,6 +603,52 @@ struct CheckPipelineTests {
         #expect(await rig.modelIssues().map(\.word) == ["teh"])
     }
 
+    @Test func anUpdateDuringAModelCheckCancelsItAndChecksTheFieldAgainAfterThePause() async {
+        let settings = makeSettings()
+        let rig = Rig(settings, engine: FakeEngine(gated: true) { request, index in
+            .success(replacingWords(in: request.text, index == 0 ? ["paris": "Paris"] : ["teh": "the"]))
+        })
+        await rig.focus(flew)
+        rig.pass()
+        await rig.engine.waitForRequests(1)
+
+        var updated = settings
+        updated.addNeverTouch("Pieter")
+        await rig.update(updated)
+        await rig.engine.release(0)
+        await rig.pipeline.drain()
+        #expect(await rig.engine.cancelled == [0])
+        #expect(await rig.modelIssues().isEmpty)
+        #expect(await rig.access.reads == 1)
+
+        rig.pass()
+        await rig.engine.waitForRequests(2)
+        await rig.engine.open()
+        await rig.pipeline.drain()
+        #expect(await rig.access.reads == 2)
+        #expect(await rig.engine.texts == [flew, flew])
+        #expect(await rig.modelIssues().map(\.word) == ["teh"])
+        #expect(await rig.confirmer.asked.isEmpty)
+    }
+
+    @Test func anUnavailableAnswerFromAnEarlierEpochLeavesTheModelOn() async {
+        let settings = makeSettings()
+        let rig = Rig(settings, engine: FakeEngine(gated: true) { request, index in
+            index == 0 ? .failure(.unavailable(.modelNotReady)) : .success(replacingWords(in: request.text, ["teh": "the"]))
+        })
+        await rig.focus(flew)
+        rig.pass()
+        await rig.engine.waitForRequests(1)
+
+        await rig.update(settings)
+        await rig.engine.open()
+        await rig.pipeline.drain()
+        await rig.check()
+
+        #expect(await rig.engine.texts == [flew, flew])
+        #expect(await rig.modelIssues().map(\.word) == ["teh"])
+    }
+
     @Test func aModelResultFromAnEarlierEpochIsDroppedAndRetried() async {
         let settings = makeSettings()
         let text = [sentence("alpha"), sentence("beta")].joined(separator: " ")
@@ -607,5 +671,30 @@ struct CheckPipelineTests {
         await rig.recheckAtCaret()
         #expect(await rig.engine.texts == [chunks[0], chunks[1], chunks[0]])
         #expect(await rig.modelIssues().map(\.key.chunk) == [0, 1])
+    }
+
+    // MARK: Lifetime and test support
+
+    @Test func theIssuesStreamFinishesWhenThePipelineGoesAway() async {
+        var published: AsyncStream<IssueSnapshot>.Iterator
+        do {
+            let rig = Rig(makeSettings())
+            published = rig.pipeline.issues.makeAsyncIterator()
+            await rig.pipeline.start()
+            await rig.focus(flew)
+        }
+        #expect(await next(&published) { _ in false } == nil)
+    }
+
+    @Test func theTestClockWakesDueSleepersInDeadlineOrder() async throws {
+        let clock = TestClock()
+        let late = Task { try await clock.sleep(until: clock.now.advanced(by: .milliseconds(200))) }
+        await clock.waitForSleepCalls(1)
+        let early = Task { try await clock.sleep(until: clock.now.advanced(by: .milliseconds(100))) }
+        await clock.waitForSleepCalls(2)
+        clock.advance(by: .milliseconds(300))
+        try await late.value
+        try await early.value
+        #expect(clock.wokenDeadlines.map(\.offset) == [.milliseconds(100), .milliseconds(200)])
     }
 }

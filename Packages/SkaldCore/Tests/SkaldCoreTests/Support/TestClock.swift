@@ -20,6 +20,7 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
 
     private struct Sleeper {
         let deadline: Instant
+        let arrival: Int
         let continuation: CheckedContinuation<Void, any Error>
     }
 
@@ -27,10 +28,13 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
     private var current = Instant(offset: .zero)
     private var sleepers: [UUID: Sleeper] = [:]
     private var sleepCalls = 0
+    private var woken: [Instant] = []
     private var callWaiters: [UUID: (count: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
 
     var now: Instant { lock.withLock { current } }
     var minimumResolution: Duration { .zero }
+    /// The deadlines of the sleepers `advance(by:)` has woken, in the order it woke them.
+    var wokenDeadlines: [Instant] { lock.withLock { woken } }
 
     func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
         let id = UUID()
@@ -41,7 +45,7 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
                     let waiters = takeCallWaiters()
                     if Task.isCancelled { return (.failure(CancellationError()), waiters) }
                     if deadline <= current { return (.success(()), waiters) }
-                    sleepers[id] = Sleeper(deadline: deadline, continuation: continuation)
+                    sleepers[id] = Sleeper(deadline: deadline, arrival: sleepCalls, continuation: continuation)
                     return (nil, waiters)
                 }
                 waiters.forEach { $0.resume() }
@@ -53,12 +57,15 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
         }
     }
 
+    /// Wakes every sleeper whose deadline has come, earliest deadline first, then in the order they slept.
     func advance(by duration: Duration) {
         let due = lock.withLock { () -> [Sleeper] in
             current = current.advanced(by: duration)
             let due = sleepers.filter { $0.value.deadline <= current }
             due.keys.forEach { sleepers[$0] = nil }
-            return Array(due.values)
+            let ordered = due.values.sorted { ($0.deadline, $0.arrival) < ($1.deadline, $1.arrival) }
+            woken += ordered.map(\.deadline)
+            return ordered
         }
         due.forEach { $0.continuation.resume() }
     }

@@ -36,7 +36,7 @@ public struct IssueTracker: Sendable {
     @discardableResult
     public mutating func revalidate(_ s: FieldSnapshot) -> [ParagraphKey] {
         suspended.remove(s.field)
-        let parents = Dictionary(ParagraphKeys.keyed(s).map { ($0.0, $0.1) }, uniquingKeysWith: { first, _ in first })
+        let parents = ParagraphKeys.parents(in: s)
         let window = s.offset...(s.offset + s.text.utf16.count)
 
         func isGone(_ old: TextRange) -> Bool {
@@ -50,20 +50,17 @@ public struct IssueTracker: Sendable {
                 kept.append(issue)
                 continue
             }
-            if let parent = parents[issue.key.withChunk(0)] {
-                let chunks = Paragraphs.chunks(parent)
-                if issue.key.chunk < chunks.count {
-                    kept.append(Issue(
-                        id: issue.id,
-                        key: issue.key,
-                        parent: parent,
-                        chunk: chunks[issue.key.chunk],
-                        edit: issue.edit,
-                        source: issue.source,
-                        language: issue.language
-                    ))
-                    continue
-                }
+            if let (parent, chunk) = ParagraphKeys.locate(issue.key, in: parents) {
+                kept.append(Issue(
+                    id: issue.id,
+                    key: issue.key,
+                    parent: parent,
+                    chunk: chunk,
+                    edit: issue.edit,
+                    source: issue.source,
+                    language: issue.language
+                ))
+                continue
             }
             if isGone(issue.parent.range) {
                 if !dropped.contains(issue.key) { dropped.append(issue.key) }
@@ -74,7 +71,7 @@ public struct IssueTracker: Sendable {
         issues = kept
 
         for key in modelResults.keys where key.field == s.field {
-            if let parent = parents[key.withChunk(0)], key.chunk < Paragraphs.chunks(parent).count { continue }
+            if ParagraphKeys.locate(key, in: parents) != nil { continue }
             switch key.position {
             case .occurrence: modelResults[key] = nil
             case .location(let location):

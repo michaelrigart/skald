@@ -119,6 +119,10 @@ public struct EditGuard: Sendable {
             && words.allSatisfy { isFunctionWord($0, language, facts) }
     }
 
+    public func touchesNeverTouch(_ edit: Edit, in paragraph: String) -> Bool {
+        touchesNeverTouch(edit, in: paragraph, Self.words(in: edit.replacement))
+    }
+
     private func touchesNeverTouch(_ edit: Edit, in paragraph: String, _ replacement: [String]) -> Bool {
         if !neverTouch.isDisjoint(with: replacement + [edit.replacement.lowercased()]) { return true }
         let text = paragraph as NSString

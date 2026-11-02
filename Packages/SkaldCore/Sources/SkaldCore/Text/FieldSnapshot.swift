@@ -68,6 +68,19 @@ public enum ParagraphKeys {
         }
     }
 
+    /// Every paragraph in the snapshot, by its chunk-0 key.
+    static func parents(in s: FieldSnapshot) -> [ParagraphKey: Paragraph] {
+        Dictionary(keyed(s), uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The parent paragraph and chunk that `key` names among `parents`, or nil when they no longer hold it.
+    static func locate(_ key: ParagraphKey, in parents: [ParagraphKey: Paragraph]) -> (parent: Paragraph, chunk: Paragraph)? {
+        guard let parent = parents[key.withChunk(0)] else { return nil }
+        let chunks = Paragraphs.chunks(parent)
+        guard key.chunk < chunks.count else { return nil }
+        return (parent, chunks[key.chunk])
+    }
+
     private static func keyedParagraphs(_ paragraphs: [Paragraph], in s: FieldSnapshot) -> [(ParagraphKey, Paragraph)] {
         let whole = s.holdsWholeField
         var seen: [String: Int] = [:]

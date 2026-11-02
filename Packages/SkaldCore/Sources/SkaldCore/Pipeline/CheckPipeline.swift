@@ -100,6 +100,11 @@ public actor CheckPipeline {
         timing = Timing.starting(now: clock)
     }
 
+    deinit {
+        events?.cancel()
+        publisher.finish()
+    }
+
     public func start() {
         guard events == nil else { return }
         let clock = self.clock
@@ -120,22 +125,26 @@ public actor CheckPipeline {
         send(p ? .paused : .resumed)
     }
 
-    /// Call after the `LiveRouter` holds the router for these settings.
-    public func update(settings new: Settings) async {
+    /// Call after the `LiveRouter` holds the router for these settings. The new epoch dooms every check in
+    /// flight, so running model checks are cancelled now and the field is checked again after the pause.
+    public func update(settings new: Settings) {
         let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
+        let discarded = !spellingJobs.isEmpty || !modelJobs.isEmpty
         settings = new
         editGuard = EditGuard(neverTouch: Set(new.neverTouch))
         appleUnavailable = nil
         epoch += 1
-        let touching = tracker.removeAll { touchesNeverTouch($0.edit, in: $0.chunk.text, language: $0.language, source: $0.source) }
-        if !touching.isEmpty { send(.forget(touching)) }
-        if switchesChanged { send(.recheck) }
-        publish()
-
-        let router = await self.router.current
-        for (generation, job) in modelJobs where router.typing(job.language) != .model {
+        for generation in Array(modelJobs.keys) {
             cancelModel(generation)
         }
+        let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
+        if !touching.isEmpty { send(.forget(touching)) }
+        if switchesChanged {
+            send(.recheck)
+        } else if discarded, let currentField {
+            send(.field(.caretMoved(currentField)))
+        }
+        publish()
     }
 
     public func accept(_ id: UUID) async -> ReplaceOutcome {
@@ -230,9 +239,9 @@ public actor CheckPipeline {
         lastToken += 1
         let token = lastToken
         let sleep = timing.sleep
-        let task = Task {
+        let task = Task { [weak self] in
             let fired = (try? await sleep(deadline)) != nil
-            self.timerEnded(token, fired: fired)
+            await self?.timerEnded(token, fired: fired)
         }
         timer = Timer(token: token, deadline: deadline, task: task)
     }
@@ -306,7 +315,7 @@ public actor CheckPipeline {
         do {
             output = try await apple.run(EngineRequest(action: .check, language: language, text: chunk.text))
         } catch {
-            if case .unavailable(let reason) = error { appleUnavailable = reason }
+            if case .unavailable(let reason) = error, epoch == self.epoch { appleUnavailable = reason }
             return .dropped
         }
         guard isCurrent(epoch, generation) else { return .dropped }
@@ -375,19 +384,10 @@ public actor CheckPipeline {
 
     /// Anchors kept edits to the key's paragraph in the latest snapshot, or returns nil when it is gone.
     private func anchored(_ edits: [Edit], key: ParagraphKey, source: IssueSource, language: Language) -> [Issue]? {
-        guard let latest, latest.field == key.field,
-              let parent = ParagraphKeys.keyed(latest).first(where: { $0.0 == key.withChunk(0) })?.1
-        else { return nil }
-        let chunks = Paragraphs.chunks(parent)
-        guard key.chunk < chunks.count else { return nil }
-        let chunk = chunks[key.chunk]
+        guard let latest, let (parent, chunk) = ParagraphKeys.locate(key, in: ParagraphKeys.parents(in: latest)) else { return nil }
         return edits
-            .filter { !touchesNeverTouch($0, in: chunk.text, language: language, source: source) }
+            .filter { !editGuard.touchesNeverTouch($0, in: chunk.text) }
             .map { Issue(key: key, parent: parent, chunk: chunk, edit: $0, source: source, language: language) }
-    }
-
-    private func touchesNeverTouch(_ edit: Edit, in paragraph: String, language: Language, source: IssueSource) -> Bool {
-        editGuard.verdict(for: edit, in: paragraph, language: language, source: source, facts: WordFacts()) == .drop(.neverTouch)
     }
 
     private func publish() {
