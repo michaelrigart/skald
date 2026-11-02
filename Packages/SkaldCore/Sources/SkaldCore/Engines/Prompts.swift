@@ -23,7 +23,7 @@ public enum Prompts {
             return rewrite("so it is friendlier and warmer", name)
         case .confirm:
             return """
-                You check one proposed change in a \(name) text. \
+                You check one proposed change in \(article(language)) \(name) text. \
                 Answer yes if the original words are an error and the change corrects it. \
                 Answer no if the original words were already correct and the change only rewords, translates or changes tense or style. \
                 Reply with yes or no only.
@@ -42,6 +42,10 @@ public enum Prompts {
         Keep its meaning, its facts, its names and its language. \
         Reply with the rewritten text only. The text is written in \(name). Reply in \(name).
         """
+    }
+
+    private static func article(_ language: Language) -> String {
+        language == .en ? "an" : "a"
     }
 
     private static func languageName(_ language: Language) -> String {

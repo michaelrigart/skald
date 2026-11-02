@@ -77,6 +77,19 @@ private func router(
     #expect(router(configure: { $0.panelDefaultEngine = .claude }, key: true).panel(requested: nil) == .use(.claude))
 }
 
+@Test func panelNeverPicksClaudeUnaskedEvenWithAKeyAndStudioConfigured() {
+    let router = router(configure: { $0.panelDefaultEngine = .thisMac; $0.studio = studio }, key: true)
+    #expect(router.panel(requested: nil) == .use(.thisMac))
+}
+
+@Test func alternativesListEveryOtherUsableEngineInOrder() {
+    let full = router(configure: { $0.studio = studio }, key: true)
+    #expect(full.alternatives(to: .macStudio) == [.thisMac, .claude])
+    #expect(full.alternatives(to: .thisMac) == [.macStudio, .claude])
+    #expect(full.alternatives(to: .claude) == [.thisMac, .macStudio])
+    #expect(router(configure: { $0.studio = studio }, apple: .appleIntelligenceOff).alternatives(to: .claude) == [.macStudio])
+}
+
 @Test func panelPrefersTheRequestedEngineOverTheDefault() {
     let router = router(configure: { $0.panelDefaultEngine = .claude; $0.studio = studio }, key: true)
     #expect(router.panel(requested: .thisMac) == .use(.thisMac))

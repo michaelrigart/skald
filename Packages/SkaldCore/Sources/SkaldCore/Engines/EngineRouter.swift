@@ -31,7 +31,11 @@ public struct EngineRouter: Sendable {
     public func panel(requested: EngineKind?) -> PanelRoute {
         let engine = requested ?? settings.panelDefaultEngine
         guard let reason = unavailableReason(engine) else { return .use(engine) }
-        return .unavailable(engine, reason, alternatives: EngineKind.allCases.filter { $0 != engine && unavailableReason($0) == nil })
+        return .unavailable(engine, reason, alternatives: alternatives(to: engine))
+    }
+
+    public func alternatives(to engine: EngineKind) -> [EngineKind] {
+        EngineKind.allCases.filter { $0 != engine && unavailableReason($0) == nil }
     }
 
     public var pickerEngines: [EngineKind] {

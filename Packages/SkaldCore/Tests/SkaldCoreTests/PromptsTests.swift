@@ -68,3 +68,13 @@ import Testing
         #expect(Prompts.prompt(request) == "Bonjour\nle monde")
     }
 }
+
+@Test func confirmInstructionsUseTheRightArticleForEachLanguage() {
+    #expect(Prompts.instructions(.confirm, .en) == """
+        You check one proposed change in an English text. \
+        Answer yes if the original words are an error and the change corrects it. \
+        Answer no if the original words were already correct and the change only rewords, translates or changes tense or style. \
+        Reply with yes or no only.
+        """)
+    #expect(Prompts.instructions(.confirm, .fr).hasPrefix("You check one proposed change in a French text. "))
+}

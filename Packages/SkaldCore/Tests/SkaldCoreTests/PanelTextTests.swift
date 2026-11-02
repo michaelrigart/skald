@@ -49,11 +49,11 @@ private func split(_ text: String) -> [[String]] {
     let samples = [
         "", "\n", "\n\nHi", "Hi\n\n", "Hi.  \n\nHallo.  ", "  \n  \n", "a\r\nb\nc\r\n\r\nd",
         "a\u{2029}\u{2029}b\u{2028}c", "a\r\rb", "a\n\r\nb", "\u{2029}x\u{2029}", "tab\t\n\tindented\n \n x",
-        "emoji 👍🏽\n\nnaïve café\r\n", "no breaks at all", " \u{00A0}\n\u{00A0}",
+        "emoji 👍🏽\n\nnaïve café\r\n", "no breaks at all", " \u{00A0}\n\u{00A0}", "cafe\u{301}\n\nx",
     ]
     for sample in samples {
         let parts = PanelText.paragraphs(sample)
-        #expect(PanelText.reassemble(parts) == sample)
+        #expect(Array(PanelText.reassemble(parts).utf8) == Array(sample.utf8))
         #expect(parts.allSatisfy { $0.text.unicodeScalars.allSatisfy { !"\n\r\u{2028}\u{2029}".unicodeScalars.contains($0) } })
     }
 }
