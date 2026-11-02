@@ -649,7 +649,7 @@ struct CheckPipelineTests {
         #expect(await rig.modelIssues().map(\.word) == ["teh"])
     }
 
-    @Test func aModelResultFromAnEarlierEpochIsDroppedAndRetried() async {
+    @Test func anUpdateDropsTheRunningChunkWithoutStartingTheNextOneEarly() async {
         let settings = makeSettings()
         let text = [sentence("alpha"), sentence("beta")].joined(separator: " ")
         let chunks = chunkTexts(text)
@@ -661,16 +661,35 @@ struct CheckPipelineTests {
         var updated = settings
         updated.addNeverTouch("Pieter")
         await rig.update(updated)
-        await rig.engine.release(0)
-        await rig.engine.waitForRequests(2)
         await rig.engine.open()
         await rig.pipeline.drain()
-        #expect(await rig.engine.texts == [chunks[0], chunks[1]])
-        #expect(await rig.modelIssues().map(\.key.chunk) == [1])
+        #expect(await rig.engine.texts == [chunks[0]])
+        #expect(await rig.modelIssues().isEmpty)
 
-        await rig.recheckAtCaret()
-        #expect(await rig.engine.texts == [chunks[0], chunks[1], chunks[0]])
+        await rig.check()
+        #expect(await rig.engine.texts == [chunks[0], chunks[0], chunks[1]])
         #expect(await rig.modelIssues().map(\.key.chunk) == [0, 1])
+    }
+
+    @Test func spellingDiscardedByAnUpdateRunsAgainAfterThePause() async {
+        let settings = makeSettings(model: false)
+        let rig = Rig(settings, oracleGated: true)
+        await rig.focus(flew)
+        rig.pass()
+        await rig.oracle.waitForCalls(1)
+
+        var updated = settings
+        updated.addNeverTouch("Pieter")
+        await rig.update(updated)
+        rig.pass()
+        await rig.oracle.waitForCalls(2)
+        await rig.oracle.open()
+        await rig.pipeline.drain()
+
+        #expect(await rig.access.reads == 2)
+        #expect(await rig.spelling.calls.count == 2)
+        #expect(await rig.visible().map(\.word) == ["teh"])
+        #expect(await rig.visible().map(\.source) == [.spelling])
     }
 
     // MARK: Lifetime and test support

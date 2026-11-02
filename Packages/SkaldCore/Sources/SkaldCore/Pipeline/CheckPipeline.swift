@@ -32,11 +32,6 @@ public actor CheckPipeline {
         let task: Task<Void, Never>
     }
 
-    private struct ModelJob {
-        let language: Language
-        let task: Task<Void, Never>
-    }
-
     private enum ModelOutcome {
         /// The engine answered and the answer was judged: the paragraph counts as checked.
         case checked
@@ -66,8 +61,9 @@ public actor CheckPipeline {
     private var lastToken = 0
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private var spellingJobs: [ParagraphKey: UUID] = [:]
-    /// A generation is current while it is here; whoever removes it reports it to the scheduler.
-    private var modelJobs: [Int: ModelJob] = [:]
+    /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
+    /// cancels is removed without a report, since the scheduler has already let it go.
+    private var modelJobs: [Int: Task<Void, Never>] = [:]
     private var epoch = 0
     private var isPaused = false
     private var currentField: FieldID?
@@ -126,7 +122,8 @@ public actor CheckPipeline {
     }
 
     /// Call after the `LiveRouter` holds the router for these settings. The new epoch dooms every check in
-    /// flight, so running model checks are cancelled now and the field is checked again after the pause.
+    /// flight. When some were running, the field is focused again in the scheduler: that cancels the running
+    /// model check without starting the next chunk, lets spelling run again and checks after the pause.
     public func update(settings new: Settings) {
         let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
         let discarded = !spellingJobs.isEmpty || !modelJobs.isEmpty
@@ -134,16 +131,13 @@ public actor CheckPipeline {
         editGuard = EditGuard(neverTouch: Set(new.neverTouch))
         appleUnavailable = nil
         epoch += 1
-        for generation in Array(modelJobs.keys) {
-            cancelModel(generation)
-        }
-        let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
-        if !touching.isEmpty { send(.forget(touching)) }
         if switchesChanged {
             send(.recheck)
         } else if discarded, let currentField {
-            send(.field(.caretMoved(currentField)))
+            send(.field(.focused(currentField)))
         }
+        let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
+        if !touching.isEmpty { send(.forget(touching)) }
         publish()
     }
 
@@ -230,7 +224,7 @@ public actor CheckPipeline {
         case .checkModel(let key, let chunk, let parent, let generation):
             startModel(key, chunk: chunk, parent: parent, generation: generation)
         case .cancelModel(let generation):
-            modelJobs.removeValue(forKey: generation)?.task.cancel()
+            modelJobs.removeValue(forKey: generation)?.cancel()
         }
     }
 
@@ -306,7 +300,7 @@ public actor CheckPipeline {
             let outcome = await pipeline.checkModel(key, chunk: chunk, language: language, generation: generation, epoch: epoch)
             pipeline.finishModel(generation, outcome)
         }
-        modelJobs[generation] = ModelJob(language: language, task: task)
+        modelJobs[generation] = task
     }
 
     private func checkModel(_ key: ParagraphKey, chunk: Paragraph, language: Language, generation: Int, epoch: Int) async -> ModelOutcome {
@@ -351,12 +345,6 @@ public actor CheckPipeline {
         case .checked: send(.modelFinished(generation: generation))
         case .dropped: send(.modelFailed(generation: generation))
         }
-    }
-
-    private func cancelModel(_ generation: Int) {
-        guard let job = modelJobs.removeValue(forKey: generation) else { return }
-        job.task.cancel()
-        send(.modelFailed(generation: generation))
     }
 
     private func isCurrent(_ epoch: Int, _ generation: Int) -> Bool {
