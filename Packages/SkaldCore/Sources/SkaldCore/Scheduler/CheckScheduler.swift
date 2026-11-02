@@ -123,6 +123,7 @@ public struct CheckScheduler: Sendable {
         guard !isPaused else { return [] }
         var effects: [SchedulerEffect] = [.disarmTimer]
         effects += cancelRunning()
+        spellChecked.removeAll()
         if field != nil { effects.append(.armTimer(deadline: now + pause)) }
         return effects
     }

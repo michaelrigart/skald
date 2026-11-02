@@ -308,3 +308,53 @@ private func focusedScheduler() -> CheckScheduler {
         .cancelModel(generation: 4),
     ])
 }
+
+@Test func aCancelledGenerationNeverTouchesTheCheckThatReplacedIt() {
+    var scheduler = focusedScheduler()
+    let text = "They is ready\n" + longText
+    let parent = Paragraph(range: TextRange(location: 14, length: longText.utf16.count), text: longText)
+    let chunks = Paragraphs.chunks(parent)
+    func chunkModel(_ index: Int, _ generation: Int) -> SchedulerEffect {
+        .checkModel(chunkKey(index), chunk: chunks[index], parent: parent, generation: generation)
+    }
+    _ = scheduler.handle(.snapshot(snapshot(text, caret: 4)), at: ms(700))
+    let moved = snapshot(text, caret: 20)
+    let effects = scheduler.handle(.snapshot(moved), at: ms(1500))
+    #expect(effects.first == .revalidate(moved))
+    #expect(effects.suffix(2) == [.cancelModel(generation: 1), chunkModel(0, 2)])
+    #expect(scheduler.handle(.modelFailed(generation: 1), at: ms(1600)).isEmpty)
+    #expect(scheduler.handle(.modelFinished(generation: 1), at: ms(1600)).isEmpty)
+    #expect(scheduler.handle(.modelFinished(generation: 2), at: ms(1700)) == [chunkModel(1, 3)])
+}
+
+@Test func theCaretIsReadInFieldCoordinatesInAWindowedSnapshot() {
+    var scheduler = focusedScheduler()
+    let s = FieldSnapshot(
+        field: field,
+        text: "alpha beta\ngamma",
+        offset: 15_000,
+        selection: TextRange(location: 15_013, length: 0),
+        totalLength: 30_000
+    )
+    let paragraph = Paragraph(range: TextRange(location: 15_011, length: 5), text: "gamma")
+    let windowed = ParagraphKey(field: field, text: "gamma", position: .location(15_011), chunk: 0)
+    #expect(scheduler.handle(.snapshot(s), at: ms(700)) == [
+        .revalidate(s),
+        .checkSpelling(windowed, chunk: paragraph, parent: paragraph),
+        .checkModel(windowed, chunk: paragraph, parent: paragraph, generation: 1),
+    ])
+}
+
+@Test func focusingAFieldRespellsButDoesNotRemodelAnUnchangedParagraph() {
+    var scheduler = focusedScheduler()
+    let s = snapshot("They is ready", caret: 4)
+    let paragraph = whole("They is ready")
+    _ = scheduler.handle(.snapshot(s), at: ms(700))
+    _ = scheduler.handle(.modelFinished(generation: 1), at: ms(800))
+    _ = scheduler.handle(.field(.focused(other)), at: ms(900))
+    _ = scheduler.handle(.field(.focused(field)), at: ms(1000))
+    #expect(scheduler.handle(.snapshot(s), at: ms(1700)) == [
+        .revalidate(s),
+        .checkSpelling(key("They is ready"), chunk: paragraph, parent: paragraph),
+    ])
+}
