@@ -15,6 +15,14 @@ private func score(_ run: String) throws -> EvalScore {
     #expect(abs(s.p90Ms - 554) <= 1)
 }
 
+@Test func appleV3RatiosFollowTheSpikeFormulas() throws {
+    let s = try score("out-apple-v3")
+    let p = 34.0 / 40.0, r = 34.0 / 35.0
+    #expect(abs(s.precision - p) < 1e-9)
+    #expect(abs(s.recall - r) < 1e-9)
+    #expect(abs(s.f05 - 1.25 * p * r / (0.25 * p + r)) < 1e-9)
+}
+
 @Test func appleMatchesTheSpike() throws {
     let s = try score("out-apple")
     #expect((s.tp, s.fp, s.fn) == (33, 8, 2))

@@ -73,3 +73,16 @@ private func applyAll(_ edits: [Edit], to text: String) -> String {
     }
     #expect(checked == outputs.count)
 }
+
+@Test func insertionAtTheEndSitsAtThePreviousTokensEnd() {
+    let edits = TextDiff.edits(from: "a b", to: "a b c")
+    #expect(edits.count == 1)
+    #expect(edits[0].tokenSpan == 2..<2)
+    #expect(edits[0].range == TextRange(location: 3, length: 0))
+}
+
+@Test func insertionIntoEmptyTextSitsAtZero() {
+    let edits = TextDiff.edits(from: "", to: "a")
+    #expect(edits.count == 1)
+    #expect(edits[0].range == TextRange(location: 0, length: 0))
+}
