@@ -280,7 +280,9 @@ public struct EditGuard: Sendable {
         _ auxiliary: AuxiliaryContext
     ) -> GuardVerdict {
         if from == to { return .keep }
-        if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) { return .undecided }
+        if [from, to].contains(where: { FunctionWords.isPreposition($0, language) }) {
+            return fold(from) == fold(to) || isFinalLetterDoubled(from, to) ? .keep : .undecided
+        }
         let sameLemma = facts.lemmas[from] != nil && facts.lemmas[from] == facts.lemmas[to]
         if language == .en && sameLemma && isPastTense(from, facts) != isPastTense(to, facts) { return tenseVerdict(auxiliary) }
         if distance(from, to) <= 2 { return .keep }
@@ -295,6 +297,14 @@ public struct EditGuard: Sendable {
         case .ambiguous: .undecided
         case .none: .drop(.tenseChange)
         }
+    }
+
+    private static func isFinalLetterDoubled(_ a: String, _ b: String) -> Bool {
+        func doubled(_ short: String, _ long: String) -> Bool {
+            guard let last = short.last else { return false }
+            return long == short + String(last)
+        }
+        return doubled(a.lowercased(), b.lowercased()) || doubled(b.lowercased(), a.lowercased())
     }
 
     private static func isPastTense(_ word: String, _ facts: WordFacts) -> Bool {

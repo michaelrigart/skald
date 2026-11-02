@@ -103,6 +103,8 @@ private let outcomeTable: [Row] = [
         "Ik laat je iets weten voor vrijdag.", .undecided),
     Row("A preposition replaced by a verb", .en, "I could of fixed it.", "I could have fixed it.", .undecided),
     Row("A preposition replaced by a preposition", .en, "I am afraid from dogs.", "I am afraid of dogs.", .undecided),
+    Row("A preposition that differs by an accent", .fr, "Il va a Paris", "Il va à Paris", .keep),
+    Row("A preposition with its final letter doubled", .en, "it looks of", "it looks off", .keep),
     Row("A near-homophone preposition", .en, "It is in the repo.", "It is on the repo.", .undecided),
     Row("A near-homophone Dutch preposition", .nl, "Het werkt voor vrijdag.", "Het werkt door vrijdag.", .undecided),
     Row("A French preposition swap", .fr, "Je travaille dans France.", "Je travaille en France.", .undecided),
@@ -366,14 +368,12 @@ private func resolveDropsAnUndecidedEditTheConfirmerDoesNotApprove(_ answer: Boo
     #expect(await confirmer.asked == ["voorvallen"])
 }
 
-private let prepositionFixes: Set<String> = ["en8: to → too", "fr2: a → à"]
-
 @Test func theGuardKeepsTheTrueFixesAndDropsTheFalseAlarmsOfTheSpikeRun() async throws {
     let outputs: [EvalOutput] = try EvalScorer.loadJSONL(Fixtures.url("out-apple-v3"))
     let oracle = try FakeWordOracle.measured()
     let guardrail = EditGuard(neverTouch: [])
     var trueFixes = 0, falseAlarms = 0
-    var droppedTrue: [String] = [], undecidedTrue: Set<String> = [], keptFalse: [String] = []
+    var droppedTrue: [String] = [], keptFalse: [String] = []
     for row in outputs {
         guard let c = spike[row.id], let revised = row.output?.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
         let reference = EvalScorer.keys(c.text, c.ref)
@@ -383,11 +383,7 @@ private let prepositionFixes: Set<String> = ["en8: to → too", "fr2: a → à"]
             let label = "\(c.id): \(edit.original) → \(edit.replacement)"
             if reference.contains(EvalScorer.key(of: edit)) {
                 trueFixes += 1
-                if !kept.contains(edit) {
-                    let facts = await oracle.facts(for: EditGuard.words(in: [edit]), language: c.lang)
-                    let verdict = guardrail.verdict(for: edit, in: c.text, language: c.lang, source: .model, facts: facts)
-                    if verdict == .undecided { undecidedTrue.insert(label) } else { droppedTrue.append(label) }
-                }
+                if !kept.contains(edit) { droppedTrue.append(label) }
             } else {
                 falseAlarms += 1
                 if kept.contains(edit) { keptFalse.append(label) }
@@ -395,7 +391,6 @@ private let prepositionFixes: Set<String> = ["en8: to → too", "fr2: a → à"]
         }
     }
     #expect(droppedTrue.isEmpty, "dropped true fixes: \(droppedTrue)")
-    #expect(undecidedTrue == prepositionFixes, "undecided true fixes: \(undecidedTrue)")
     #expect(keptFalse.isEmpty, "kept false alarms: \(keptFalse)")
     #expect((trueFixes, falseAlarms) == (34, 6))
     #expect(await oracle.unknownWords.isEmpty)

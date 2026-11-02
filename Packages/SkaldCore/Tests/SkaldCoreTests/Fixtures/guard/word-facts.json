@@ -125,6 +125,12 @@
    "lemma": "of",
    "misspelled": false
   },
+  "off": {
+   "english": true,
+   "function": true,
+   "lemma": "off",
+   "misspelled": false
+  },
   "on": {
    "english": true,
    "function": true,
