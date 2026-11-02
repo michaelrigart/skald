@@ -1,8 +1,10 @@
 import AppKit
+import SkaldPlatform27
 
 @main
 final class SkaldApp: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private var probe: Probe?
 
     static func main() {
         let app = NSApplication.shared
@@ -19,5 +21,21 @@ final class SkaldApp: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit Skald", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+        if CommandLine.arguments.contains("--probe") {
+            startProbe()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        probe?.stop()
+    }
+
+    private func startProbe() {
+        let probe = Probe()
+        self.probe = probe
+        Task {
+            await probe.run(for: .seconds(15 * 60))
+            NSApp.terminate(nil)
+        }
     }
 }

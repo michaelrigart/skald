@@ -11,7 +11,11 @@ let package = Package(
         .package(path: "../SkaldCore"),
     ],
     targets: [
-        .target(name: "SkaldPlatform27", dependencies: [.product(name: "SkaldCore", package: "SkaldCore")]),
+        .target(
+            name: "SkaldPlatform27",
+            dependencies: [.product(name: "SkaldCore", package: "SkaldCore")],
+            resources: [.copy("Probe/seed.jsonl")]
+        ),
         .executableTarget(name: "skald-eval", dependencies: [
             "SkaldPlatform27",
             .product(name: "SkaldCore", package: "SkaldCore"),
