@@ -64,16 +64,17 @@ outcome table. The shipped rules:
 - A different content word with an unknown lemma is a replacement, also when it replaces a
   preposition. This makes "voorvallen" → "voorkomen" a drop, as in the spec's table.
 - A model edit kept only because it swaps function words is dropped when it sits next to an edit
-  dropped as a rewrite (at most one unchanged token apart). Misspelling, accent, agreement and
+  dropped as a rewrite (at most one unchanged token apart). Content-word misspelling fixes and
   capital fixes are never dropped this way.
 - A spelling guess that splits a word at a space into content words ("runbook" → "run book") is
   dropped. A restored apostrophe ("cant" → "can't") is not a split, and the model's splits are
   judged as fixes.
 - A word of two or more letters without a vowel is an abbreviation and never touched, unless the
-  fix keeps its letters as typed and adds at most two ("vpn" → "van", "vpn" → "VPN" and "pls" →
-  "please" are dropped; "th" → "the" is a fix). The two-letter bound came after the second grading;
-  none of the 231 edits the guard judged on the tuning part and the held-out part has a vowel-less
-  word that a fix keeps while adding three or more letters, so no grading changes.
+  fix keeps its letters as typed and adds at most two letters, and fewer than the word has
+  ("vpn" → "van", "vpn" → "VPN", "pls" → "please" and "ds" → "dans" are dropped; "th" → "the" and
+  "frm" → "from" are fixes). These bounds came after the second grading. None of the 231 edits the
+  guard judged on the tuning part and the held-out part has a vowel-less word whose fix keeps its
+  letters and either adds three or more or adds as many as the word has, so no grading changes.
 
 No result was discarded for changing too much, so `maxChangeShare` stays at 0.4.
 

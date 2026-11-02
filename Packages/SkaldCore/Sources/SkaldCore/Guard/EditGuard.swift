@@ -189,7 +189,8 @@ public struct EditGuard: Sendable {
     private static func isAbbreviation(_ word: String, in edit: Edit) -> Bool {
         let letters = word.filter(\.isLetter)
         guard letters.count >= 2, !fold(letters).contains(where: "aeiouy".contains) else { return false }
-        guard edit.replacement.filter(\.isLetter).count - edit.original.filter(\.isLetter).count <= 2 else { return true }
+        let added = edit.replacement.filter(\.isLetter).count - edit.original.filter(\.isLetter).count
+        guard added <= 2, added < letters.count else { return true }
         var rest = Substring(edit.replacement)
         for letter in letters {
             guard let found = rest.firstIndex(of: letter) else { return true }

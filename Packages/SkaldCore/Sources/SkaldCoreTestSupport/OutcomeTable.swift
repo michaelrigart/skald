@@ -154,6 +154,11 @@ public let outcomeTable: [Row] = [
     Row("A chat abbreviation the fix spells out", .en, "pls check the logs", "please check the logs", .drop(.nameNumberURLOrCode)),
     Row("A chat abbreviation with a letter the fix lacks", .en, "thx for checking", "thanks for checking", .drop(.nameNumberURLOrCode)),
     Row("A vowel-less typo two letters short", .en, "Send the fnl version.", "Send the final version.", .keep, source: .spelling),
+    Row("A vowel-less typo one letter short", .en, "Copy it frm the wiki.", "Copy it from the wiki.", .keep, source: .spelling),
+    Row("A two-letter chat abbreviation: tt", .fr, "je regarde tt ça demain", "je regarde tout ça demain", .drop(.nameNumberURLOrCode)),
+    Row("A two-letter chat abbreviation: ds", .fr, "c'est ds le wiki", "c'est dans le wiki", .drop(.nameNumberURLOrCode)),
+    Row("A two-letter chat abbreviation: dc", .fr, "ok dc on attend lundi", "ok donc on attend lundi", .drop(.nameNumberURLOrCode)),
+    Row("A two-letter chat abbreviation: pr", .fr, "merci pr le retour", "merci pour le retour", .drop(.nameNumberURLOrCode)),
 ]
 
 /// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".

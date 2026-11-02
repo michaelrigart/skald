@@ -97,6 +97,10 @@
    "lemma": "friday",
    "misspelled": true
   },
+  "frm": {
+   "english": false,
+   "misspelled": true
+  },
   "from": {
    "english": true,
    "function": true,
@@ -460,10 +464,24 @@
    "lemma": "dans",
    "misspelled": false
   },
+  "dc": {
+   "english": true,
+   "misspelled": true
+  },
   "deja": {
    "english": true,
    "function": true,
    "misspelled": true
+  },
+  "donc": {
+   "english": false,
+   "function": true,
+   "lemma": "donc",
+   "misspelled": false
+  },
+  "ds": {
+   "english": false,
+   "misspelled": false
   },
   "déjà": {
    "english": true,
@@ -597,6 +615,16 @@
    "lemma": "plus",
    "misspelled": false
   },
+  "pour": {
+   "english": true,
+   "function": true,
+   "lemma": "pour",
+   "misspelled": false
+  },
+  "pr": {
+   "english": true,
+   "misspelled": false
+  },
   "prends": {
    "english": false,
    "lemma": "prendre",
@@ -680,6 +708,16 @@
    "english": false,
    "function": true,
    "lemma": "tu",
+   "misspelled": false
+  },
+  "tout": {
+   "english": true,
+   "lemma": "tout",
+   "misspelled": false
+  },
+  "tt": {
+   "english": false,
+   "lemma": "tout",
    "misspelled": false
   },
   "version": {
