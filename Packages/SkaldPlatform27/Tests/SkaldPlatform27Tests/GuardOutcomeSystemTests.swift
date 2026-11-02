@@ -1,4 +1,3 @@
-import SkaldCore
 import SkaldCoreTestSupport
 import Testing
 @testable import SkaldPlatform27

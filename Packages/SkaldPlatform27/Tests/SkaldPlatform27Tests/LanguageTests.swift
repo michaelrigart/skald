@@ -4,11 +4,9 @@ import SkaldCoreTestSupport
 import Testing
 @testable import SkaldPlatform27
 
-private let french = "Je viens de relire la documentation et je pense que tout est correct pour la mise en production demain."
-
 struct SystemLanguageDetectorTests {
     @Test("The spike's English, Dutch and French sentences are recognised", .tags(.requiresSystem),
-          arguments: [(spike["en1"]!.text, Language.en), (spike["nl1"]!.text, .nl), (french, .fr)])
+          arguments: [(spike["en1"]!.text, Language.en), (spike["nl1"]!.text, .nl), (spike["fr1"]!.text, .fr)])
     func recognisesTheThreeLanguages(_ sample: (String, Language)) {
         #expect(SystemLanguageDetector().detect(sample.0, previous: nil) == sample.1)
     }
@@ -26,11 +24,12 @@ struct SystemLanguageDetectorTests {
         #expect(detector.detect("1234567890 1234567890 1234567890", previous: .fr) == .fr)
     }
 
-    @Test("A language outside English, Dutch and French is never returned", .tags(.requiresSystem))
-    func otherLanguagesAreIgnored() {
-        let german = "Ich habe die Dokumentation gelesen und denke, dass alles für den Einsatz morgen bereit ist."
-        let detected = SystemLanguageDetector().detect(german, previous: .en)
-        #expect(detected == .en || detected == .nl)
+    @Test("A best hypothesis under 0.6 returns the previous language", .tags(.requiresSystem))
+    func unconfidentTextInherits() {
+        // Measured on macOS 27.2: nl 0.545, en 0.402, fr 0.053 for this 22-unit mixed-language text.
+        let detector = SystemLanguageDetector()
+        #expect(detector.detect("bonjour hello hallo hi", previous: .fr) == .fr)
+        #expect(detector.detect("bonjour hello hallo hi", previous: nil) == nil)
     }
 }
 
@@ -82,6 +81,10 @@ struct SystemWordOracleTests {
         let en = await oracle.facts(for: ["the", "and", "all", "some", "afterwards", "tegen"], language: .en)
         #expect(en.functionWords.isSuperset(of: ["the", "and"]))
         #expect(en.functionWords.isDisjoint(with: ["all", "some", "afterwards", "tegen"]))
+        let tagged = await oracle.facts(for: ["whoever", "up", "despite", "among"], language: .en)
+        #expect(tagged.functionWords == ["whoever", "up"])
+        let fr = await oracle.facts(for: ["quelqu'un", "malgré"], language: .fr)
+        #expect(fr.functionWords == ["quelqu'un"])
         let nl = await oracle.facts(for: ["de", "wel", "niet"], language: .nl)
         #expect(nl.functionWords == ["de"])
     }

@@ -67,6 +67,12 @@ struct SpellingCheckerTests {
         #expect(skipped == ["recieve"])
     }
 
+    @Test("A never-touch word does not protect a longer word that contains it", .tags(.requiresSystem))
+    func neverTouchContainment() async {
+        let flags = await flagged("Please check the runbok.", .en, neverTouch: ["run"]).map(\.original)
+        #expect(flags == ["runbok"])
+    }
+
     @Test("Flags carry offsets within the paragraph, not the field", .tags(.requiresSystem))
     func paragraphRelativeOffsets() async throws {
         let text = "Please recieve it."

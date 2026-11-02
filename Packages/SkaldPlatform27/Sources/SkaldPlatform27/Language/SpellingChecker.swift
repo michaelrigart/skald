@@ -2,8 +2,19 @@ import AppKit
 import SkaldCore
 
 public final class SpellingChecker: SpellingChecking {
+    private final class DocumentTag: @unchecked Sendable { // reason: only read and written on SpellQueue
+        var value: Int?
+
+        func allocate() -> Int {
+            if let value { return value }
+            let tag = NSSpellChecker.uniqueSpellDocumentTag()
+            value = tag
+            return tag
+        }
+    }
+
     private let queue: SpellQueue
-    private let documentTag: Int
+    private let documentTag = DocumentTag()
 
     public convenience init() {
         self.init(queue: .shared)
@@ -11,18 +22,19 @@ public final class SpellingChecker: SpellingChecking {
 
     init(queue: SpellQueue) {
         self.queue = queue
-        self.documentTag = NSSpellChecker.uniqueSpellDocumentTag()
     }
 
     deinit {
-        let tag = documentTag
-        queue.enqueue { NSSpellChecker.shared.closeSpellDocument(withTag: tag) }
+        let documentTag = documentTag
+        queue.enqueue {
+            if let tag = documentTag.value { NSSpellChecker.shared.closeSpellDocument(withTag: tag) }
+        }
     }
 
     public func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [Edit] {
-        let tag = documentTag
+        let documentTag = documentTag
         let text = p.text
-        return await queue.run { Self.flags(in: text, language: language, neverTouch: neverTouch, tag: tag) }
+        return await queue.run { Self.flags(in: text, language: language, neverTouch: neverTouch, tag: documentTag.allocate()) }
     }
 
     private static func flags(in text: String, language: Language, neverTouch: Set<String>, tag: Int) -> [Edit] {
