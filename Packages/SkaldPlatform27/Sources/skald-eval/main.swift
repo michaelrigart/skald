@@ -11,6 +11,14 @@ func decimal(_ value: Double) -> String {
     String(format: "%.2f", value)
 }
 
+func label(_ verdict: EvalVerdict) -> String {
+    switch verdict {
+    case .pass: "PASS"
+    case .fail(let misses): "FAIL (\(misses.map(\.rawValue).joined(separator: ", ")))"
+    case .noVerdict(let errors): "NO VERDICT (\(errors) request \(errors == 1 ? "error" : "errors"))"
+    }
+}
+
 let options: EvalOptions
 do throws(EvalUsageError) {
     options = try EvalOptions.parse(Array(CommandLine.arguments.dropFirst()))
@@ -59,15 +67,14 @@ for output in run.outputs {
 
 var passed = true
 for (language, s) in EvalScorer.byLanguage(cases, run.outputs).sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-    let misses = EvalBar.misses(s, mode: options.mode)
-    passed = passed && misses.isEmpty
     let missed = run.languageMisses.filter { byID[$0]?.lang == language }.count
     let errors = run.outputs.filter { $0.lang == language && $0.error != nil }.count
-    let verdict = misses.isEmpty ? "PASS" : "FAIL (\(misses.map(\.rawValue).joined(separator: ", ")))"
+    let verdict = EvalBar.verdict(s, errors: errors, mode: options.mode)
+    passed = passed && verdict == .pass
     print("""
         \(language.rawValue): precision \(decimal(s.precision)), recall \(decimal(s.recall)), F0.5 \(decimal(s.f05)) \
         (tp \(s.tp), fp \(s.fp), fn \(s.fn)); clean flagged \(s.cleanFlagged)/\(s.cleanTotal); \
-        p50 \(Int(s.p50Ms.rounded())) ms, p90 \(Int(s.p90Ms.rounded())) ms; language misses \(missed); errors \(errors): \(verdict)
+        p50 \(Int(s.p50Ms.rounded())) ms, p90 \(Int(s.p90Ms.rounded())) ms; language misses \(missed); errors \(errors): \(label(verdict))
         """)
 }
 exit(passed ? 0 : 1)

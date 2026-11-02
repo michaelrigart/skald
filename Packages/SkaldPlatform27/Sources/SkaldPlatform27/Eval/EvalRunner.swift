@@ -42,10 +42,23 @@ public struct EvalOptions: Equatable, Sendable {
     }
 }
 
+public enum EvalVerdict: Equatable, Sendable {
+    case pass
+    case fail([EvalBar.Miss])
+    case noVerdict(errors: Int)
+}
+
 /// The spec's bar, per language, on the held-out part. A ratio with nothing to count (no proposals, no reference edits) is met.
 public enum EvalBar {
     public enum Miss: String, Sendable {
         case precision, cleanParagraphs, recall, latency
+    }
+
+    /// A language with a failed request has no verdict, which counts as a miss.
+    public static func verdict(_ score: EvalScore, errors: Int, mode: EvalMode) -> EvalVerdict {
+        guard errors == 0 else { return .noVerdict(errors: errors) }
+        let misses = misses(score, mode: mode)
+        return misses.isEmpty ? .pass : .fail(misses)
     }
 
     public static let minimumPrecision = 0.95

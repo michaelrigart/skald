@@ -95,6 +95,13 @@ struct EvalBarTests {
         #expect(EvalBar.misses(scored(fn: 3), mode: .spelling).isEmpty)
     }
 
+    @Test("A request error leaves its language without a verdict; otherwise the misses decide")
+    func verdicts() {
+        #expect(EvalBar.verdict(scored(tp: 20), errors: 1, mode: .model) == .noVerdict(errors: 1))
+        #expect(EvalBar.verdict(scored(tp: 20), errors: 0, mode: .model) == .pass)
+        #expect(EvalBar.verdict(scored(tp: 16, fp: 1), errors: 0, mode: .spelling) == .fail([.precision]))
+    }
+
     @Test("p90 is the 18th of 20 latencies, and the model path needs it under one second")
     func latency() {
         let fast = Array(repeating: 100.0, count: 17)

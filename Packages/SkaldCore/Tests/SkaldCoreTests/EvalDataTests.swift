@@ -41,10 +41,15 @@ private func everyFileDecodes(_ name: String) throws {
     #expect(duplicates.isEmpty, "duplicate ids: \(duplicates)")
 }
 
-@Test func heldOutIdsNeverAppearInTheTuningPart() throws {
-    let tuning = Set(try (cases("seed") + cases("tuning")).map(\.id))
-    let overlap = try cases("heldout").map(\.id).filter(tuning.contains)
-    #expect(overlap.isEmpty, "held-out ids in the tuning part: \(overlap)")
+private func normalised(_ text: String) -> String {
+    text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+}
+
+@Test func heldOutCasesNeverAppearInTheTuningPart() throws {
+    let tuning = try cases("seed") + cases("tuning")
+    let ids = Set(tuning.map(\.id)), texts = Set(tuning.map { normalised($0.text) })
+    let leaked = try cases("heldout").filter { ids.contains($0.id) || texts.contains(normalised($0.text)) }.map(\.id)
+    #expect(leaked.isEmpty, "held-out cases in the tuning part: \(leaked)")
 }
 
 @Test(arguments: Language.allCases)

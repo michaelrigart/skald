@@ -29,9 +29,10 @@ cat Eval/seed.jsonl Eval/tuning.jsonl > build/eval/tuning-part.jsonl
 ```
 
 `skald-eval --set <path> --mode model|spelling [--guard on|off] [--out <path>]` prints the cases it
-got wrong, then each language's scores and the bar's verdict. It exits 0 when every language passes
-and 1 when any fails. `--guard off` skips the edit guard, for diagnosis only. Outputs stay under
-`build/`, which is not tracked.
+got wrong, then each language's scores and the bar's verdict. A language with a failed request gets
+no verdict, which counts as a miss. It exits 0 when every language passes and 1 when any fails or
+has no verdict. `--guard off` skips the edit guard, for diagnosis only. Outputs stay under `build/`,
+which is not tracked.
 
 The runner takes each case through the app's own path, one case at a time:
 
@@ -51,38 +52,62 @@ precision at least 0.95, at most one clean paragraph flagged, recall at least 0.
 
 ## Tuning
 
-Only the edit guard's rules changed, on the tuning part only (commit "Tune the edit guard on the
-evaluation set"). Each rule has its own row in the guard's outcome table.
+Only the edit guard's rules changed, on the tuning part only. Review then narrowed three of them,
+because they also dropped real fixes (commits "Tune the edit guard on the evaluation set" and
+"Narrow the compound, abbreviation and neighbour rules"). Each rule has its own row in the guard's
+outcome table. The shipped rules:
 
-- A paragraph's only sentence keeps its lowercase start.
+- A paragraph's only sentence keeps its lowercase start, unless it ends in a period.
 - A listed function word or contraction fragment ("didn", "ve") never counts as a misspelling.
 - Two words are near-homophones only when one stretch of at most two letters differs ("opkuisen" →
   "opruimen" is a replacement).
 - A different content word with an unknown lemma is a replacement, also when it replaces a
   preposition. This makes "voorvallen" → "voorkomen" a drop, as in the spec's table.
-- A model edit next to an edit dropped as a rewrite (at most one unchanged token apart) is dropped
-  with it.
-- A guess that splits a word into content words ("runbook" → "run book") is dropped.
-- A word of two or more letters without a vowel ("vpn", "gsm") is an abbreviation and never
-  touched.
+- A model edit kept only because it swaps function words is dropped when it sits next to an edit
+  dropped as a rewrite (at most one unchanged token apart). Misspelling, accent, agreement and
+  capital fixes are never dropped this way.
+- A spelling guess that splits a word at a space into content words ("runbook" → "run book") is
+  dropped. A restored apostrophe ("cant" → "can't") is not a split, and the model's splits are
+  judged as fixes.
+- A word of two or more letters without a vowel is an abbreviation and never touched, unless the
+  fix keeps its letters as typed ("vpn" → "van" and "vpn" → "VPN" are dropped; "th" → "the" is a
+  fix).
 
-No result was discarded for changing too much, before or after, so `maxChangeShare` stays at 0.4.
+No result was discarded for changing too much, so `maxChangeShare` stays at 0.4.
 
-Tuning part (32 cases per language), guard on:
+Tuning part (32 cases per language), guard on. "Tuned" is the first commit and "shipped" the
+narrowed guard; the narrowing brings back one French false alarm ("saurai" → "serai" next to a
+dropped rewrite).
 
-| Mode | Language | Precision before | Precision after | Recall before → after | Clean flagged before → after |
-|---|---|---|---|---|---|
-| Model | en | 0.91 (30/33) | 0.97 (30/31) | 0.91 → 0.91 | 1/11 → 1/11 |
-| Model | nl | 0.76 (22/29) | 0.96 (22/23) | 0.92 → 0.92 | 2/11 → 0/11 |
-| Model | fr | 0.88 (22/25) | 0.96 (22/23) | 0.96 → 0.96 | 2/11 → 0/11 |
-| Spelling | en | 0.43 (6/14) | 0.67 (6/9) | 0.18 → 0.18 | 4/11 → 2/11 |
-| Spelling | nl | 1.00 (7/7) | 1.00 (7/7) | 0.29 → 0.29 | 0/11 → 0/11 |
-| Spelling | fr | 1.00 (3/3) | 1.00 (3/3) | 0.13 → 0.13 | 0/11 → 0/11 |
+| Mode | Language | Precision before → tuned → shipped | Recall | Clean flagged before → tuned → shipped |
+|---|---|---|---|---|
+| Model | en | 0.91 (30/33) → 0.97 (30/31) → 0.97 (30/31) | 0.91 throughout | 1/11 → 1/11 → 1/11 |
+| Model | nl | 0.76 (22/29) → 0.96 (22/23) → 0.96 (22/23) | 0.92 throughout | 2/11 → 0/11 → 0/11 |
+| Model | fr | 0.88 (22/25) → 0.96 (22/23) → 0.92 (22/24) | 0.96 throughout | 2/11 → 0/11 → 1/11 |
+| Spelling | en | 0.43 (6/14) → 0.67 (6/9) → 0.67 (6/9) | 0.18 throughout | 4/11 → 2/11 → 2/11 |
+| Spelling | nl | 1.00 (7/7) throughout | 0.29 throughout | 0/11 throughout |
+| Spelling | fr | 1.00 (3/3) throughout | 0.13 throughout | 0/11 throughout |
+
+Known losses the guard accepts: a preposition replaced by a content word that is not a
+near-homophone is dropped, so "I went threw the logs" → "through" is lost.
 
 ## Held-out results
 
-Graded once on 2026-11-02 on macOS 27.2, after the tuning was committed. No language detection
-missed and no request failed.
+Current: graded on 2026-11-02 on macOS 27.2, with the shipped guard. No language detection missed
+and no request failed.
+
+| Mode | Language | Precision | Recall | Clean flagged | p50 / p90 | Verdict |
+|---|---|---|---|---|---|---|
+| Model | en | 1.00 (17/17) | 1.00 (17/17) | 0/7 | 425 / 485 ms | pass |
+| Model | nl | 0.91 (10/11) | 0.71 (10/14) | 0/7 | 392 / 483 ms | fail: precision, recall |
+| Model | fr | 0.87 (13/15) | 0.81 (13/16) | 0/7 | 386 / 450 ms | fail: precision, recall |
+| Spelling | en | 0.67 (6/9) | 0.35 (6/17) | 1/7 | 2 / 18 ms | fail: precision |
+| Spelling | nl | 1.00 (7/7) | 0.50 (7/14) | 0/7 | 1 / 15 ms | pass |
+| Spelling | fr | 0.67 (2/3) | 0.12 (2/16) | 1/7 | 1 / 13 ms | fail: precision |
+
+Superseded: the first grading, also on 2026-11-02 on macOS 27.2. It was graded before review
+narrowed three over-broad rules; the second grading describes the shipped guard. Every case scored
+the same in both gradings; only the latencies differ.
 
 | Mode | Language | Precision | Recall | Clean flagged | p50 / p90 | Verdict |
 |---|---|---|---|---|---|---|
@@ -95,7 +120,7 @@ missed and no request failed.
 
 ### Default changes
 
-Provisional until Michael reviews the data:
+From the current grading, provisional until Michael reviews the data:
 
 - **Dutch:** model checks are off by default (model precision 0.91). Spelling only passes, so
   checking while typing stays on, as spelling only.
@@ -106,8 +131,9 @@ Provisional until Michael reviews the data:
 
 ### What missed
 
-A diagnostic run with the guard off, made after the grade, separates the model's misses from the
-guard's. Nothing was tuned after the held-out run.
+A diagnostic run with the guard off, made after the first grade, separates the model's misses from
+the guard's. Nothing was tuned on held-out data; the narrowing came from review with synthetic
+cases.
 
 - **False alarms the guard kept:**
   - `nl-h12`: "gecancelled" → "geannuleerd". A misspelled original keeps any replacement, so the
