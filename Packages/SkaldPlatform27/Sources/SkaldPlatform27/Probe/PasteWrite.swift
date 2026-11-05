@@ -29,15 +29,15 @@ enum PasteWrite {
     static let layoutDependentVKeyCode = CGKeyCode(kVK_ANSI_V)
 
     /// Callers must have staged the pasteboard and re-checked the selection immediately before.
-    static func send(to pid: pid_t, field: AXElement, original: String, selectionWaitedMs: Int) -> PasteOutcome {
+    static func send(to pid: pid_t, field: AXElement, kind: FieldKind, original: String, selectionWaitedMs: Int) -> PasteOutcome {
         let posted = postCommandV(to: pid)
         var changedAfter: Int?
         if posted {
-            changedAfter = waitForChange(of: field, from: original)
+            changedAfter = waitForChange(of: field, kind: kind, from: original)
             usleep(useconds_t(settleMs * 1000))
         }
         return PasteOutcome(
-            selectionWaitedMs: selectionWaitedMs, posted: posted, valueChangedAfterMs: changedAfter, finalValue: field.value
+            selectionWaitedMs: selectionWaitedMs, posted: posted, valueChangedAfterMs: changedAfter, finalValue: FieldProbe.text(of: field, kind: kind)
         )
     }
 
@@ -63,10 +63,10 @@ enum PasteWrite {
         return true
     }
 
-    private static func waitForChange(of field: AXElement, from original: String) -> Int? {
+    private static func waitForChange(of field: AXElement, kind: FieldKind, from original: String) -> Int? {
         var waited = 0
         while true {
-            if let value = field.value, value != original { return waited }
+            if let value = FieldProbe.text(of: field, kind: kind), value != original { return waited }
             guard waited < timeoutMs else { return nil }
             usleep(useconds_t(pollMs * 1000))
             waited += pollMs

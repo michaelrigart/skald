@@ -46,6 +46,7 @@ private final class FieldSession {
     var undoPending = false
     var loggedMarkerPosition = false
     var loggedCaret = false
+    var loggedKind = false
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -268,6 +269,13 @@ public final class Probe {
         scheduleEvaluation()
     }
 
+    private static func describeKind(_ reading: FieldReading) -> String {
+        guard reading.kind == .textMarkers else { return reading.kind.rawValue }
+        let caret = reading.selection.map { String($0.location) } ?? "none"
+        let length = reading.value.map { String(($0 as NSString).length) } ?? "none"
+        return "\(reading.kind.rawValue), caret offset \(caret), text length \(length)"
+    }
+
     /// One measurement per ⌘Z, not cancelled by later keystrokes, so each press is judged on its own state.
     private func measureAfterUndo(_ session: FieldSession, press: Int) {
         Task {
@@ -275,7 +283,8 @@ public final class Probe {
             guard session === current else { return }
             let pid = session.pid
             let formatting = session.observation.formatting
-            let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting) }
+            let forced = session.observation.writeKind
+            let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting, forcing: forced) }
             guard session === current, let reading else { return }
             session.observation.absorb(reading)
             let check = reading.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
@@ -297,9 +306,14 @@ public final class Probe {
         guard session === current, !session.observation.line.isSecure else { return }
         let pid = session.pid
         let formatting = session.observation.formatting
-        let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting) }
+        let forced = session.observation.writeKind
+        let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting, forcing: forced) }
         guard session === current, let reading else { return }
         let app = session.observation.line.app
+        if !session.loggedKind {
+            session.loggedKind = true
+            PlatformLog.probe.notice("field kind: \(app, privacy: .public): \(Self.describeKind(reading), privacy: .public)")
+        }
         let shouldWrite = session.observation.shouldWrite(for: reading)
         if !shouldWrite, !session.loggedMarkerPosition, session.observation.awaitingWrite,
            let tail = reading.value.flatMap({ ProbeMarker.tailSummary(of: $0) })
@@ -322,7 +336,8 @@ public final class Probe {
 
         session.observation.beginWrite()
         let attempt: WriteAttempt?
-        switch WriteMethod(for: session.mode) {
+        let method: WriteMethod = reading.kind == .textMarkers ? .paste : WriteMethod(for: session.mode)
+        switch method {
         case .ax: attempt = await queue.run { FieldProbe.write(pid: pid) }
         case .paste: attempt = await pasteWrite(session)
         }
@@ -342,7 +357,8 @@ public final class Probe {
             let settled = Int(settleStart.duration(to: clock.now) / .milliseconds(1))
             guard session === current else { return }
             let laterFormatting = session.observation.formatting
-            let later = await queue.run { FieldProbe.measure(pid: pid, formatting: laterFormatting) }
+            let forced = session.observation.writeKind
+            let later = await queue.run { FieldProbe.measure(pid: pid, formatting: laterFormatting, forcing: forced) }
             guard session === current, let later else { return }
             session.observation.absorb(later)
             let check = later.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
@@ -383,16 +399,16 @@ public final class Probe {
             return .aborted(reason: "\(reason); \(PasteWrite.describe(restoration))")
         case let .sent(start, outcome):
             PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(outcome.selectionWaitedMs) ms, \(PasteWrite.describe(outcome), privacy: .public), \(PasteWrite.describe(restoration), privacy: .public)")
-            watchForLatePaste(prepared.field, seen: outcome.finalValue, app: session.observation.line.app)
+            watchForLatePaste(prepared.field, kind: prepared.kind, seen: outcome.finalValue, app: session.observation.line.app)
             return .started(start)
         }
     }
 
     /// A slow app may apply the paste after the restore: look again once, a second later, in lengths only.
-    private func watchForLatePaste(_ field: AXElement, seen: String?, app: String) {
+    private func watchForLatePaste(_ field: AXElement, kind: FieldKind, seen: String?, app: String) {
         Task {
             try? await clock.sleep(for: Self.latePasteWait)
-            let later = await queue.run { field.value }
+            let later = await queue.run { FieldProbe.text(of: field, kind: kind) }
             guard later != seen else { return }
             let before = seen.map { String(($0 as NSString).length) } ?? "unreadable"
             let after = later.map { String(($0 as NSString).length) } ?? "unreadable"

@@ -38,6 +38,8 @@ struct FieldObservation {
 
     var hasWrite: Bool { write != nil }
 
+    var writeKind: FieldKind? { write?.kind }
+
     var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted && !writeInFlight }
 
     /// How a value compares with the written and the original text, in lengths and booleans only.

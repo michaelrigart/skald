@@ -178,7 +178,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         attribute(name).flatMap { Self.axElement($0) }
     }
 
-    private func attribute(_ name: String) -> CFTypeRef? {
+    func attribute(_ name: String) -> CFTypeRef? {
         var result: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success ? result : nil
     }
@@ -193,7 +193,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         return parameterized(name, parameter)
     }
 
-    private func parameterized(_ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
+    func parameterized(_ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
         var result: CFTypeRef?
         return AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success
             ? result : nil

@@ -295,3 +295,15 @@ private let baseline = BoundsBaseline(
     observation.recordUndo()
     #expect(observation.undoPresses == 1)
 }
+
+@Test func theWriteFixesTheFieldKindForLaterReadings() {
+    var observation = observation()
+    #expect(observation.writeKind == nil)
+    var marked = start()
+    marked.kind = .textMarkers
+    observation.recordWrite(marked)
+    #expect(observation.writeKind == .textMarkers)
+    var plain = FieldObservation(app: "com.example.editor", reading: reading())
+    plain.recordWrite(start())
+    #expect(plain.writeKind == .ranges)
+}

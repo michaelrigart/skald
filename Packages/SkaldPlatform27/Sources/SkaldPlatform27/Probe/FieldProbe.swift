@@ -82,6 +82,7 @@ struct FieldReading: Sendable {
     var hasFrame = false
     var selection: CFRange?
     var characterCount: Int?
+    var kind = FieldKind.ranges
     var baseline: BoundsBaseline?
     var formatted: AttributedSnapshot?
 
@@ -102,6 +103,7 @@ struct WriteStart: Sendable {
     var beforeLocation: Int
     var beforeLength: Int
     var method = WriteMethod.ax
+    var kind = FieldKind.ranges
 
     var markerLocation: Int { beforeLocation + beforeLength }
 
@@ -121,10 +123,13 @@ struct PreparedWrite: Sendable {
     var beforeLocation: Int
     var beforeLength: Int
     var selectionWaitedMs: Int
+    var kind = FieldKind.ranges
+    var originalMarkerSelection: MarkerRangeBox?
 
     func start(method: WriteMethod) -> WriteStart {
         WriteStart(
-            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, method: method
+            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength,
+            method: method, kind: kind
         )
     }
 }
@@ -153,20 +158,61 @@ enum FieldProbe {
     static let middleLength = 5
     static let contextLength = 10
 
-    static func measure(pid: pid_t, formatting: (location: Int, length: Int)?) -> FieldReading? {
+    struct FieldContent {
+        var kind: FieldKind
+        var value: String?
+        var selection: CFRange?
+        var rangedRead: Bool
+        var length: Int?
+        var middle: CFRange?
+    }
+
+    /// The text and caret of a field: through ranges, or through text markers when the ranges are unusable.
+    static func readContent(of field: AXElement, forcing forced: FieldKind? = nil) -> FieldContent {
+        let value = field.value
+        let selection = field.selectedRange
+        let length = length(of: field, value: value)
+        var rangedRead = false
+        var middle: CFRange?
+        if let length, length >= middleLength {
+            let range = CFRange(location: max(0, length / 2 - middleLength / 2), length: middleLength)
+            rangedRead = field.string(for: range).map { ranged($0, matches: value, at: range) } ?? false
+            middle = range
+        }
+        let ranges = FieldContent(kind: .ranges, value: value, selection: selection, rangedRead: rangedRead, length: length, middle: middle)
+        if forced == .ranges { return ranges }
+        if forced == nil, let value, ProbeMarker.range(in: value, caret: selection) != nil { return ranges }
+        let rangedReadFailed = middle != nil && !rangedRead
+        guard forced == .textMarkers || selection == nil || rangedReadFailed, let markers = TextMarkerField(field) else { return ranges }
+        let kind = forced ?? FieldKind.decide(selectedRangePresent: selection != nil, rangedReadFailed: rangedReadFailed, markersAnswer: true)
+        guard kind == .textMarkers else { return ranges }
+        let text = markers.text
+        let textLength = text.map { ($0 as NSString).length }
+        return FieldContent(
+            kind: .textMarkers, value: text, selection: textLength.flatMap { markers.caret(textLength: $0) },
+            rangedRead: false, length: textLength, middle: nil
+        )
+    }
+
+    static func text(of field: AXElement, kind: FieldKind) -> String? {
+        kind == .textMarkers ? TextMarkerField(field)?.text : field.value
+    }
+
+    static func measure(pid: pid_t, formatting: (location: Int, length: Int)?, forcing forced: FieldKind? = nil) -> FieldReading? {
         guard let field = focusedField(pid) else { return nil }
         var reading = FieldReading(identity: field.identity, role: field.role ?? "", subrole: field.subrole ?? "")
         if reading.isSecure { return reading }
 
-        reading.value = field.value
+        let content = readContent(of: field, forcing: forced)
+        reading.kind = content.kind
+        reading.value = content.value
         reading.canRead = reading.value != nil
-        reading.selection = field.selectedRange
+        reading.selection = content.selection
         reading.canReadSelection = reading.selection != nil
         reading.characterCount = field.numberOfCharacters
         reading.hasFrame = field.frame.flatMap { usable($0) } != nil
-        if let length = length(of: field, value: reading.value), length >= middleLength {
-            let range = CFRange(location: max(0, length / 2 - middleLength / 2), length: middleLength)
-            reading.rangedRead = field.string(for: range).map { ranged($0, matches: reading.value, at: range) } ?? false
+        reading.rangedRead = content.rangedRead
+        if content.kind == .ranges, let length = content.length, let range = content.middle {
             reading.baseline = baseline(of: field, length: length, range: range)
         }
         if let formatting {
@@ -185,11 +231,14 @@ enum FieldProbe {
     }
 
     static func prepare(pid: pid_t, method: WriteMethod) -> Preparation? {
-        guard let resolved = resolvedField(pid), !isSecure(resolved.element), let value = resolved.element.value else { return nil }
+        guard let resolved = resolvedField(pid), !isSecure(resolved.element) else { return nil }
         let field = resolved.element
-        let originalSelection = field.selectedRange
-        guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
-        if method == .paste, !EditableResolution.allowsPaste(resolved.resolution) {
+        let content = readContent(of: field)
+        guard let value = content.value, let markerRange = ProbeMarker.range(in: value, caret: content.selection) else { return nil }
+        if content.kind == .textMarkers, method != .paste {
+            return .aborted(reason: "a text-marker field is written by paste only")
+        }
+        if content.kind == .ranges, method == .paste, !EditableResolution.allowsPaste(resolved.resolution) {
             return .aborted(reason: "paste refused: the field is only the deepest focused element of a web area, not a text area or field")
         }
         let beforeLocation = max(0, markerRange.location - contextLength)
@@ -197,16 +246,35 @@ enum FieldProbe {
         let before = beforeLength > 0
             ? field.attributedString(for: CFRange(location: beforeLocation, length: beforeLength)).map(AttributedSnapshot.init)
             : nil
-        let selectResult = field.setSelectedRange(markerRange)
-        guard selectResult == .success else { return .aborted(reason: "selection rejected (AXError \(selectResult.rawValue))") }
-        guard let waited = waitForMarkerSelection(field, markerRange) else {
-            let seen = describeSelection(field, markerRange)
-            return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(originalSelection, in: field))")
+        var prepared = PreparedWrite(
+            field: field, value: value, markerRange: markerRange, originalSelection: content.selection,
+            before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, selectionWaitedMs: 0, kind: content.kind
+        )
+        switch content.kind {
+        case .ranges:
+            let selectResult = field.setSelectedRange(markerRange)
+            guard selectResult == .success else { return .aborted(reason: "selection rejected (AXError \(selectResult.rawValue))") }
+            guard let waited = waitForMarkerSelection({ selectionIsMarker(field, markerRange) }) else {
+                let seen = describeSelection(field, markerRange)
+                return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(content.selection, in: field))")
+            }
+            prepared.selectionWaitedMs = waited
+        case .textMarkers:
+            guard let markers = TextMarkerField(field) else { return .aborted(reason: "the text markers are no longer available") }
+            prepared.originalMarkerSelection = markers.selectedRange.map(MarkerRangeBox.init)
+            guard let anchor = TextMarkerField.anchor(for: markerRange, caret: content.selection, textLength: (value as NSString).length),
+                  let end = markers.anchorMarker(anchor)
+            else { return .aborted(reason: "the marker cannot be anchored to the caret or the end of the text") }
+            let selectResult = markers.selectMarker(endingAt: end)
+            guard selectResult == .success else {
+                return .aborted(reason: "marker selection rejected (AXError \(selectResult.rawValue)); \(cancel(prepared))")
+            }
+            guard let waited = waitForMarkerSelection({ TextMarkerField.isMarkerSelection(selectedString: markers.selectedString) }) else {
+                return .aborted(reason: "marker selection does not cover the marker after \(selectionWaitMs) ms; \(cancel(prepared))")
+            }
+            prepared.selectionWaitedMs = waited
         }
-        return .ready(PreparedWrite(
-            field: field, value: value, markerRange: markerRange, originalSelection: originalSelection,
-            before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, selectionWaitedMs: waited
-        ))
+        return .ready(prepared)
     }
 
     static func writeByAccessibility(_ prepared: PreparedWrite, pid: pid_t) -> WriteStart {
@@ -221,19 +289,28 @@ enum FieldProbe {
         let recheck = PasteRecheck(
             sameField: focusedField(pid).map { $0.isSame(as: prepared.field) } ?? false,
             targetIsFrontmost: AXElement.focusedApplicationPID() == pid,
-            selectionOnMarker: selectionIsMarker(prepared.field, prepared.markerRange)
+            selectionOnMarker: selectionIsMarker(prepared)
         )
         if let reason = recheck.failure {
             return .aborted(reason: "\(reason) before the paste; \(cancel(prepared))")
         }
         let outcome = PasteWrite.send(
-            to: pid, field: prepared.field, original: prepared.value, selectionWaitedMs: prepared.selectionWaitedMs
+            to: pid, field: prepared.field, kind: prepared.kind, original: prepared.value,
+            selectionWaitedMs: prepared.selectionWaitedMs
         )
         return .sent(prepared.start(method: .paste), outcome)
     }
 
     static func cancel(_ prepared: PreparedWrite) -> String {
-        restore(prepared.originalSelection, in: prepared.field)
+        switch prepared.kind {
+        case .ranges:
+            return restore(prepared.originalSelection, in: prepared.field)
+        case .textMarkers:
+            guard let original = prepared.originalMarkerSelection, let markers = TextMarkerField(prepared.field) else {
+                return "no original selection to restore"
+            }
+            return markers.setSelection(original.range) == .success ? "original selection restored" : "restoring the selection failed"
+        }
     }
 
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {
@@ -280,10 +357,10 @@ enum FieldProbe {
     private static let selectionPollMs = 25
 
     /// Some apps apply a selection asynchronously: poll until it lands, up to a deadline. Returns the wait in ms.
-    private static func waitForMarkerSelection(_ field: AXElement, _ markerRange: CFRange) -> Int? {
+    private static func waitForMarkerSelection(_ isSelected: () -> Bool) -> Int? {
         var waited = 0
         while true {
-            if selectionIsMarker(field, markerRange) { return waited }
+            if isSelected() { return waited }
             guard waited < selectionWaitMs else { return nil }
             usleep(useconds_t(selectionPollMs * 1000))
             waited += selectionPollMs
@@ -295,6 +372,13 @@ enum FieldProbe {
         let text = field.selectedText.map { "\(($0 as NSString).length) units, is marker \($0 == ProbeMarker.pending)" } ?? "none"
         let ranged = field.string(for: markerRange).map { "is marker \($0 == ProbeMarker.pending)" } ?? "none"
         return "selected range \(range) for marker \(markerRange.location),\(markerRange.length); selected text \(text); text at marker range \(ranged)"
+    }
+
+    private static func selectionIsMarker(_ prepared: PreparedWrite) -> Bool {
+        switch prepared.kind {
+        case .ranges: selectionIsMarker(prepared.field, prepared.markerRange)
+        case .textMarkers: TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field)?.selectedString)
+        }
     }
 
     private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange) -> Bool {
