@@ -75,6 +75,7 @@ public final class Probe {
     private var observers: [pid_t: ProbeObserver] = [:]
     private var contexts: [pid_t: ProbeContext] = [:]
     private var enabledPIDs: Set<pid_t> = []
+    private var diagnosedPIDs: Set<pid_t> = []
     private var evaluationTask: Task<Void, Never>?
     private var recheckTask: Task<Void, Never>?
     private var pendingRecheck = RecheckKind.scrolled
@@ -187,11 +188,14 @@ public final class Probe {
             if reading == nil, mode != .native, !enabledPIDs.contains(pid) {
                 PlatformLog.probe.notice("no focused element: \(bundleID, privacy: .public)")
                 enabledPIDs.insert(pid)
-                await queue.run { mode.enable(on: AXElement.application(pid: pid).element) }
+                await enable(mode, pid: pid, app: bundleID)
                 if let session = current, session.pid == pid { moveToForced(session) }
                 await retarget(pid: pid)
                 reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
                 guard generation == focusGeneration, running else { return }
+                if reading == nil, diagnosedPIDs.insert(pid).inserted {
+                    Task { await diagnoseMissingFocus(pid: pid, generation: generation, app: bundleID) }
+                }
             }
             guard let reading else {
                 if let old = current, old.pid != pid { finish(old); current = nil }
@@ -463,7 +467,27 @@ public final class Probe {
         let mode = session.mode
         enabledPIDs.insert(pid)
         session.absorbFocusUntil = clock.now + Self.focusSettle
-        await queue.run { mode.enable(on: AXElement.application(pid: pid).element) }
+        await enable(mode, pid: pid, app: session.observation.line.app)
         await retarget(pid: pid)
+    }
+
+    private func enable(_ mode: AppAccessibilityMode, pid: pid_t, app: String) async {
+        let results = await queue.run { mode.enable(on: AXElement.application(pid: pid).element) }
+        PlatformLog.probe.notice("accessibility enabled: \(app, privacy: .public): \(results.map(\.summary).joined(separator: ", "), privacy: .public)")
+    }
+
+    /// The probe may sleep: look at the focus query right after enabling, then again after 1 s and 3 s.
+    private func diagnoseMissingFocus(pid: pid_t, generation: Int, app: String) async {
+        var waited = 0
+        for target in [0, 1000, 3000] {
+            if target > waited {
+                try? await clock.sleep(for: .milliseconds(target - waited))
+                waited = target
+            }
+            guard running, generation == focusGeneration else { return }
+            let diagnosis = await queue.run { FocusDiagnosis.take(pid: pid) }
+            guard running, generation == focusGeneration else { return }
+            PlatformLog.probe.notice("focus retry: \(app, privacy: .public): \(diagnosis.summary(afterMs: target), privacy: .public)")
+        }
     }
 }

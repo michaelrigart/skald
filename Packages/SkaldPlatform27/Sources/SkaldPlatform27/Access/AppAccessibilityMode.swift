@@ -17,14 +17,25 @@ public enum AppAccessibilityMode: Sendable {
         return .native
     }
 
-    public func enable(on app: AXUIElement) {
+    var attributesSet: [String] {
         switch self {
-        case .native:
-            break
-        case .chromium:
-            AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        case .firefox:
-            AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        case .native: []
+        case .chromium: ["AXManualAccessibility"]
+        case .firefox: ["AXEnhancedUserInterface"]
         }
     }
+
+    @discardableResult
+    public func enable(on app: AXUIElement) -> [EnableResult] {
+        attributesSet.map { attribute in
+            EnableResult(attribute: attribute, code: AXUIElementSetAttributeValue(app, attribute as CFString, kCFBooleanTrue).rawValue)
+        }
+    }
+}
+
+public struct EnableResult: Sendable, Equatable {
+    public let attribute: String
+    public let code: Int32
+
+    public var summary: String { "\(attribute) AXError \(code)" }
 }

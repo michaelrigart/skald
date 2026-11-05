@@ -27,6 +27,12 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         CFEqual(element, other.element)
     }
 
+    static func focusedQuery(inApp pid: pid_t) -> (element: AXElement?, error: AXError) {
+        var result: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(application(pid: pid).element, kAXFocusedUIElementAttribute as CFString, &result)
+        return (error == .success ? result.flatMap { axElement($0) } : nil, error)
+    }
+
     public var role: String? { stringAttribute(kAXRoleAttribute) }
     public var subrole: String? { stringAttribute(kAXSubroleAttribute) }
     public var value: String? { stringAttribute(kAXValueAttribute) }
