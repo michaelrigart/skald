@@ -282,17 +282,20 @@ task only adds the tests that are missing and says so.
 **Depends on:** Task 10. Needs Michael at the Mac.
 
 - [ ] **Step 1: Grant retention, on this branch's final builds.** With the grant Skald already
-  holds (no new grant): reinstall a team-signed Debug rebuild of this branch's head in
-  `/Applications` (`rm -rf` then `ditto`), launch it with `open`, and check it is trusted
-  (`AXIsProcessTrusted`, as the app logs at launch, or its permission status in the status
-  menu). Then the same for the Release product of `scripts/release --dry-run`. Record both
+  holds (no new grant): quit Skald and confirm it has exited (`pgrep -x Skald` prints nothing),
+  reinstall a team-signed Debug rebuild of this branch's head in `/Applications` (`rm -rf` then
+  `ditto`), launch it with `open`, and check that the new process (a new PID, and a "Skald
+  started" log line after the reinstall) is trusted (`AXIsProcessTrusted`, as the app logs at
+  launch, or its permission status in the status menu). Then the same, quitting and confirming
+  the exit again, for the Release product of `scripts/release --dry-run`. Record both
   results, and the one grant at the switch from ad hoc (from v1's probe runs), under Signing in
   the spec as "Measured on <date>".
 - [ ] **Step 2:** Update every place that states the grant behaviour — README, AGENTS.md,
   `CHANGELOG.md`, the cask caveats — from Step 1's results only, dropping the "should survive"
   hedge only where Step 1 measured it.
-- [ ] **Step 3:** Run the Release product from outside `/Applications` (quit the installed copy
-  first): the move notice shows, nothing is checked. Delete that copy afterwards.
+- [ ] **Step 3:** Quit the installed copy and confirm it has exited (`pgrep -x Skald` prints
+  nothing), then run the Release product from outside `/Applications`: the move notice shows,
+  nothing is checked. Quit it and delete that copy afterwards.
 - [ ] **Step 4:** The menu bar glyph in a light and a dark menu bar, and the icon in Finder and the
   Dock.
 - [ ] **Step 5, after both pull requests merge:** Michael runs `scripts/release`; then
