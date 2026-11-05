@@ -290,11 +290,13 @@ public final class Probe {
         guard shouldWrite else { return }
 
         let attempt: WriteAttempt?
+        session.observation.beginWrite()
         switch WriteMethod(for: session.mode) {
         case .ax: attempt = await queue.run { FieldProbe.write(pid: pid) }
         case .paste: attempt = await pasteWrite(session)
         }
         guard session === current else { return }
+        session.observation.endWrite()
         guard let attempt else {
             PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
             return

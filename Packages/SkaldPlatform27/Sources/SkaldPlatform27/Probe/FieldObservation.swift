@@ -15,6 +15,7 @@ struct FieldObservation {
     private var notifications: Set<String> = []
     private var write: WriteStart?
     private var writeAborted = false
+    private var writeInFlight = false
     private var typedSinceUndo = false
     private var movedChecks = 0
     private var failedChecks = 0
@@ -35,7 +36,7 @@ struct FieldObservation {
         return ProbeMarker.range(in: value, caret: reading.selection) != nil
     }
 
-    var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted }
+    var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted && !writeInFlight }
 
     /// How a value compares with the written and the original text, in lengths and booleans only.
     func writeCheck(_ value: String) -> String? {
@@ -57,6 +58,14 @@ struct FieldObservation {
         line.writeMethod = start.method
         undoPresses = 0
         typedSinceUndo = false
+    }
+
+    mutating func beginWrite() {
+        writeInFlight = true
+    }
+
+    mutating func endWrite() {
+        writeInFlight = false
     }
 
     mutating func recordWriteAborted() {

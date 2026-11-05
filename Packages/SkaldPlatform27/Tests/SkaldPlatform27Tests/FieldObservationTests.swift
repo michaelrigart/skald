@@ -255,3 +255,17 @@ private let baseline = BoundsBaseline(
     observation.absorb(reading(value: "alpha Hello"))
     #expect(observation.line.undoEarlierHistory)
 }
+
+@Test func noSecondWriteStartsWhileOneIsInFlight() {
+    var observation = observation()
+    #expect(observation.shouldWrite(for: reading()))
+    observation.beginWrite()
+    #expect(!observation.shouldWrite(for: reading()))
+    #expect(!observation.awaitingWrite)
+    observation.endWrite()
+    #expect(observation.shouldWrite(for: reading()))
+    observation.beginWrite()
+    observation.endWrite()
+    observation.recordWrite(start())
+    #expect(!observation.shouldWrite(for: reading()))
+}
