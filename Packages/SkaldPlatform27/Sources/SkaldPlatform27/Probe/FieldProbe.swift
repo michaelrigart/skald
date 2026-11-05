@@ -221,10 +221,6 @@ enum FieldProbe {
         restore(prepared.originalSelection, in: prepared.field)
     }
 
-    static func currentValue(pid: pid_t) -> String? {
-        focusedField(pid)?.value
-    }
-
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {
         guard let field = focusedField(pid), !isSecure(field),
               length(of: field, value: nil) == baseline.length

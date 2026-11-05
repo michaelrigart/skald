@@ -150,3 +150,12 @@ private func filled() -> NSPasteboard {
     ])
     #expect(reasons.count == 3)
 }
+
+@Test func eachStagingRefusalHasItsOwnReason() {
+    let changed = PasteboardSwap.Staging.changedSinceSnapshot.refusal
+    let unrestorable = PasteboardSwap.Staging.unrestorable.refusal
+    #expect(PasteboardSwap.Staging.staged.refusal == nil)
+    #expect(changed != nil && unrestorable != nil && changed != unrestorable)
+    #expect(changed?.contains("changed") == true)
+    #expect(unrestorable?.contains("concealed or promised") == true)
+}

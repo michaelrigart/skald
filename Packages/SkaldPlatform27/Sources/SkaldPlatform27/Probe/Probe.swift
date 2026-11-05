@@ -61,6 +61,7 @@ public final class Probe {
     private static let focusSettle: Duration = .seconds(3)
     private static let grantWait: Duration = .seconds(5 * 60)
     private static let writeSettle: Duration = .milliseconds(500)
+    private static let latePasteWait: Duration = .seconds(1)
 
     private let queue = AXQueue()
     private let clock = ContinuousClock()
@@ -289,14 +290,14 @@ public final class Probe {
         }
         guard shouldWrite else { return }
 
-        let attempt: WriteAttempt?
         session.observation.beginWrite()
+        let attempt: WriteAttempt?
         switch WriteMethod(for: session.mode) {
         case .ax: attempt = await queue.run { FieldProbe.write(pid: pid) }
         case .paste: attempt = await pasteWrite(session)
         }
-        guard session === current else { return }
         session.observation.endWrite()
+        guard session === current else { return }
         guard let attempt else {
             PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
             return
@@ -340,9 +341,10 @@ public final class Probe {
             _ = await queue.run { FieldProbe.cancel(prepared) }
             return nil
         }
-        guard swap.stage(ProbeMarker.replacement) == .staged else {
+        let staging = swap.stage(ProbeMarker.replacement)
+        if let refusal = staging.refusal {
             let selection = await queue.run { FieldProbe.cancel(prepared) }
-            return .aborted(reason: "the clipboard changed since the snapshot; \(selection)")
+            return .aborted(reason: "\(refusal); \(selection)")
         }
         let attempt = await queue.run { FieldProbe.writeByPaste(prepared, pid: pid) }
         let restoration = swap.restore()
@@ -351,13 +353,20 @@ public final class Probe {
             return .aborted(reason: "\(reason); \(PasteWrite.describe(restoration))")
         case let .sent(start, outcome):
             PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(outcome.selectionWaitedMs) ms, \(PasteWrite.describe(outcome), privacy: .public), \(PasteWrite.describe(restoration), privacy: .public)")
-            let later = await queue.run { FieldProbe.currentValue(pid: pid) }
-            if later != outcome.finalValue {
-                let before = outcome.finalValue.map { String(($0 as NSString).length) } ?? "unreadable"
-                let after = later.map { String(($0 as NSString).length) } ?? "unreadable"
-                PlatformLog.probe.notice("value changed after the restore: \(session.observation.line.app, privacy: .public): \(before, privacy: .public) units before, \(after, privacy: .public) after")
-            }
+            watchForLatePaste(prepared.field, seen: outcome.finalValue, app: session.observation.line.app)
             return .started(start)
+        }
+    }
+
+    /// A slow app may apply the paste after the restore: look again once, a second later, in lengths only.
+    private func watchForLatePaste(_ field: AXElement, seen: String?, app: String) {
+        Task {
+            try? await clock.sleep(for: Self.latePasteWait)
+            let later = await queue.run { field.value }
+            guard later != seen else { return }
+            let before = seen.map { String(($0 as NSString).length) } ?? "unreadable"
+            let after = later.map { String(($0 as NSString).length) } ?? "unreadable"
+            PlatformLog.probe.notice("value changed after the restore: \(app, privacy: .public): \(before, privacy: .public) units before, \(after, privacy: .public) after")
         }
     }
 

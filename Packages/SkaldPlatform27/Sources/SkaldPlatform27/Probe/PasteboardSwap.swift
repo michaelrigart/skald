@@ -5,6 +5,14 @@ import Foundation
 final class PasteboardSwap {
     enum Staging: Equatable {
         case staged, changedSinceSnapshot, unrestorable
+
+        var refusal: String? {
+            switch self {
+            case .staged: nil
+            case .changedSinceSnapshot: "the clipboard changed since the snapshot"
+            case .unrestorable: "the clipboard holds concealed or promised content"
+            }
+        }
     }
 
     enum Restoration: Equatable {
