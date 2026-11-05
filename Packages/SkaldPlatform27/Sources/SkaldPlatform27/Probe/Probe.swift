@@ -134,6 +134,7 @@ public final class Probe {
         }
         switch name {
         case "AXFocusedUIElementChanged":
+            FocusedSearchCache.shared.clear(pid: pid)
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { focusChanged(pid: pid) }
         case "AXValueChanged" where ownSession != nil:
             scheduleEvaluation()
@@ -176,6 +177,7 @@ public final class Probe {
 
     private func focusChanged(pid: pid_t) {
         guard running, pid != ownPID else { return }
+        FocusedSearchCache.shared.clear(pid: pid)
         focusGeneration += 1
         let generation = focusGeneration
         let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"

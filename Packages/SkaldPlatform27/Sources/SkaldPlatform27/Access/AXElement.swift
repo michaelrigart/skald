@@ -23,6 +23,8 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         AXElement(AXUIElementCreateSystemWide()).elementAttribute(kAXFocusedApplicationAttribute)?.pid
     }
 
+    var hash: Int { Int(CFHash(element)) }
+
     public func isSame(as other: AXElement) -> Bool {
         CFEqual(element, other.element)
     }
@@ -105,17 +107,22 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         guard needsEditableResolution(role: focused.role) else { return (focused, nil) }
         var (editable, resolution) = focused.editableAtCaret()
         if editable == nil {
-            let start = DispatchTime.now()
-            let result = FocusedDescendantSearch.find(
-                in: focused,
-                elapsedMs: { Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000) },
-                info: { $0.searchInfo }, children: { $0.children }
-            )
-            resolution.search = SearchOutcome(
-                found: result.found != nil, preferred: result.preferred, role: result.found?.role, subrole: result.found?.subrole,
-                visited: result.visited, elapsedMs: result.elapsedMs
-            )
-            editable = result.found
+            if FocusedSearchCache.shared.isKnownEmpty(focused, pid: pid) {
+                resolution.search = SearchOutcome(found: false, preferred: false, role: nil, subrole: nil, visited: 0, elapsedMs: 0)
+            } else {
+                let start = DispatchTime.now()
+                let result = FocusedDescendantSearch.find(
+                    in: focused,
+                    elapsedMs: { Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000) },
+                    info: { $0.searchInfo }, children: { $0.children }
+                )
+                resolution.search = SearchOutcome(
+                    found: result.found != nil, preferred: result.preferred, role: result.found?.role, subrole: result.found?.subrole,
+                    visited: result.visited, elapsedMs: result.elapsedMs
+                )
+                editable = result.found
+                if result.found == nil { FocusedSearchCache.shared.rememberEmpty(focused, pid: pid) }
+            }
         }
         if !resolution.resolved, wantsMarkerReport() { resolution.markers = focused.textMarkerReport() }
         report(resolution)
