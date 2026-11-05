@@ -44,3 +44,13 @@ import Testing
     #expect(!log.isFirst(pid: 10, resolved: true))
     #expect(log.isFirst(pid: 11, resolved: false))
 }
+
+@Test func aSearchOutcomeCountsAsResolvedAndShowsInTheSummary() {
+    var resolution = EditableResolution(markerRangePresent: false)
+    resolution.search = SearchOutcome(found: false, role: nil, subrole: nil, visited: 3000, elapsedMs: 150)
+    #expect(!resolution.resolved)
+    #expect(resolution.summary.hasSuffix("search found false role - subrole -, visited 3000, 150 ms"))
+    resolution.search = SearchOutcome(found: true, role: "AXTextArea", subrole: nil, visited: 12, elapsedMs: 4)
+    #expect(resolution.resolved)
+    #expect(resolution.summary.hasSuffix("search found true role AXTextArea subrole -, visited 12, 4 ms"))
+}

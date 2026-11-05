@@ -95,7 +95,20 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     static func focusedEditable(inApp pid: pid_t, onWebArea report: (EditableResolution) -> Void = { _ in }) -> AXElement? {
         guard let focused = focused(inApp: pid) else { return nil }
         guard needsEditableResolution(role: focused.role) else { return focused }
-        let (editable, resolution) = focused.editableAtCaret()
+        var (editable, resolution) = focused.editableAtCaret()
+        if editable == nil {
+            let start = DispatchTime.now()
+            let result = FocusedDescendantSearch.find(
+                in: focused,
+                elapsedMs: { Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000) },
+                info: { $0.searchInfo }, children: { $0.children }
+            )
+            resolution.search = SearchOutcome(
+                found: result.found != nil, role: result.found?.role, subrole: result.found?.subrole,
+                visited: result.visited, elapsedMs: result.elapsedMs
+            )
+            editable = result.found
+        }
         report(resolution)
         return editable ?? focused
     }
@@ -111,6 +124,23 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         return (ancestor, EditableResolution(
             markerRangePresent: true, startMarkerPresent: true, leafRole: leaf.role, ancestorRole: ancestor?.role, ancestorSubrole: ancestor?.subrole
         ))
+    }
+
+    private var searchInfo: SearchNodeInfo {
+        guard isFocused else { return SearchNodeInfo(role: nil, focused: false, selectionSettable: false) }
+        return SearchNodeInfo(role: role, focused: true, selectionSettable: isSettable(kAXSelectedTextRangeAttribute))
+    }
+
+    private var isFocused: Bool {
+        (attribute(kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+    }
+
+    private var children: [AXElement] {
+        guard let raw = attribute(kAXChildrenAttribute), CFGetTypeID(raw) == CFArrayGetTypeID() else { return [] }
+        let array = raw as! CFArray
+        return (0 ..< CFArrayGetCount(array)).compactMap { index in
+            CFArrayGetValueAtIndex(array, index).flatMap { Self.axElement(Unmanaged<CFTypeRef>.fromOpaque($0).takeUnretainedValue()) }
+        }
     }
 
     private static func axElement(_ raw: CFTypeRef) -> AXElement? {
@@ -155,18 +185,30 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     }
 }
 
+struct SearchOutcome: Sendable, Equatable {
+    var found: Bool
+    var role: String?
+    var subrole: String?
+    var visited: Int
+    var elapsedMs: Int
+}
+
 struct EditableResolution: Sendable, Equatable {
     var markerRangePresent: Bool
     var startMarkerPresent = false
     var leafRole: String?
     var ancestorRole: String?
     var ancestorSubrole: String?
+    var search: SearchOutcome?
 
-    var resolved: Bool { ancestorRole != nil }
+    var resolved: Bool { ancestorRole != nil || search?.found == true }
 
     var summary: String {
         let ancestor = ancestorRole.map { role in [role, ancestorSubrole].compactMap { $0 }.joined(separator: " ") } ?? "-"
-        return "marker range present \(markerRangePresent), start marker present \(startMarkerPresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
+        let base = "marker range present \(markerRangePresent), start marker present \(startMarkerPresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
+        guard let search else { return base }
+        return base + ", search found \(search.found) role \(search.role ?? "-") subrole \(search.subrole ?? "-"), "
+            + "visited \(search.visited), \(search.elapsedMs) ms"
     }
 }
 
