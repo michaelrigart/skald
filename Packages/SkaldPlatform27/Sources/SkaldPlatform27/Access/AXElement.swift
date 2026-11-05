@@ -131,7 +131,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
     private func editableAtCaret() -> (AXElement?, EditableResolution) {
         guard let range = attribute("AXSelectedTextMarkerRange") else { return (nil, EditableResolution(markerRangePresent: false)) }
-        let marker = parameterized("AXStartTextMarkerForTextMarkerRange", range)
+        let marker = parameterized("AXStartTextMarkerForTextMarkerRange", range) ?? Self.startMarker(ofRange: range)
         let leaf = marker.flatMap { parameterized("AXUIElementForTextMarker", $0) }.flatMap { Self.axElement($0) }
         guard let leaf else {
             return (nil, EditableResolution(markerRangePresent: true, startMarkerPresent: marker != nil))
@@ -175,6 +175,12 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         return (0 ..< CFArrayGetCount(array)).compactMap { index in
             CFArrayGetValueAtIndex(array, index).flatMap { Self.axElement(Unmanaged<CFTypeRef>.fromOpaque($0).takeUnretainedValue()) }
         }
+    }
+
+    /// WebKit does not answer the parameterized start-marker attribute; the public function reads it from the range itself.
+    private static func startMarker(ofRange range: CFTypeRef) -> CFTypeRef? {
+        guard CFGetTypeID(range) == AXTextMarkerRangeGetTypeID() else { return nil }
+        return AXTextMarkerRangeCopyStartMarker(range as! AXTextMarkerRange)
     }
 
     private static func axElement(_ raw: CFTypeRef) -> AXElement? {
