@@ -30,7 +30,8 @@ struct FieldObservation {
     }
 
     func shouldWrite(for reading: FieldReading) -> Bool {
-        !line.isSecure && write == nil && !writeAborted && reading.value?.hasSuffix(ProbeMarker.pending) == true
+        guard awaitingWrite, let value = reading.value else { return false }
+        return ProbeMarker.range(in: value, caret: reading.selection) != nil
     }
 
     var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted }

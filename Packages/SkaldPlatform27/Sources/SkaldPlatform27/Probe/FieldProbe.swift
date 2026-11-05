@@ -5,6 +5,19 @@ enum ProbeMarker {
     static let pending = "~skald-probe~"
     static let replacement = "~skald-ok~"
     static let earlierWord = "alpha"
+
+    static var length: Int { (pending as NSString).length }
+
+    /// The marker the probe may replace, in UTF-16 units: one that ends the value, or one that ends exactly at a collapsed caret.
+    static func range(in value: String, caret: CFRange?) -> CFRange? {
+        let text = value as NSString
+        guard text.length >= length else { return nil }
+        let suffix = CFRange(location: text.length - length, length: length)
+        if text.substring(from: suffix.location) == pending { return suffix }
+        guard let caret, caret.length == 0, caret.location >= length, caret.location <= text.length else { return nil }
+        let candidate = CFRange(location: caret.location - length, length: length)
+        return text.substring(with: NSRange(location: candidate.location, length: candidate.length)) == pending ? candidate : nil
+    }
 }
 
 struct BoundsBaseline: Sendable, Equatable {
@@ -51,6 +64,7 @@ struct FieldReading: Sendable {
     var rangedRead = false
     var canReadSelection = false
     var hasFrame = false
+    var selection: CFRange?
     var baseline: BoundsBaseline?
     var formatted: AttributedSnapshot?
 
@@ -63,12 +77,16 @@ struct WriteStart: Sendable {
     var beforeLocation: Int
     var beforeLength: Int
 
-    var expectedAfterWrite: String {
-        String(original.dropLast(ProbeMarker.pending.count)) + ProbeMarker.replacement
-    }
+    var markerLocation: Int { beforeLocation + beforeLength }
 
     var hadEarlierWord: Bool {
         original.range(of: ProbeMarker.earlierWord, options: .caseInsensitive) != nil
+    }
+
+    var expectedAfterWrite: String {
+        (original as NSString).replacingCharacters(
+            in: NSRange(location: markerLocation, length: ProbeMarker.length), with: ProbeMarker.replacement
+        )
     }
 }
 
@@ -93,7 +111,8 @@ enum FieldProbe {
 
         reading.value = field.value
         reading.canRead = reading.value != nil
-        reading.canReadSelection = field.selectedRange != nil
+        reading.selection = field.selectedRange
+        reading.canReadSelection = reading.selection != nil
         reading.hasFrame = field.frame.flatMap { usable($0) } != nil
         if let length = length(of: field, value: reading.value), length >= middleLength {
             let range = CFRange(location: max(0, length / 2 - middleLength / 2), length: middleLength)
@@ -108,18 +127,15 @@ enum FieldProbe {
     }
 
     static func write(pid: pid_t) -> WriteAttempt? {
-        guard let field = AXElement.focused(inApp: pid), !isSecure(field),
-              let value = field.value, value.hasSuffix(ProbeMarker.pending)
-        else { return nil }
-        let markerLength = (ProbeMarker.pending as NSString).length
-        let markerLocation = (value as NSString).length - markerLength
+        guard let field = AXElement.focused(inApp: pid), !isSecure(field), let value = field.value else { return nil }
+        let originalSelection = field.selectedRange
+        guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
+        let markerLocation = markerRange.location
         let beforeLocation = max(0, markerLocation - contextLength)
         let beforeLength = markerLocation - beforeLocation
         let before = beforeLength > 0
             ? field.attributedString(for: CFRange(location: beforeLocation, length: beforeLength)).map(AttributedSnapshot.init)
             : nil
-        let markerRange = CFRange(location: markerLocation, length: markerLength)
-        let originalSelection = field.selectedRange
         let selectResult = field.setSelectedRange(markerRange)
         guard selectResult == .success else { return .aborted(reason: "selection rejected (AXError \(selectResult.rawValue))") }
         guard let waited = waitForMarkerSelection(field, markerRange) else {

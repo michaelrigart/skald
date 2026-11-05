@@ -40,6 +40,18 @@ private func written(before: String? = "Hello ther", after: String? = "Hello the
     #expect(!observation.shouldWrite(for: reading()))
 }
 
+@Test func aMarkerBeforeTrailingTextIsWrittenOnlyWithTheCaretAtItsEnd() {
+    let value = "alpha Hello there ~skald-probe~\n\nSignature"
+    var atMarker = reading(value: value)
+    atMarker.selection = CFRange(location: 31, length: 0)
+    var elsewhere = reading(value: value)
+    elsewhere.selection = CFRange(location: 0, length: 0)
+    let observation = observation()
+    #expect(observation.shouldWrite(for: atMarker))
+    #expect(!observation.shouldWrite(for: elsewhere))
+    #expect(!observation.shouldWrite(for: reading(value: value)))
+}
+
 @Test func writeCountsOnceTheValueEndsInTheReplacement() {
     var observation = observation()
     observation.recordWrite(start())
@@ -193,7 +205,7 @@ private let baseline = BoundsBaseline(
 @Test func historyNeedsAnEarlierWordToHaveBeenThere() {
     let plain = "Hello there ~skald-probe~"
     var observation = FieldObservation(app: "com.example.editor", reading: reading(value: plain))
-    observation.recordWrite(WriteStart(original: plain, before: nil, beforeLocation: 0, beforeLength: 0))
+    observation.recordWrite(WriteStart(original: plain, before: nil, beforeLocation: 2, beforeLength: 10))
     observation.absorb(reading(value: "Hello there ~skald-ok~"))
     observation.recordUndo()
     observation.absorb(reading(value: plain))
