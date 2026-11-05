@@ -47,6 +47,9 @@ private final class FieldSession {
     var loggedMarkerPosition = false
     var loggedCaret = false
     var loggedKind = false
+    var markerRetries = 0
+    var retryGaveUp = false
+    var retryTask: Task<Void, Never>?
     var loggedSources = false
     var loggedQuietWait = false
     var lastValueChange: ContinuousClock.Instant?
@@ -255,6 +258,9 @@ public final class Probe {
     private func keystroke(isUndo: Bool) {
         lastKeystroke = clock.now
         guard let session = current, !session.observation.line.isSecure else { return }
+        session.markerRetries = 0
+        session.retryGaveUp = false
+        session.retryTask?.cancel()
         if isUndo {
             session.observation.recordUndo()
             session.undoPending = true
@@ -295,6 +301,16 @@ public final class Probe {
             session.observation.absorb(reading)
             let check = reading.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
             PlatformLog.probe.notice("after undo \(press): \(session.observation.line.app, privacy: .public): \(check, privacy: .public)")
+        }
+    }
+
+    /// Not tied to the evaluation task, so measurements and notifications do not cancel it; a keystroke does.
+    private func scheduleMarkerRetry(_ session: FieldSession) {
+        session.retryTask?.cancel()
+        session.retryTask = Task {
+            try? await clock.sleep(for: MarkerRetry.interval)
+            guard !Task.isCancelled, session === current else { return }
+            await evaluate(session)
         }
     }
 
@@ -345,6 +361,23 @@ public final class Probe {
         if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {
             session.undoPending = false
             PlatformLog.probe.notice("after undo: \(app, privacy: .public): \(check, privacy: .public)")
+        }
+        switch MarkerRetry.step(
+            attempts: session.markerRetries, containsMarker: session.observation.awaitingWrite && reading.containsMarker, placed: shouldWrite
+        ) {
+        case let .retry(attempt):
+            session.markerRetries = attempt
+            scheduleMarkerRetry(session)
+        case let .placed(attempts):
+            session.markerRetries = 0
+            PlatformLog.probe.notice("marker placed after \(attempts) retries: \(app, privacy: .public)")
+        case let .gaveUp(attempts):
+            if !session.retryGaveUp {
+                session.retryGaveUp = true
+                PlatformLog.probe.notice("marker not placed after \(attempts) retries: \(app, privacy: .public)")
+            }
+        case .idle:
+            break
         }
         guard shouldWrite else { return }
 
