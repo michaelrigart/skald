@@ -60,3 +60,12 @@ private func found(_ value: String, _ caret: CFRange?) -> (location: Int, length
     let suffix = WriteStart(original: "Hello ~skald-probe~", before: nil, beforeLocation: 0, beforeLength: 6)
     #expect(suffix.expectedAfterWrite == "Hello ~skald-ok~")
 }
+
+@Test func theTailSummaryHasOnlyACountAndANewlineFlag() {
+    #expect(ProbeMarker.tailSummary(of: "Hi ~skald-probe~\nSecret signature") == "17 units after it, starts with a newline true")
+    #expect(ProbeMarker.tailSummary(of: "Hi ~skald-probe~\r\nSecret") == "8 units after it, starts with a newline true")
+    #expect(ProbeMarker.tailSummary(of: "Hi ~skald-probe~ 😀") == "3 units after it, starts with a newline false")
+    #expect(ProbeMarker.tailSummary(of: "no marker here") == nil)
+    let summary = ProbeMarker.tailSummary(of: "Hi ~skald-probe~\nSecret signature") ?? ""
+    #expect(!summary.contains("Secret") && !summary.contains("U+"))
+}

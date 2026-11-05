@@ -8,6 +8,13 @@ enum ProbeMarker {
 
     static var length: Int { (pending as NSString).length }
 
+    /// Where the last marker sits relative to the end of the value, as a unit count and a boolean only.
+    static func tailSummary(of value: String) -> String? {
+        guard let range = value.range(of: pending, options: .backwards) else { return nil }
+        let after = value[range.upperBound...]
+        return "\(after.utf16.count) units after it, starts with a newline \(after.first?.isNewline == true)"
+    }
+
     /// The marker the probe may replace, in UTF-16 units: one that ends the value, or one that ends exactly at a collapsed caret.
     static func range(in value: String, caret: CFRange?) -> CFRange? {
         let text = value as NSString

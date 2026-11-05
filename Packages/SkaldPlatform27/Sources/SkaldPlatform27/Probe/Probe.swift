@@ -44,6 +44,7 @@ private final class FieldSession {
     var timer: Task<Void, Never>?
     var typedWhileStarting = false
     var undoPending = false
+    var loggedMarkerPosition = false
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -273,8 +274,11 @@ public final class Probe {
         guard session === current, let reading else { return }
         let app = session.observation.line.app
         let shouldWrite = session.observation.shouldWrite(for: reading)
-        if !shouldWrite, session.observation.awaitingWrite, let value = reading.value {
-            logMarkerPosition(value, app: app)
+        if !shouldWrite, !session.loggedMarkerPosition, session.observation.awaitingWrite,
+           let tail = reading.value.flatMap({ ProbeMarker.tailSummary(of: $0) })
+        {
+            session.loggedMarkerPosition = true
+            PlatformLog.probe.notice("marker not at the end: \(app, privacy: .public): \(tail, privacy: .public)")
         }
         session.observation.absorb(reading)
         if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {
@@ -307,14 +311,6 @@ public final class Probe {
             session.observation.recordWriteAborted()
             PlatformLog.probe.notice("write aborted: \(session.observation.line.app, privacy: .public): \(reason, privacy: .public)")
         }
-    }
-
-    /// Logs where the marker sits when it is not at the very end: only lengths and the code points after it.
-    private func logMarkerPosition(_ value: String, app: String) {
-        guard let range = value.range(of: ProbeMarker.pending, options: .backwards) else { return }
-        let after = value[range.upperBound...]
-        let points = after.unicodeScalars.prefix(6).map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
-        PlatformLog.probe.notice("marker not at the end: \(app, privacy: .public): \(after.utf16.count) units after it, starting \(points, privacy: .public)")
     }
 
     private func scheduleRecheck(_ kind: RecheckKind) {
