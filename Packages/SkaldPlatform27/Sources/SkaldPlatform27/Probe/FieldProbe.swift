@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 
@@ -109,7 +110,7 @@ enum FieldProbe {
     static let contextLength = 10
 
     static func measure(pid: pid_t, formatting: (location: Int, length: Int)?) -> FieldReading? {
-        guard let field = AXElement.focused(inApp: pid) else { return nil }
+        guard let field = focusedField(pid) else { return nil }
         var reading = FieldReading(identity: field.identity, role: field.role ?? "", subrole: field.subrole ?? "")
         if reading.isSecure { return reading }
 
@@ -131,7 +132,7 @@ enum FieldProbe {
     }
 
     static func write(pid: pid_t, method: WriteMethod) -> WriteAttempt? {
-        guard let field = AXElement.focused(inApp: pid), !isSecure(field), let value = field.value else { return nil }
+        guard let field = focusedField(pid), !isSecure(field), let value = field.value else { return nil }
         let originalSelection = field.selectedRange
         guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
         let markerLocation = markerRange.location
@@ -161,7 +162,7 @@ enum FieldProbe {
     }
 
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {
-        guard let field = AXElement.focused(inApp: pid), !isSecure(field),
+        guard let field = focusedField(pid), !isSecure(field),
               length(of: field, value: nil) == baseline.length
         else { return .skipped }
         let bounds = field.bounds(for: baseline.range).flatMap { usable($0) }
@@ -173,6 +174,15 @@ enum FieldProbe {
             updated.windowOrigin = windowOrigin
         }
         return .result(stable: stable, baseline: bounds == nil ? nil : updated)
+    }
+
+    private static func focusedField(_ pid: pid_t) -> AXElement? {
+        AXElement.focusedEditable(inApp: pid) { resolution in
+            guard WebAreaLog.shared.isFirst(pid: pid, resolved: resolution.resolved) else { return }
+            let app = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+            let outcome = resolution.resolved ? "web area resolved" : "web area not resolved"
+            PlatformLog.probe.notice("\(outcome, privacy: .public): \(app, privacy: .public): \(resolution.summary, privacy: .public)")
+        }
     }
 
     static func isSecure(_ field: AXElement) -> Bool {

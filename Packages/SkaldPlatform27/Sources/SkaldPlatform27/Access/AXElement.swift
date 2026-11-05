@@ -79,9 +79,37 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
     }
 
+    static func needsEditableResolution(role: String?) -> Bool {
+        role == "AXWebArea"
+    }
+
+    /// The focused element; for a web area, the editable element holding the caret when the text markers lead to one.
+    static func focusedEditable(inApp pid: pid_t, onWebArea report: (EditableResolution) -> Void = { _ in }) -> AXElement? {
+        guard let focused = focused(inApp: pid) else { return nil }
+        guard needsEditableResolution(role: focused.role) else { return focused }
+        let (editable, resolution) = focused.editableAtCaret()
+        report(resolution)
+        return editable ?? focused
+    }
+
+    private func editableAtCaret() -> (AXElement?, EditableResolution) {
+        guard let range = attribute("AXSelectedTextMarkerRange") else { return (nil, EditableResolution(markerRangePresent: false)) }
+        let leaf = parameterized("AXStartTextMarkerForTextMarkerRange", range)
+            .flatMap { parameterized("AXUIElementForTextMarker", $0) }
+            .flatMap { Self.axElement($0) }
+        guard let leaf else { return (nil, EditableResolution(markerRangePresent: true)) }
+        let ancestor = leaf.elementAttribute("AXHighestEditableAncestor") ?? leaf.elementAttribute("AXEditableAncestor")
+        return (ancestor, EditableResolution(
+            markerRangePresent: true, leafRole: leaf.role, ancestorRole: ancestor?.role, ancestorSubrole: ancestor?.subrole
+        ))
+    }
+
+    private static func axElement(_ raw: CFTypeRef) -> AXElement? {
+        CFGetTypeID(raw) == AXUIElementGetTypeID() ? AXElement(raw as! AXUIElement) : nil
+    }
+
     func elementAttribute(_ name: String) -> AXElement? {
-        guard let raw = attribute(name), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-        return AXElement(raw as! AXUIElement)
+        attribute(name).flatMap { Self.axElement($0) }
     }
 
     private func attribute(_ name: String) -> CFTypeRef? {
@@ -96,6 +124,10 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     private func parameterized(_ name: String, _ range: CFRange) -> CFTypeRef? {
         var range = range
         guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+        return parameterized(name, parameter)
+    }
+
+    private func parameterized(_ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
         var result: CFTypeRef?
         return AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success
             ? result : nil
@@ -111,5 +143,35 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
         return AXValueGetValue(raw as! AXValue, .cgRect, &rect) ? rect : nil
+    }
+}
+
+struct EditableResolution: Sendable, Equatable {
+    var markerRangePresent: Bool
+    var leafRole: String?
+    var ancestorRole: String?
+    var ancestorSubrole: String?
+
+    var resolved: Bool { ancestorRole != nil }
+
+    var summary: String {
+        let ancestor = ancestorRole.map { role in [role, ancestorSubrole].compactMap { $0 }.joined(separator: " ") } ?? "-"
+        return "marker range present \(markerRangePresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
+    }
+}
+
+final class WebAreaLog: @unchecked Sendable { // reason: the seen set is only touched under the lock
+    static let shared = WebAreaLog()
+
+    private struct Key: Hashable {
+        let pid: pid_t
+        let resolved: Bool
+    }
+
+    private let lock = NSLock()
+    private var seen: Set<Key> = []
+
+    func isFirst(pid: pid_t, resolved: Bool) -> Bool {
+        lock.withLock { seen.insert(Key(pid: pid, resolved: resolved)).inserted }
     }
 }
