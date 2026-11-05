@@ -242,6 +242,8 @@ public final class Probe {
         if isUndo {
             session.observation.recordUndo()
             session.undoPending = true
+        } else {
+            session.observation.recordTyping()
         }
         switch session.stage {
         case .starting:

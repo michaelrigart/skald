@@ -224,3 +224,34 @@ private let baseline = BoundsBaseline(
     #expect(!observation.line.undoExact)
     #expect(!observation.line.undoEarlierHistory)
 }
+
+@Test func aSecondUndoThatChangesTheValueKeepsTheEarlierHistory() {
+    var observation = written()
+    observation.recordUndo()
+    observation.absorb(reading(value: original))
+    observation.recordUndo()
+    observation.absorb(reading(value: "alpha Hello"))
+    #expect(observation.line.undoEarlierHistory)
+}
+
+@Test func typingAfterANoOpSecondUndoDoesNotCountAsHistory() {
+    var observation = written()
+    observation.recordUndo()
+    observation.absorb(reading(value: original))
+    observation.recordUndo()
+    observation.absorb(reading(value: original))
+    observation.recordTyping()
+    observation.absorb(reading(value: "alpha Hello there ~skald-probe~ more"))
+    #expect(observation.line.undoExact)
+    #expect(!observation.line.undoEarlierHistory)
+}
+
+@Test func typingBeforeTheSecondUndoIsForgottenByIt() {
+    var observation = written()
+    observation.recordUndo()
+    observation.absorb(reading(value: original))
+    observation.recordTyping()
+    observation.recordUndo()
+    observation.absorb(reading(value: "alpha Hello"))
+    #expect(observation.line.undoEarlierHistory)
+}

@@ -15,6 +15,7 @@ struct FieldObservation {
     private var notifications: Set<String> = []
     private var write: WriteStart?
     private var writeAborted = false
+    private var typedSinceUndo = false
     private var movedChecks = 0
     private var failedChecks = 0
 
@@ -55,6 +56,7 @@ struct FieldObservation {
         write = start
         line.writeMethod = start.method
         undoPresses = 0
+        typedSinceUndo = false
     }
 
     mutating func recordWriteAborted() {
@@ -64,6 +66,12 @@ struct FieldObservation {
     mutating func recordUndo() {
         guard write != nil else { return }
         undoPresses += 1
+        typedSinceUndo = false
+    }
+
+    mutating func recordTyping() {
+        guard write != nil else { return }
+        typedSinceUndo = true
     }
 
     mutating func record(notification name: String, afterKeystroke: Bool) {
@@ -101,7 +109,7 @@ struct FieldObservation {
         if undoPresses >= 1, !line.undoExact, value == write.original {
             line.undoExact = true
         }
-        if undoPresses >= 2, line.undoExact, value != write.original {
+        if undoPresses >= 2, line.undoExact, !typedSinceUndo, value != write.original {
             line.undoEarlierHistory = true
         }
     }
