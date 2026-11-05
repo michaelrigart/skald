@@ -68,3 +68,24 @@ import Testing
     none.search = SearchOutcome(found: false, preferred: false, role: nil, subrole: nil, visited: 5, elapsedMs: 1)
     #expect(!EditableResolution.allowsPaste(none))
 }
+
+@Test func theTextMarkerReportHasOnlyBooleansAndNumbers() {
+    let full = TextMarkerReport(
+        elementRangePresent: true, elementTextLength: 412, selectedRangePresent: true,
+        startIndex: 17, endIndex: 17, selectedLength: 0
+    )
+    #expect(full.summary == "element range present true, element text length 412, selected range present true, "
+        + "start index 17, end index 17, selected length 0")
+    let empty = TextMarkerReport(elementRangePresent: false, selectedRangePresent: false)
+    #expect(empty.summary == "element range present false, element text length -, selected range present false, "
+        + "start index -, end index -, selected length -")
+}
+
+@Test func theMarkerReportIsWantedOnceUntilTheSessionEnds() {
+    let log = WebAreaLog()
+    #expect(log.shouldReportMarkers(pid: 10))
+    #expect(!log.shouldReportMarkers(pid: 10))
+    #expect(log.shouldReportMarkers(pid: 11))
+    log.endSession(pid: 10)
+    #expect(log.shouldReportMarkers(pid: 10))
+}

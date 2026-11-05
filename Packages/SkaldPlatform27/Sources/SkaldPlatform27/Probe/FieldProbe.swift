@@ -256,9 +256,12 @@ enum FieldProbe {
     }
 
     static func resolvedField(_ pid: pid_t) -> (element: AXElement, resolution: EditableResolution?)? {
-        AXElement.focusedEditable(inApp: pid) { resolution in
-            guard WebAreaLog.shared.isFirst(pid: pid, resolved: resolution.resolved) else { return }
+        AXElement.focusedEditable(inApp: pid, wantsMarkerReport: { WebAreaLog.shared.shouldReportMarkers(pid: pid) }) { resolution in
             let app = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+            if let markers = resolution.markers {
+                PlatformLog.probe.notice("text markers: \(app, privacy: .public): \(markers.summary, privacy: .public)")
+            }
+            guard WebAreaLog.shared.isFirst(pid: pid, resolved: resolution.resolved) else { return }
             let outcome = resolution.resolved ? "web area resolved" : "web area not resolved"
             PlatformLog.probe.notice("\(outcome, privacy: .public): \(app, privacy: .public): \(resolution.summary, privacy: .public)")
         }

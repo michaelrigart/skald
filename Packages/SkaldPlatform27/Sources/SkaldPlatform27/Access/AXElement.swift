@@ -99,7 +99,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
     /// The focused element; for a web area, the editable element holding the caret when the text markers lead to one.
     static func focusedEditable(
-        inApp pid: pid_t, onWebArea report: (EditableResolution) -> Void = { _ in }
+        inApp pid: pid_t, wantsMarkerReport: () -> Bool = { false }, onWebArea report: (EditableResolution) -> Void = { _ in }
     ) -> (element: AXElement, resolution: EditableResolution?)? {
         guard let focused = focused(inApp: pid) else { return nil }
         guard needsEditableResolution(role: focused.role) else { return (focused, nil) }
@@ -117,6 +117,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
             )
             editable = result.found
         }
+        if !resolution.resolved, wantsMarkerReport() { resolution.markers = focused.textMarkerReport() }
         report(resolution)
         return (editable ?? focused, resolution)
     }
@@ -132,6 +133,24 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         return (ancestor, EditableResolution(
             markerRangePresent: true, startMarkerPresent: true, leafRole: leaf.role, ancestorRole: ancestor?.role, ancestorSubrole: ancestor?.subrole
         ))
+    }
+
+    private func textMarkerReport() -> TextMarkerReport {
+        let elementRange = parameterized("AXTextMarkerRangeForUIElement", element)
+        let selected = attribute("AXSelectedTextMarkerRange")
+        func index(_ marker: CFTypeRef?) -> Int? {
+            marker.flatMap { parameterized("AXIndexForTextMarker", $0) }.flatMap { ($0 as? NSNumber)?.intValue }
+        }
+        return TextMarkerReport(
+            elementRangePresent: elementRange != nil,
+            elementTextLength: elementRange.flatMap { parameterized("AXStringForTextMarkerRange", $0) as? String }
+                .map { ($0 as NSString).length },
+            selectedRangePresent: selected != nil,
+            startIndex: index(selected.flatMap { parameterized("AXStartTextMarkerForTextMarkerRange", $0) }),
+            endIndex: index(selected.flatMap { parameterized("AXEndTextMarkerForTextMarkerRange", $0) }),
+            selectedLength: selected.flatMap { parameterized("AXLengthForTextMarkerRange", $0) }
+                .flatMap { ($0 as? NSNumber)?.intValue }
+        )
     }
 
     private var searchInfo: SearchNodeInfo {
@@ -202,6 +221,22 @@ struct SearchOutcome: Sendable, Equatable {
     var elapsedMs: Int
 }
 
+struct TextMarkerReport: Sendable, Equatable {
+    var elementRangePresent: Bool
+    var elementTextLength: Int?
+    var selectedRangePresent: Bool
+    var startIndex: Int?
+    var endIndex: Int?
+    var selectedLength: Int?
+
+    var summary: String {
+        func number(_ value: Int?) -> String { value.map(String.init) ?? "-" }
+        return "element range present \(elementRangePresent), element text length \(number(elementTextLength)), "
+            + "selected range present \(selectedRangePresent), start index \(number(startIndex)), "
+            + "end index \(number(endIndex)), selected length \(number(selectedLength))"
+    }
+}
+
 struct EditableResolution: Sendable, Equatable {
     var markerRangePresent: Bool
     var startMarkerPresent = false
@@ -209,6 +244,7 @@ struct EditableResolution: Sendable, Equatable {
     var ancestorRole: String?
     var ancestorSubrole: String?
     var search: SearchOutcome?
+    var markers: TextMarkerReport?
 
     var resolved: Bool { ancestorRole != nil || search?.found == true }
 
@@ -236,12 +272,20 @@ final class WebAreaLog: @unchecked Sendable { // reason: the seen set is only to
 
     private let lock = NSLock()
     private var seen: Set<Key> = []
+    private var markerReported: Set<pid_t> = []
 
     func isFirst(pid: pid_t, resolved: Bool) -> Bool {
         lock.withLock { seen.insert(Key(pid: pid, resolved: resolved)).inserted }
     }
 
+    func shouldReportMarkers(pid: pid_t) -> Bool {
+        lock.withLock { markerReported.insert(pid).inserted }
+    }
+
     func endSession(pid: pid_t) {
-        lock.withLock { _ = seen.remove(Key(pid: pid, resolved: false)) }
+        lock.withLock {
+            _ = seen.remove(Key(pid: pid, resolved: false))
+            markerReported.remove(pid)
+        }
     }
 }
