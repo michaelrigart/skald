@@ -181,6 +181,21 @@ private let baseline = BoundsBaseline(
     #expect(!observation.line.undoExact)
 }
 
+@Test func theLineRecordsHowTheWriteWasMade() {
+    var observation = observation()
+    #expect(observation.finishedLine.writeMethod == nil)
+    var pasted = start()
+    pasted.method = .paste
+    observation.recordWrite(pasted)
+    #expect(observation.finishedLine.writeMethod == .paste)
+}
+
+@Test func anAbortedWriteLeavesTheMethodUnset() {
+    var observation = observation()
+    observation.recordWriteAborted()
+    #expect(observation.finishedLine.writeMethod == nil)
+}
+
 @Test func anAbortedWriteIsNotRetried() {
     var observation = observation()
     #expect(observation.shouldWrite(for: reading()))

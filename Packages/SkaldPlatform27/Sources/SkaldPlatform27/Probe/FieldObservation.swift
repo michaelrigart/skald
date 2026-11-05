@@ -53,6 +53,7 @@ struct FieldObservation {
 
     mutating func recordWrite(_ start: WriteStart) {
         write = start
+        line.writeMethod = start.method
         undoPresses = 0
     }
 

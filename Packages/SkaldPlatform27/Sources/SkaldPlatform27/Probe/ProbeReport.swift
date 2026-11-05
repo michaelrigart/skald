@@ -13,6 +13,7 @@ struct ProbeLine: Codable, Equatable {
     var undoExact = false
     var undoEarlierHistory = false
     var formattingKept: Bool?
+    var writeMethod: WriteMethod?
     var notifications: [String] = []
     var cpuIdle: Double?
     var cpuTyping: Double?
@@ -35,6 +36,7 @@ struct ProbeLine: Codable, Equatable {
             + capabilities.map { String($0) }
             + [
                 isSecure ? "-" : formattingKept.map { String($0) } ?? "-",
+                isSecure ? "-" : writeMethod?.rawValue ?? "-",
                 isSecure || notifications.isEmpty ? "-" : notifications.joined(separator: ","),
                 Self.percent(cpuIdle), Self.percent(cpuTyping),
                 Self.percent(cpuIdleForced), Self.percent(cpuTypingForced),
