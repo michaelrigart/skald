@@ -45,6 +45,18 @@ struct TextMarkerField {
         return marker.location + marker.length == textLength ? .elementEnd : nil
     }
 
+    static func describeEditableAncestor(_ value: Bool?) -> String {
+        value.map(String.init) ?? "unsupported"
+    }
+
+    /// Diagnostic only: does the element at the selection's start marker have an editable ancestor? nil when unsupported.
+    var selectionStartHasEditableAncestor: Bool? {
+        guard let selected = selectedRange,
+              let leaf = Self.axElement(element.parameterized("AXUIElementForTextMarker", AXTextMarkerRangeCopyStartMarker(selected)))
+        else { return nil }
+        return leaf.hasAttributeValue("AXEditableAncestor")
+    }
+
     var elementRange: AXTextMarkerRange? {
         Self.markerRange(element.parameterized("AXTextMarkerRangeForUIElement", element.element))
     }
@@ -104,6 +116,11 @@ struct TextMarkerField {
     private static func markerRange(_ raw: CFTypeRef?) -> AXTextMarkerRange? {
         guard let raw, CFGetTypeID(raw) == AXTextMarkerRangeGetTypeID() else { return nil }
         return (raw as! AXTextMarkerRange)
+    }
+
+    private static func axElement(_ raw: CFTypeRef?) -> AXElement? {
+        guard let raw, CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+        return AXElement(raw as! AXUIElement)
     }
 
     private static func marker(_ raw: CFTypeRef?) -> AXTextMarker? {

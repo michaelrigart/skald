@@ -194,6 +194,10 @@ enum FieldProbe {
         )
     }
 
+    static func editableAncestorDiagnosis(pid: pid_t) -> String {
+        TextMarkerField.describeEditableAncestor(focusedField(pid).flatMap { TextMarkerField($0)?.selectionStartHasEditableAncestor })
+    }
+
     static func text(of field: AXElement, kind: FieldKind) -> String? {
         kind == .textMarkers ? TextMarkerField(field)?.text : field.value
     }
@@ -238,7 +242,7 @@ enum FieldProbe {
         if content.kind == .textMarkers, method != .paste {
             return .aborted(reason: "a text-marker field is written by paste only")
         }
-        if content.kind == .ranges, method == .paste, !EditableResolution.allowsPaste(resolved.resolution) {
+        if method == .paste, !EditableResolution.allowsPaste(resolved.resolution, kind: content.kind) {
             return .aborted(reason: "paste refused: the field is only the deepest focused element of a web area, not a text area or field")
         }
         let beforeLocation = max(0, markerRange.location - contextLength)

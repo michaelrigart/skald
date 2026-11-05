@@ -89,3 +89,23 @@ import Testing
     log.endSession(pid: 10)
     #expect(log.shouldReportMarkers(pid: 10))
 }
+
+@Test func aMarkerFieldIsPastedOnlyWhenNotAMereDeepestFocusedGuess() {
+    func resolution(found: Bool, preferred: Bool) -> EditableResolution {
+        var resolution = EditableResolution(markerRangePresent: true)
+        resolution.search = SearchOutcome(found: found, preferred: preferred, role: nil, subrole: nil, visited: 5, elapsedMs: 1)
+        return resolution
+    }
+    #expect(EditableResolution.allowsPaste(nil, kind: .textMarkers))
+    #expect(EditableResolution.allowsPaste(resolution(found: true, preferred: true), kind: .textMarkers))
+    #expect(!EditableResolution.allowsPaste(resolution(found: true, preferred: false), kind: .textMarkers))
+    #expect(EditableResolution.allowsPaste(resolution(found: false, preferred: false), kind: .textMarkers))
+    #expect(!EditableResolution.allowsPaste(resolution(found: false, preferred: false), kind: .ranges))
+    #expect(!EditableResolution.allowsPaste(resolution(found: true, preferred: false), kind: .ranges))
+}
+
+@Test func theEditableAncestorDiagnosisIsNamedForTheLog() {
+    #expect(TextMarkerField.describeEditableAncestor(true) == "true")
+    #expect(TextMarkerField.describeEditableAncestor(false) == "false")
+    #expect(TextMarkerField.describeEditableAncestor(nil) == "unsupported")
+}

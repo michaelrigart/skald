@@ -313,6 +313,10 @@ public final class Probe {
         if !session.loggedKind {
             session.loggedKind = true
             PlatformLog.probe.notice("field kind: \(app, privacy: .public): \(Self.describeKind(reading), privacy: .public)")
+            if reading.kind == .textMarkers {
+                let ancestor = await queue.run { FieldProbe.editableAncestorDiagnosis(pid: pid) }
+                PlatformLog.probe.notice("marker field editable ancestor: \(app, privacy: .public): \(ancestor, privacy: .public)")
+            }
         }
         let shouldWrite = session.observation.shouldWrite(for: reading)
         if !shouldWrite, !session.loggedMarkerPosition, session.observation.awaitingWrite,

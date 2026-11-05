@@ -178,6 +178,10 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         attribute(name).flatMap { Self.axElement($0) }
     }
 
+    func hasAttributeValue(_ name: String) -> Bool {
+        attribute(name) != nil
+    }
+
     func attribute(_ name: String) -> CFTypeRef? {
         var result: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success ? result : nil
@@ -248,9 +252,10 @@ struct EditableResolution: Sendable, Equatable {
 
     var resolved: Bool { ancestorRole != nil || search?.found == true }
 
-    static func allowsPaste(_ resolution: EditableResolution?) -> Bool {
+    static func allowsPaste(_ resolution: EditableResolution?, kind: FieldKind = .ranges) -> Bool {
         guard let search = resolution?.search else { return true }
-        return search.preferred
+        if search.preferred { return true }
+        return kind == .textMarkers && !search.found
     }
 
     var summary: String {
