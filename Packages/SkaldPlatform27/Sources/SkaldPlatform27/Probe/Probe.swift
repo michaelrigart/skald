@@ -47,6 +47,8 @@ private final class FieldSession {
     var loggedMarkerPosition = false
     var loggedCaret = false
     var loggedKind = false
+    var loggedQuietWait = false
+    var lastValueChange: ContinuousClock.Instant?
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -131,6 +133,7 @@ public final class Probe {
         if let session = ownSession {
             let recent = lastKeystroke.map { $0.duration(to: clock.now) <= FieldObservation.notificationWindow } ?? false
             session.observation.record(notification: name, afterKeystroke: recent)
+            if name == "AXValueChanged" { session.lastValueChange = clock.now }
         }
         switch name {
         case "AXFocusedUIElementChanged":
@@ -294,11 +297,11 @@ public final class Probe {
         }
     }
 
-    private func scheduleEvaluation() {
+    private func scheduleEvaluation(after delay: Duration = Probe.evaluationDelay) {
         evaluationTask?.cancel()
         guard let session = current, !session.observation.line.isSecure else { return }
         evaluationTask = Task {
-            try? await clock.sleep(for: Self.evaluationDelay)
+            try? await clock.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await evaluate(session)
         }
@@ -340,9 +343,19 @@ public final class Probe {
         }
         guard shouldWrite else { return }
 
+        let method: WriteMethod = reading.kind == .textMarkers ? .paste : WriteMethod(for: session.mode)
+        if method == .paste,
+           let wait = QuietPeriod.remaining(now: clock.now, lastKeystroke: lastKeystroke, lastValueChange: session.lastValueChange)
+        {
+            if !session.loggedQuietWait {
+                session.loggedQuietWait = true
+                PlatformLog.probe.notice("paste waits for a quiet period: \(app, privacy: .public): \(Int(wait / .milliseconds(1))) ms to go")
+            }
+            scheduleEvaluation(after: wait)
+            return
+        }
         session.observation.beginWrite()
         let attempt: WriteAttempt?
-        let method: WriteMethod = reading.kind == .textMarkers ? .paste : WriteMethod(for: session.mode)
         switch method {
         case .ax: attempt = await queue.run { FieldProbe.write(pid: pid) }
         case .paste: attempt = await pasteWrite(session)
