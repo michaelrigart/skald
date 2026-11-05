@@ -63,6 +63,7 @@ public final class Probe {
     private static let grantWait: Duration = .seconds(5 * 60)
     private static let writeSettle: Duration = .milliseconds(500)
     private static let latePasteWait: Duration = .seconds(1)
+    private static let undoMeasurementDelay: Duration = .milliseconds(250)
 
     private let queue = AXQueue()
     private let clock = ContinuousClock()
@@ -250,6 +251,7 @@ public final class Probe {
         if isUndo {
             session.observation.recordUndo()
             session.undoPending = true
+            if session.observation.hasWrite { measureAfterUndo(session, press: session.observation.undoPresses) }
         } else {
             session.observation.recordTyping()
         }
@@ -264,6 +266,21 @@ public final class Probe {
             break
         }
         scheduleEvaluation()
+    }
+
+    /// One measurement per ⌘Z, not cancelled by later keystrokes, so each press is judged on its own state.
+    private func measureAfterUndo(_ session: FieldSession, press: Int) {
+        Task {
+            try? await clock.sleep(for: Self.undoMeasurementDelay)
+            guard session === current else { return }
+            let pid = session.pid
+            let formatting = session.observation.formatting
+            let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting) }
+            guard session === current, let reading else { return }
+            session.observation.absorb(reading)
+            let check = reading.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
+            PlatformLog.probe.notice("after undo \(press): \(session.observation.line.app, privacy: .public): \(check, privacy: .public)")
+        }
     }
 
     private func scheduleEvaluation() {

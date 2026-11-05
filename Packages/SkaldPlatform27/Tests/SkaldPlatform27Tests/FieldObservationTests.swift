@@ -269,3 +269,29 @@ private let baseline = BoundsBaseline(
     observation.recordWrite(start())
     #expect(!observation.shouldWrite(for: reading()))
 }
+
+@Test func eachUndoPressIsDecidedFromTheStateAfterThatPress() {
+    var observation = written()
+    observation.recordUndo()
+    observation.absorb(reading(value: original))
+    #expect(observation.undoPresses == 1)
+    #expect(observation.line.undoExact)
+    #expect(!observation.line.undoEarlierHistory)
+
+    observation.recordUndo()
+    observation.absorb(reading(value: "alpha Hello"))
+    #expect(observation.undoPresses == 2)
+    #expect(observation.line.undoExact)
+    #expect(observation.line.undoEarlierHistory)
+}
+
+@Test func anUndoIsMeasurableOnlyOnceAWriteWasRecorded() {
+    var observation = observation()
+    #expect(!observation.hasWrite)
+    observation.recordUndo()
+    #expect(observation.undoPresses == 0)
+    observation.recordWrite(start())
+    #expect(observation.hasWrite)
+    observation.recordUndo()
+    #expect(observation.undoPresses == 1)
+}

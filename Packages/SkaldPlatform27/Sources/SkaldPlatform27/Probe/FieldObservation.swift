@@ -36,6 +36,8 @@ struct FieldObservation {
         return ProbeMarker.range(in: value, caret: reading.selection) != nil
     }
 
+    var hasWrite: Bool { write != nil }
+
     var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted && !writeInFlight }
 
     /// How a value compares with the written and the original text, in lengths and booleans only.
