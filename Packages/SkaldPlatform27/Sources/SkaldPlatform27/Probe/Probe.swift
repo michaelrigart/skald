@@ -47,6 +47,7 @@ private final class FieldSession {
     var loggedMarkerPosition = false
     var loggedCaret = false
     var loggedKind = false
+    var loggedSources = false
     var loggedQuietWait = false
     var lastValueChange: ContinuousClock.Instant?
     var absorbFocusUntil: ContinuousClock.Instant?
@@ -335,6 +336,10 @@ public final class Probe {
         {
             session.loggedCaret = true
             PlatformLog.probe.notice("marker not accepted: \(app, privacy: .public): \(caret, privacy: .public)")
+        }
+        if !session.loggedSources, session.observation.awaitingWrite, reading.sources.contains(where: \.containsMarker) {
+            session.loggedSources = true
+            PlatformLog.probe.notice("marker sources: \(app, privacy: .public): \(reading.sources.map(\.description).joined(separator: "; "), privacy: .public)")
         }
         session.observation.absorb(reading)
         if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {

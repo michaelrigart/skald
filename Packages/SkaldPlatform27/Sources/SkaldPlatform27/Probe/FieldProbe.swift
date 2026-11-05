@@ -71,6 +71,34 @@ struct AttributedSnapshot: @unchecked Sendable { // reason: an immutable value, 
     let value: NSAttributedString
 }
 
+struct SourceSummary: Sendable, Equatable {
+    var name: String
+    var containsMarker: Bool
+    var textLength: Int?
+    var caretLocation: Int?
+    var caretLength: Int?
+
+    init(name: String, containsMarker: Bool, textLength: Int?, caretLocation: Int?, caretLength: Int?) {
+        self.name = name
+        self.containsMarker = containsMarker
+        self.textLength = textLength
+        self.caretLocation = caretLocation
+        self.caretLength = caretLength
+    }
+
+    init(name: String, text: String?, caret: CFRange?) {
+        self.init(
+            name: name, containsMarker: text?.contains(ProbeMarker.pending) == true,
+            textLength: text.map { ($0 as NSString).length }, caretLocation: caret?.location, caretLength: caret?.length
+        )
+    }
+
+    var description: String {
+        let caret = caretLocation.map { "\($0),\(caretLength ?? 0)" } ?? "none"
+        return "\(name) contains marker \(containsMarker), text length \(textLength.map(String.init) ?? "-"), caret \(caret)"
+    }
+}
+
 struct FieldReading: Sendable {
     var identity: String
     var role: String
@@ -83,10 +111,12 @@ struct FieldReading: Sendable {
     var selection: CFRange?
     var characterCount: Int?
     var kind = FieldKind.ranges
+    var sources: [SourceSummary] = []
     var baseline: BoundsBaseline?
     var formatted: AttributedSnapshot?
 
     var isSecure: Bool { role == ProbeLine.secureRole || subrole == ProbeLine.secureRole }
+    var containsMarker: Bool { sources.contains { $0.containsMarker } || value?.contains(ProbeMarker.pending) == true }
 }
 
 enum WriteMethod: String, Sendable, Codable {
@@ -165,6 +195,7 @@ enum FieldProbe {
         var rangedRead: Bool
         var length: Int?
         var middle: CFRange?
+        var sources: [SourceSummary] = []
     }
 
     /// The text and caret of a field: through ranges, or through text markers when the ranges are unusable.
@@ -179,18 +210,27 @@ enum FieldProbe {
             rangedRead = field.string(for: range).map { ranged($0, matches: value, at: range) } ?? false
             middle = range
         }
-        let ranges = FieldContent(kind: .ranges, value: value, selection: selection, rangedRead: rangedRead, length: length, middle: middle)
+        var sources = [SourceSummary(name: "ranges", text: value, caret: selection)]
+        var ranges = FieldContent(
+            kind: .ranges, value: value, selection: selection, rangedRead: rangedRead, length: length, middle: middle, sources: sources
+        )
         if forced == .ranges { return ranges }
-        if forced == nil, let value, ProbeMarker.range(in: value, caret: selection) != nil { return ranges }
-        let rangedReadFailed = middle != nil && !rangedRead
-        guard forced == .textMarkers || selection == nil || rangedReadFailed, let markers = TextMarkerField(field) else { return ranges }
-        let kind = forced ?? FieldKind.decide(selectedRangePresent: selection != nil, rangedReadFailed: rangedReadFailed, markersAnswer: true)
-        guard kind == .textMarkers else { return ranges }
+        let rangesPlace = value.map { ProbeMarker.range(in: $0, caret: selection) != nil } ?? false
+        if forced == nil, rangesPlace { return ranges }
+        guard let markers = TextMarkerField(field) else { return ranges }
         let text = markers.text
         let textLength = text.map { ($0 as NSString).length }
+        let caret = textLength.flatMap { markers.caret(textLength: $0) }
+        sources.append(SourceSummary(name: "text markers", text: text, caret: caret))
+        ranges.sources = sources
+        let markersPlace = text.map { ProbeMarker.range(in: $0, caret: caret) != nil } ?? false
+        let kind = forced ?? FieldKind.choose(
+            rangesPlaceMarker: rangesPlace, markersPlaceMarker: markersPlace, selectedRangePresent: selection != nil,
+            rangedReadFailed: middle != nil && !rangedRead, markersAnswer: true
+        )
+        guard kind == .textMarkers else { return ranges }
         return FieldContent(
-            kind: .textMarkers, value: text, selection: textLength.flatMap { markers.caret(textLength: $0) },
-            rangedRead: false, length: textLength, middle: nil
+            kind: .textMarkers, value: text, selection: caret, rangedRead: false, length: textLength, middle: nil, sources: sources
         )
     }
 
@@ -209,6 +249,7 @@ enum FieldProbe {
 
         let content = readContent(of: field, forcing: forced)
         reading.kind = content.kind
+        reading.sources = content.sources
         reading.value = content.value
         reading.canRead = reading.value != nil
         reading.selection = content.selection

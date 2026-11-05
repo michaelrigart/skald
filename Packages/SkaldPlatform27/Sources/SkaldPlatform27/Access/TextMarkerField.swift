@@ -8,6 +8,15 @@ enum FieldKind: String, Sendable {
     static func decide(selectedRangePresent: Bool, rangedReadFailed: Bool, markersAnswer: Bool) -> FieldKind {
         markersAnswer && (!selectedRangePresent || rangedReadFailed) ? .textMarkers : .ranges
     }
+
+    /// The source that places the marker wins; with neither placing it, the usability rule decides.
+    static func choose(
+        rangesPlaceMarker: Bool, markersPlaceMarker: Bool, selectedRangePresent: Bool, rangedReadFailed: Bool, markersAnswer: Bool
+    ) -> FieldKind {
+        if rangesPlaceMarker { return .ranges }
+        if markersAnswer && markersPlaceMarker { return .textMarkers }
+        return decide(selectedRangePresent: selectedRangePresent, rangedReadFailed: rangedReadFailed, markersAnswer: markersAnswer)
+    }
 }
 
 struct MarkerRangeBox: @unchecked Sendable { // reason: an immutable CF value, only handed back to AX on AXQueue

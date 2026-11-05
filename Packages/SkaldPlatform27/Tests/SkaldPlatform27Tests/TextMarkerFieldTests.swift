@@ -43,3 +43,27 @@ import Testing
     #expect(TextMarkerField.anchor(for: range(16), caret: caret(0), textLength: 40) == nil)
     #expect(TextMarkerField.anchor(for: range(16), caret: caret(16, 13), textLength: 40) == nil)
 }
+@Test func theSourceThatPlacesTheMarkerWins() {
+    func choose(ranges: Bool, markers: Bool, selected: Bool = true, failed: Bool = false, answer: Bool = true) -> FieldKind {
+        FieldKind.choose(
+            rangesPlaceMarker: ranges, markersPlaceMarker: markers, selectedRangePresent: selected,
+            rangedReadFailed: failed, markersAnswer: answer
+        )
+    }
+    #expect(choose(ranges: true, markers: true) == .ranges)
+    #expect(choose(ranges: true, markers: false, selected: false, failed: true) == .ranges)
+    #expect(choose(ranges: false, markers: true) == .textMarkers)
+    #expect(choose(ranges: false, markers: true, answer: false) == .ranges)
+    #expect(choose(ranges: false, markers: false) == .ranges)
+    #expect(choose(ranges: false, markers: false, selected: false) == .textMarkers)
+    #expect(choose(ranges: false, markers: false, failed: true) == .textMarkers)
+    #expect(choose(ranges: false, markers: false, failed: true, answer: false) == .ranges)
+}
+
+@Test func aSourceSummaryHasOnlyBooleansAndNumbers() {
+    let full = SourceSummary(name: "text markers", containsMarker: true, textLength: 174, caretLocation: 16, caretLength: 0)
+    #expect(full.description == "text markers contains marker true, text length 174, caret 16,0")
+    let empty = SourceSummary(name: "ranges", containsMarker: false, textLength: nil, caretLocation: nil, caretLength: nil)
+    #expect(empty.description == "ranges contains marker false, text length -, caret none")
+}
+
