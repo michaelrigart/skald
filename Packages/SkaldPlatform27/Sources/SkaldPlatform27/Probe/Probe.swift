@@ -304,6 +304,24 @@ public final class Probe {
         }
     }
 
+    private func applyRetry(_ step: MarkerRetry.Step, session: FieldSession, app: String) {
+        switch step {
+        case let .retry(attempt):
+            session.markerRetries = attempt
+            scheduleMarkerRetry(session)
+        case let .placed(attempts):
+            session.markerRetries = 0
+            PlatformLog.probe.notice("marker placed after \(attempts) retries: \(app, privacy: .public)")
+        case let .gaveUp(attempts):
+            if !session.retryGaveUp {
+                session.retryGaveUp = true
+                PlatformLog.probe.notice("marker not placed after \(attempts) retries: \(app, privacy: .public)")
+            }
+        case .idle:
+            break
+        }
+    }
+
     /// Not tied to the evaluation task, so measurements and notifications do not cancel it; a keystroke does.
     private func scheduleMarkerRetry(_ session: FieldSession) {
         session.retryTask?.cancel()
@@ -362,23 +380,12 @@ public final class Probe {
             session.undoPending = false
             PlatformLog.probe.notice("after undo: \(app, privacy: .public): \(check, privacy: .public)")
         }
-        switch MarkerRetry.step(
-            attempts: session.markerRetries, containsMarker: session.observation.awaitingWrite && reading.containsMarker, placed: shouldWrite
-        ) {
-        case let .retry(attempt):
-            session.markerRetries = attempt
-            scheduleMarkerRetry(session)
-        case let .placed(attempts):
-            session.markerRetries = 0
-            PlatformLog.probe.notice("marker placed after \(attempts) retries: \(app, privacy: .public)")
-        case let .gaveUp(attempts):
-            if !session.retryGaveUp {
-                session.retryGaveUp = true
-                PlatformLog.probe.notice("marker not placed after \(attempts) retries: \(app, privacy: .public)")
-            }
-        case .idle:
-            break
-        }
+        applyRetry(
+            MarkerRetry.step(
+                attempts: session.markerRetries, containsMarker: session.observation.awaitingWrite && reading.containsMarker, placed: shouldWrite
+            ),
+            session: session, app: app
+        )
         guard shouldWrite else { return }
 
         let method: WriteMethod = reading.kind == .textMarkers ? .paste : WriteMethod(for: session.mode)
@@ -402,6 +409,11 @@ public final class Probe {
         guard session === current else { return }
         guard let attempt else {
             PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
+            if reading.containsMarker {
+                applyRetry(
+                    MarkerRetry.step(attempts: session.markerRetries, containsMarker: true, placed: false), session: session, app: app
+                )
+            }
             return
         }
         switch attempt {
