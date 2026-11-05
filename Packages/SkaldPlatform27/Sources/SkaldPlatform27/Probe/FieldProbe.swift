@@ -70,11 +70,20 @@ struct FieldReading: Sendable {
     var isSecure: Bool { role == ProbeLine.secureRole || subrole == ProbeLine.secureRole }
 }
 
+enum WriteMethod: String, Sendable, Codable {
+    case ax, paste
+
+    init(for mode: AppAccessibilityMode) {
+        self = mode == .native ? .ax : .paste
+    }
+}
+
 struct WriteStart: Sendable {
     var original: String
     var before: AttributedSnapshot?
     var beforeLocation: Int
     var beforeLength: Int
+    var method = WriteMethod.ax
 
     var markerLocation: Int { beforeLocation + beforeLength }
 
@@ -121,7 +130,7 @@ enum FieldProbe {
         return reading
     }
 
-    static func write(pid: pid_t) -> WriteAttempt? {
+    static func write(pid: pid_t, method: WriteMethod) -> WriteAttempt? {
         guard let field = AXElement.focused(inApp: pid), !isSecure(field), let value = field.value else { return nil }
         let originalSelection = field.selectedRange
         guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
@@ -137,11 +146,17 @@ enum FieldProbe {
             let seen = describeSelection(field, markerRange)
             return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(originalSelection, in: field))")
         }
-        let textSettable = field.isSettable(kAXSelectedTextAttribute)
-        let textResult = field.setSelectedText(ProbeMarker.replacement)
-        PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(waited) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
+        switch method {
+        case .ax:
+            let textSettable = field.isSettable(kAXSelectedTextAttribute)
+            let textResult = field.setSelectedText(ProbeMarker.replacement)
+            PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(waited) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
+        case .paste:
+            let outcome = PasteWrite.send(to: pid, field: field, original: value)
+            PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(waited) ms, \(PasteWrite.describe(outcome), privacy: .public)")
+        }
         return .started(WriteStart(
-            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength
+            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, method: method
         ))
     }
 
