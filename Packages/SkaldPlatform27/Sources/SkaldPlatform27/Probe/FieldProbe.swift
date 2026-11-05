@@ -177,17 +177,21 @@ enum FieldProbe {
     }
 
     static func write(pid: pid_t) -> WriteAttempt? {
-        switch prepare(pid: pid) {
+        switch prepare(pid: pid, method: .ax) {
         case nil: nil
         case let .aborted(reason): .aborted(reason: reason)
         case let .ready(prepared): .started(writeByAccessibility(prepared, pid: pid))
         }
     }
 
-    static func prepare(pid: pid_t) -> Preparation? {
-        guard let field = focusedField(pid), !isSecure(field), let value = field.value else { return nil }
+    static func prepare(pid: pid_t, method: WriteMethod) -> Preparation? {
+        guard let resolved = resolvedField(pid), !isSecure(resolved.element), let value = resolved.element.value else { return nil }
+        let field = resolved.element
         let originalSelection = field.selectedRange
         guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
+        if method == .paste, !EditableResolution.allowsPaste(resolved.resolution) {
+            return .aborted(reason: "paste refused: the field is only the deepest focused element of a web area, not a text area or field")
+        }
         let beforeLocation = max(0, markerRange.location - contextLength)
         let beforeLength = markerRange.location - beforeLocation
         let before = beforeLength > 0
@@ -248,6 +252,10 @@ enum FieldProbe {
     }
 
     static func focusedField(_ pid: pid_t) -> AXElement? {
+        resolvedField(pid)?.element
+    }
+
+    static func resolvedField(_ pid: pid_t) -> (element: AXElement, resolution: EditableResolution?)? {
         AXElement.focusedEditable(inApp: pid) { resolution in
             guard WebAreaLog.shared.isFirst(pid: pid, resolved: resolution.resolved) else { return }
             let app = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"

@@ -47,10 +47,24 @@ import Testing
 
 @Test func aSearchOutcomeCountsAsResolvedAndShowsInTheSummary() {
     var resolution = EditableResolution(markerRangePresent: false)
-    resolution.search = SearchOutcome(found: false, role: nil, subrole: nil, visited: 3000, elapsedMs: 150)
+    resolution.search = SearchOutcome(found: false, preferred: false, role: nil, subrole: nil, visited: 3000, elapsedMs: 150)
     #expect(!resolution.resolved)
-    #expect(resolution.summary.hasSuffix("search found false role - subrole -, visited 3000, 150 ms"))
-    resolution.search = SearchOutcome(found: true, role: "AXTextArea", subrole: nil, visited: 12, elapsedMs: 4)
+    #expect(resolution.summary.hasSuffix("search found false preferred false role - subrole -, visited 3000, 150 ms"))
+    resolution.search = SearchOutcome(found: true, preferred: true, role: "AXTextArea", subrole: nil, visited: 12, elapsedMs: 4)
     #expect(resolution.resolved)
-    #expect(resolution.summary.hasSuffix("search found true role AXTextArea subrole -, visited 12, 4 ms"))
+    #expect(resolution.summary.hasSuffix("search found true preferred true role AXTextArea subrole -, visited 12, 4 ms"))
+}
+
+@Test func aPasteIsAllowedOnlyOnAnElementThatIsNotAMereDeepestFocusedGuess() {
+    #expect(EditableResolution.allowsPaste(nil))
+    #expect(EditableResolution.allowsPaste(EditableResolution(markerRangePresent: true, leafRole: "AXStaticText", ancestorRole: "AXTextArea")))
+    var preferred = EditableResolution(markerRangePresent: false)
+    preferred.search = SearchOutcome(found: true, preferred: true, role: "AXTextArea", subrole: nil, visited: 5, elapsedMs: 1)
+    #expect(EditableResolution.allowsPaste(preferred))
+    var deepest = EditableResolution(markerRangePresent: false)
+    deepest.search = SearchOutcome(found: true, preferred: false, role: "AXGroup", subrole: nil, visited: 5, elapsedMs: 1)
+    #expect(!EditableResolution.allowsPaste(deepest))
+    var none = EditableResolution(markerRangePresent: false)
+    none.search = SearchOutcome(found: false, preferred: false, role: nil, subrole: nil, visited: 5, elapsedMs: 1)
+    #expect(!EditableResolution.allowsPaste(none))
 }

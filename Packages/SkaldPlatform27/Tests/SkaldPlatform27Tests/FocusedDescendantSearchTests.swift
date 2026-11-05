@@ -96,3 +96,13 @@ private func search(
     #expect(limits.maxDepth == 40)
     #expect(limits.maxMs == 150)
 }
+
+@Test func theResultSaysWhetherItWasAPreferredNode() {
+    let preferred = Tree(role: "AXWebArea", kids: [Tree(role: "AXTextArea", focused: true)])
+    let deepest = Tree(role: "AXWebArea", kids: [Tree(role: "AXGroup", focused: true)])
+    let none = Tree(role: "AXWebArea", kids: [Tree(role: "AXGroup")])
+    #expect(search(preferred).preferred)
+    #expect(!search(deepest).preferred)
+    #expect(search(deepest).found != nil)
+    #expect(!search(none).preferred)
+}

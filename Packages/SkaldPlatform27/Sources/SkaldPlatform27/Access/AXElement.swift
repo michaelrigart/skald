@@ -92,9 +92,11 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     }
 
     /// The focused element; for a web area, the editable element holding the caret when the text markers lead to one.
-    static func focusedEditable(inApp pid: pid_t, onWebArea report: (EditableResolution) -> Void = { _ in }) -> AXElement? {
+    static func focusedEditable(
+        inApp pid: pid_t, onWebArea report: (EditableResolution) -> Void = { _ in }
+    ) -> (element: AXElement, resolution: EditableResolution?)? {
         guard let focused = focused(inApp: pid) else { return nil }
-        guard needsEditableResolution(role: focused.role) else { return focused }
+        guard needsEditableResolution(role: focused.role) else { return (focused, nil) }
         var (editable, resolution) = focused.editableAtCaret()
         if editable == nil {
             let start = DispatchTime.now()
@@ -104,13 +106,13 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
                 info: { $0.searchInfo }, children: { $0.children }
             )
             resolution.search = SearchOutcome(
-                found: result.found != nil, role: result.found?.role, subrole: result.found?.subrole,
+                found: result.found != nil, preferred: result.preferred, role: result.found?.role, subrole: result.found?.subrole,
                 visited: result.visited, elapsedMs: result.elapsedMs
             )
             editable = result.found
         }
         report(resolution)
-        return editable ?? focused
+        return (editable ?? focused, resolution)
     }
 
     private func editableAtCaret() -> (AXElement?, EditableResolution) {
@@ -187,6 +189,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
 struct SearchOutcome: Sendable, Equatable {
     var found: Bool
+    var preferred: Bool
     var role: String?
     var subrole: String?
     var visited: Int
@@ -203,11 +206,16 @@ struct EditableResolution: Sendable, Equatable {
 
     var resolved: Bool { ancestorRole != nil || search?.found == true }
 
+    static func allowsPaste(_ resolution: EditableResolution?) -> Bool {
+        guard let search = resolution?.search else { return true }
+        return search.preferred
+    }
+
     var summary: String {
         let ancestor = ancestorRole.map { role in [role, ancestorSubrole].compactMap { $0 }.joined(separator: " ") } ?? "-"
         let base = "marker range present \(markerRangePresent), start marker present \(startMarkerPresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
         guard let search else { return base }
-        return base + ", search found \(search.found) role \(search.role ?? "-") subrole \(search.subrole ?? "-"), "
+        return base + ", search found \(search.found) preferred \(search.preferred) role \(search.role ?? "-") subrole \(search.subrole ?? "-"), "
             + "visited \(search.visited), \(search.elapsedMs) ms"
     }
 }

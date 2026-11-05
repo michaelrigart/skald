@@ -16,6 +16,7 @@ struct SearchLimits {
 
 struct SearchResult<Node> {
     var found: Node?
+    var preferred = false
     var visited: Int
     var elapsedMs: Int
 }
@@ -37,7 +38,7 @@ enum FocusedDescendantSearch {
             visited += 1
             let details = info(node)
             if details.focused {
-                if details.isPreferred { return SearchResult(found: node, visited: visited, elapsedMs: elapsedMs()) }
+                if details.isPreferred { return SearchResult(found: node, preferred: true, visited: visited, elapsedMs: elapsedMs()) }
                 if depth > (deepest?.depth ?? 0) { deepest = (node, depth) }
             }
             if depth < limits.maxDepth { queue += children(node).map { ($0, depth + 1) } }

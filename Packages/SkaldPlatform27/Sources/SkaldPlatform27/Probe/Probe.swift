@@ -338,7 +338,7 @@ public final class Probe {
         guard swap.canRestoreFaithfully else {
             return .aborted(reason: "paste skipped: clipboard holds concealed or promised content")
         }
-        let preparation = await queue.run { FieldProbe.prepare(pid: pid) }
+        let preparation = await queue.run { FieldProbe.prepare(pid: pid, method: .paste) }
         let prepared: PreparedWrite
         switch preparation {
         case nil: return nil
