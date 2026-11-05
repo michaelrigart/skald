@@ -183,7 +183,7 @@ enum FieldProbe {
         return .result(stable: stable, baseline: bounds == nil ? nil : updated)
     }
 
-    private static func focusedField(_ pid: pid_t) -> AXElement? {
+    static func focusedField(_ pid: pid_t) -> AXElement? {
         AXElement.focusedEditable(inApp: pid) { resolution in
             guard WebAreaLog.shared.isFirst(pid: pid, resolved: resolution.resolved) else { return }
             let app = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"

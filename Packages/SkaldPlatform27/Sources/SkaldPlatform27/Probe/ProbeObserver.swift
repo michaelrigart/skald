@@ -43,7 +43,7 @@ final class ProbeObserver: @unchecked Sendable { // reason: state is touched onl
         field = nil
         window = nil
 
-        guard let focused = AXElement.focused(inApp: pid), !FieldProbe.isSecure(focused) else { return }
+        guard let focused = FieldProbe.focusedField(pid), !FieldProbe.isSecure(focused) else { return }
         AXObserverAddNotification(observer, focused.element, "AXValueChanged" as CFString, refcon)
         AXObserverAddNotification(observer, focused.element, "AXSelectedTextChanged" as CFString, refcon)
         field = focused
