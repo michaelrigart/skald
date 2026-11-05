@@ -143,8 +143,8 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         }
         return TextMarkerReport(
             elementRangePresent: elementRange != nil,
-            elementTextLength: elementRange.flatMap { parameterized("AXStringForTextMarkerRange", $0) as? String }
-                .map { ($0 as NSString).length },
+            elementTextLength: elementRange.flatMap { parameterized("AXLengthForTextMarkerRange", $0) }
+                .flatMap { ($0 as? NSNumber)?.intValue },
             selectedRangePresent: selected != nil,
             startIndex: index(selected.flatMap { parameterized("AXStartTextMarkerForTextMarkerRange", $0) }),
             endIndex: index(selected.flatMap { parameterized("AXEndTextMarkerForTextMarkerRange", $0) }),

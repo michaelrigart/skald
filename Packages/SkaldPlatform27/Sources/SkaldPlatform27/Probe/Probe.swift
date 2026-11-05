@@ -76,6 +76,7 @@ public final class Probe {
     private var contexts: [pid_t: ProbeContext] = [:]
     private var enabledPIDs: Set<pid_t> = []
     private var diagnosedPIDs: Set<pid_t> = []
+    private var diagnosingPIDs: Set<pid_t> = []
     private var evaluationTask: Task<Void, Never>?
     private var recheckTask: Task<Void, Never>?
     private var pendingRecheck = RecheckKind.scrolled
@@ -193,9 +194,9 @@ public final class Probe {
                 await retarget(pid: pid)
                 reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
                 guard generation == focusGeneration, running else { return }
-                if reading == nil, diagnosedPIDs.insert(pid).inserted {
-                    Task { await diagnoseMissingFocus(pid: pid, generation: generation, app: bundleID) }
-                }
+            }
+            if reading == nil, mode != .native, !diagnosedPIDs.contains(pid), diagnosingPIDs.insert(pid).inserted {
+                Task { await diagnoseMissingFocus(pid: pid, generation: generation, app: bundleID) }
             }
             guard let reading else {
                 if let old = current, old.pid != pid { finish(old); current = nil }
@@ -478,6 +479,7 @@ public final class Probe {
 
     /// The probe may sleep: look at the focus query right after enabling, then again after 1 s and 3 s.
     private func diagnoseMissingFocus(pid: pid_t, generation: Int, app: String) async {
+        defer { diagnosingPIDs.remove(pid) }
         var waited = 0
         for target in [0, 1000, 3000] {
             if target > waited {
@@ -489,5 +491,6 @@ public final class Probe {
             guard running, generation == focusGeneration else { return }
             PlatformLog.probe.notice("focus retry: \(app, privacy: .public): \(diagnosis.summary(afterMs: target), privacy: .public)")
         }
+        diagnosedPIDs.insert(pid)
     }
 }
