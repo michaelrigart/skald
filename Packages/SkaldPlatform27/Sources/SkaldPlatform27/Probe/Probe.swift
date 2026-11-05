@@ -43,6 +43,7 @@ private final class FieldSession {
     var stage = CPUStage.starting
     var timer: Task<Void, Never>?
     var typedWhileStarting = false
+    var undoPending = false
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -58,6 +59,7 @@ public final class Probe {
     private static let evaluationDelay: Duration = .milliseconds(400)
     private static let focusSettle: Duration = .seconds(3)
     private static let grantWait: Duration = .seconds(5 * 60)
+    private static let writeSettle: Duration = .milliseconds(500)
 
     private let queue = AXQueue()
     private let clock = ContinuousClock()
@@ -236,7 +238,10 @@ public final class Probe {
     private func keystroke(isUndo: Bool) {
         lastKeystroke = clock.now
         guard let session = current, !session.observation.line.isSecure else { return }
-        if isUndo { session.observation.recordUndo() }
+        if isUndo {
+            session.observation.recordUndo()
+            session.undoPending = true
+        }
         switch session.stage {
         case .starting:
             session.typedWhileStarting = true
@@ -266,20 +271,49 @@ public final class Probe {
         let formatting = session.observation.formatting
         let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting) }
         guard session === current, let reading else { return }
+        let app = session.observation.line.app
         let shouldWrite = session.observation.shouldWrite(for: reading)
+        if !shouldWrite, session.observation.awaitingWrite, let value = reading.value {
+            logMarkerPosition(value, app: app)
+        }
         session.observation.absorb(reading)
+        if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {
+            session.undoPending = false
+            PlatformLog.probe.notice("after undo: \(app, privacy: .public): \(check, privacy: .public)")
+        }
         guard shouldWrite else { return }
 
         let attempt = await queue.run { FieldProbe.write(pid: pid) }
-        guard session === current, let attempt else { return }
+        guard session === current else { return }
+        guard let attempt else {
+            PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
+            return
+        }
         switch attempt {
         case let .started(start):
             session.observation.recordWrite(start)
             await evaluate(session)
+            guard session === current, !session.observation.line.canWrite else { return }
+            try? await clock.sleep(for: Self.writeSettle)
+            guard session === current else { return }
+            let laterFormatting = session.observation.formatting
+            let later = await queue.run { FieldProbe.measure(pid: pid, formatting: laterFormatting) }
+            guard session === current, let later else { return }
+            session.observation.absorb(later)
+            let check = later.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
+            PlatformLog.probe.notice("after write (\(Self.writeSettle)): \(app, privacy: .public): matched \(session.observation.line.canWrite): \(check, privacy: .public)")
         case let .aborted(reason):
             session.observation.recordWriteAborted()
             PlatformLog.probe.notice("write aborted: \(session.observation.line.app, privacy: .public): \(reason, privacy: .public)")
         }
+    }
+
+    /// Logs where the marker sits when it is not at the very end: only lengths and the code points after it.
+    private func logMarkerPosition(_ value: String, app: String) {
+        guard let range = value.range(of: ProbeMarker.pending, options: .backwards) else { return }
+        let after = value[range.upperBound...]
+        let points = after.unicodeScalars.prefix(6).map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
+        PlatformLog.probe.notice("marker not at the end: \(app, privacy: .public): \(after.utf16.count) units after it, starting \(points, privacy: .public)")
     }
 
     private func scheduleRecheck(_ kind: RecheckKind) {

@@ -33,6 +33,17 @@ struct FieldObservation {
         !line.isSecure && write == nil && !writeAborted && reading.value?.hasSuffix(ProbeMarker.pending) == true
     }
 
+    var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted }
+
+    /// How a value compares with the written and the original text, in lengths and booleans only.
+    func writeCheck(_ value: String) -> String? {
+        guard let write else { return nil }
+        let length = (value as NSString).length
+        return "value \(length) units (written \((write.expectedAfterWrite as NSString).length), original \((write.original as NSString).length)); "
+            + "is written \(value == write.expectedAfterWrite), is original \(value == write.original), "
+            + "has ok marker \(value.contains(ProbeMarker.replacement)), has probe marker \(value.contains(ProbeMarker.pending)), undo presses \(undoPresses)"
+    }
+
     var finishedLine: ProbeLine {
         var finished = line
         finished.notifications = notifications.sorted()

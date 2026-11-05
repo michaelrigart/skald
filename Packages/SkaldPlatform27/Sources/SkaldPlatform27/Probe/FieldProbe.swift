@@ -120,11 +120,15 @@ enum FieldProbe {
             : nil
         let markerRange = CFRange(location: markerLocation, length: markerLength)
         let originalSelection = field.selectedRange
-        guard field.setSelectedRange(markerRange) == .success else { return .aborted(reason: "selection rejected") }
-        guard selectionIsMarker(field, markerRange) else {
-            return .aborted(reason: "selection does not cover the marker; \(restore(originalSelection, in: field))")
+        let selectResult = field.setSelectedRange(markerRange)
+        guard selectResult == .success else { return .aborted(reason: "selection rejected (AXError \(selectResult.rawValue))") }
+        guard let waited = waitForMarkerSelection(field, markerRange) else {
+            let seen = describeSelection(field, markerRange)
+            return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(originalSelection, in: field))")
         }
-        _ = field.setSelectedText(ProbeMarker.replacement)
+        let textSettable = field.isSettable(kAXSelectedTextAttribute)
+        let textResult = field.setSelectedText(ProbeMarker.replacement)
+        PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(waited) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
         return .started(WriteStart(
             original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength
         ))
@@ -152,6 +156,27 @@ enum FieldProbe {
     private static func restore(_ selection: CFRange?, in field: AXElement) -> String {
         guard let selection else { return "no original selection to restore" }
         return field.setSelectedRange(selection) == .success ? "original selection restored" : "restoring the selection failed"
+    }
+
+    static let selectionWaitMs = 500
+    private static let selectionPollMs = 25
+
+    /// Some apps apply a selection asynchronously: poll until it lands, up to a deadline. Returns the wait in ms.
+    private static func waitForMarkerSelection(_ field: AXElement, _ markerRange: CFRange) -> Int? {
+        var waited = 0
+        while true {
+            if selectionIsMarker(field, markerRange) { return waited }
+            guard waited < selectionWaitMs else { return nil }
+            usleep(useconds_t(selectionPollMs * 1000))
+            waited += selectionPollMs
+        }
+    }
+
+    private static func describeSelection(_ field: AXElement, _ markerRange: CFRange) -> String {
+        let range = field.selectedRange.map { "\($0.location),\($0.length)" } ?? "none"
+        let text = field.selectedText.map { "\(($0 as NSString).length) units, is marker \($0 == ProbeMarker.pending)" } ?? "none"
+        let ranged = field.string(for: markerRange).map { "is marker \($0 == ProbeMarker.pending)" } ?? "none"
+        return "selected range \(range) for marker \(markerRange.location),\(markerRange.length); selected text \(text); text at marker range \(ranged)"
     }
 
     private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange) -> Bool {
