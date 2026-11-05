@@ -299,14 +299,16 @@ public final class Probe {
             session.observation.recordWrite(start)
             await evaluate(session)
             guard session === current, !session.observation.line.canWrite else { return }
+            let settleStart = clock.now
             try? await clock.sleep(for: Self.writeSettle)
+            let settled = Int(settleStart.duration(to: clock.now) / .milliseconds(1))
             guard session === current else { return }
             let laterFormatting = session.observation.formatting
             let later = await queue.run { FieldProbe.measure(pid: pid, formatting: laterFormatting) }
             guard session === current, let later else { return }
             session.observation.absorb(later)
             let check = later.value.flatMap { session.observation.writeCheck($0) } ?? "value unreadable"
-            PlatformLog.probe.notice("after write (\(Self.writeSettle)): \(app, privacy: .public): matched \(session.observation.line.canWrite): \(check, privacy: .public)")
+            PlatformLog.probe.notice("after write (\(settled) ms): \(app, privacy: .public): matched \(session.observation.line.canWrite): \(check, privacy: .public)")
         case let .aborted(reason):
             session.observation.recordWriteAborted()
             PlatformLog.probe.notice("write aborted: \(session.observation.line.app, privacy: .public): \(reason, privacy: .public)")
