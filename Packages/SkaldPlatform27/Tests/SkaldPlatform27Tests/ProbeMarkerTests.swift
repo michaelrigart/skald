@@ -69,3 +69,18 @@ private func found(_ value: String, _ caret: CFRange?) -> (location: Int, length
     let summary = ProbeMarker.tailSummary(of: "Hi ~skald-probe~\nSecret signature") ?? ""
     #expect(!summary.contains("Secret") && !summary.contains("U+"))
 }
+
+@Test func theCaretSummaryHasOnlyNumbersForAMarkerTheCaretDoesNotEnd() {
+    let value = "😀 ~skald-probe~ Secret tail"
+    let summary = ProbeMarker.caretSummary(of: value, caret: caret(0, 4), characterCount: 25)
+    #expect(summary == "caret 0,4, last marker ends at 16, value 28 units, characters 25")
+    #expect(ProbeMarker.caretSummary(of: value, caret: nil, characterCount: nil)
+        == "caret none, last marker ends at 16, value 28 units, characters none")
+    #expect(!(summary ?? "").contains("Secret"))
+}
+
+@Test func theCaretSummaryIsSilentWhenTheMarkerCountsOrIsAbsent() {
+    #expect(ProbeMarker.caretSummary(of: "Hi ~skald-probe~", caret: nil, characterCount: 16) == nil)
+    #expect(ProbeMarker.caretSummary(of: "Hi ~skald-probe~ tail", caret: caret(16), characterCount: nil) == nil)
+    #expect(ProbeMarker.caretSummary(of: "nothing here", caret: caret(3), characterCount: nil) == nil)
+}

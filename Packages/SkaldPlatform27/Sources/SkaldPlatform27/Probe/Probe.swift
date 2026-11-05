@@ -45,6 +45,7 @@ private final class FieldSession {
     var typedWhileStarting = false
     var undoPending = false
     var loggedMarkerPosition = false
+    var loggedCaret = false
     var absorbFocusUntil: ContinuousClock.Instant?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
@@ -282,6 +283,12 @@ public final class Probe {
         {
             session.loggedMarkerPosition = true
             PlatformLog.probe.notice("marker not at the end: \(app, privacy: .public): \(tail, privacy: .public)")
+        }
+        if !shouldWrite, !session.loggedCaret, session.observation.awaitingWrite, let value = reading.value,
+           let caret = ProbeMarker.caretSummary(of: value, caret: reading.selection, characterCount: reading.characterCount)
+        {
+            session.loggedCaret = true
+            PlatformLog.probe.notice("marker not accepted: \(app, privacy: .public): \(caret, privacy: .public)")
         }
         session.observation.absorb(reading)
         if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {

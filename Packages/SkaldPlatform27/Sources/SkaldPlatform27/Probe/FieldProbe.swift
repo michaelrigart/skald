@@ -8,6 +8,15 @@ enum ProbeMarker {
 
     static var length: Int { (pending as NSString).length }
 
+    /// Why a marker in the value was not accepted: the caret and the offsets, as numbers only.
+    static func caretSummary(of value: String, caret: CFRange?, characterCount: Int?) -> String? {
+        guard let found = value.range(of: pending, options: .backwards), range(in: value, caret: caret) == nil else { return nil }
+        let end = NSRange(found, in: value)
+        let caretText = caret.map { "\($0.location),\($0.length)" } ?? "none"
+        return "caret \(caretText), last marker ends at \(end.location + end.length), value \((value as NSString).length) units, "
+            + "characters \(characterCount.map(String.init) ?? "none")"
+    }
+
     /// Where the last marker sits relative to the end of the value, as a unit count and a boolean only.
     static func tailSummary(of value: String) -> String? {
         guard let range = value.range(of: pending, options: .backwards) else { return nil }
@@ -72,6 +81,7 @@ struct FieldReading: Sendable {
     var canReadSelection = false
     var hasFrame = false
     var selection: CFRange?
+    var characterCount: Int?
     var baseline: BoundsBaseline?
     var formatted: AttributedSnapshot?
 
@@ -152,6 +162,7 @@ enum FieldProbe {
         reading.canRead = reading.value != nil
         reading.selection = field.selectedRange
         reading.canReadSelection = reading.selection != nil
+        reading.characterCount = field.numberOfCharacters
         reading.hasFrame = field.frame.flatMap { usable($0) } != nil
         if let length = length(of: field, value: reading.value), length >= middleLength {
             let range = CFRange(location: max(0, length / 2 - middleLength / 2), length: middleLength)
