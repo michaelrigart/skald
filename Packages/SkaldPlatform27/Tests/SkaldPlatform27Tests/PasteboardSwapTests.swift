@@ -138,15 +138,15 @@ private func filled() -> NSPasteboard {
 }
 
 @Test func thePasteIsPostedOnlyWhenTheTargetIsStillFocusedOnTheMarker() {
-    let ok = PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: true)
+    let ok = PasteRecheck(sameField: true, targetIsFrontmost: true, selectionOnMarker: true)
     #expect(ok.failure == nil)
-    #expect(PasteRecheck(targetIsFrontmost: false, sameField: true, selectionOnMarker: true).failure != nil)
-    #expect(PasteRecheck(targetIsFrontmost: true, sameField: false, selectionOnMarker: true).failure != nil)
-    #expect(PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: false).failure != nil)
+    #expect(PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: true).failure != nil)
+    #expect(PasteRecheck(sameField: false, targetIsFrontmost: true, selectionOnMarker: true).failure != nil)
+    #expect(PasteRecheck(sameField: true, targetIsFrontmost: true, selectionOnMarker: false).failure != nil)
     let reasons = Set([
-        PasteRecheck(targetIsFrontmost: false, sameField: true, selectionOnMarker: true).failure,
-        PasteRecheck(targetIsFrontmost: true, sameField: false, selectionOnMarker: true).failure,
-        PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: false).failure,
+        PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: true).failure,
+        PasteRecheck(sameField: false, targetIsFrontmost: true, selectionOnMarker: true).failure,
+        PasteRecheck(sameField: true, targetIsFrontmost: true, selectionOnMarker: false).failure,
     ])
     #expect(reasons.count == 3)
 }
@@ -158,4 +158,12 @@ private func filled() -> NSPasteboard {
     #expect(changed != nil && unrestorable != nil && changed != unrestorable)
     #expect(changed?.contains("changed") == true)
     #expect(unrestorable?.contains("concealed or promised") == true)
+}
+
+@Test func theRecheckNamesTheFirstFailureInTheOrderItIsChecked() {
+    let all = PasteRecheck(sameField: false, targetIsFrontmost: false, selectionOnMarker: false)
+    let sameFieldOnly = PasteRecheck(sameField: false, targetIsFrontmost: true, selectionOnMarker: true)
+    #expect(all.failure == sameFieldOnly.failure)
+    let frontmostThenSelection = PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: false)
+    #expect(frontmostThenSelection.failure == PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: true).failure)
 }

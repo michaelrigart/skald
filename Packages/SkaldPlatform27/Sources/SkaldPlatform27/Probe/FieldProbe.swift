@@ -215,8 +215,8 @@ enum FieldProbe {
     /// Phase d of the paste write: the pasteboard is staged; nothing is posted unless the selection is still on the marker in the same field.
     static func writeByPaste(_ prepared: PreparedWrite, pid: pid_t) -> PasteAttempt {
         let recheck = PasteRecheck(
-            targetIsFrontmost: AXElement.focusedApplicationPID() == pid,
             sameField: focusedField(pid).map { $0.isSame(as: prepared.field) } ?? false,
+            targetIsFrontmost: AXElement.focusedApplicationPID() == pid,
             selectionOnMarker: selectionIsMarker(prepared.field, prepared.markerRange)
         )
         if let reason = recheck.failure {

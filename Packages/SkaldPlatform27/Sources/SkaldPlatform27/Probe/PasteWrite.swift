@@ -10,13 +10,13 @@ struct PasteOutcome: Sendable {
 }
 
 struct PasteRecheck: Sendable {
-    var targetIsFrontmost: Bool
     var sameField: Bool
+    var targetIsFrontmost: Bool
     var selectionOnMarker: Bool
 
     var failure: String? {
-        if !targetIsFrontmost { return "the target app is no longer frontmost" }
         if !sameField { return "the focused element changed" }
+        if !targetIsFrontmost { return "the target app is no longer frontmost" }
         if !selectionOnMarker { return "the selection left the marker" }
         return nil
     }
