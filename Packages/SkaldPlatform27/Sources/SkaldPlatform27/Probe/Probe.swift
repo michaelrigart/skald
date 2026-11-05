@@ -224,6 +224,7 @@ public final class Probe {
 
     private func finish(_ session: FieldSession) {
         session.timer?.cancel()
+        WebAreaLog.shared.endSession(pid: session.pid)
         let line = session.observation.finishedLine
         PlatformLog.probe.notice("\(line.render(), privacy: .public)")
         PlatformLog.probe.notice("frame readable: \(line.app, privacy: .public) \(line.role, privacy: .public) \(session.observation.hasFrame)")

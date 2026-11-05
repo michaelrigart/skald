@@ -102,13 +102,14 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
     private func editableAtCaret() -> (AXElement?, EditableResolution) {
         guard let range = attribute("AXSelectedTextMarkerRange") else { return (nil, EditableResolution(markerRangePresent: false)) }
-        let leaf = parameterized("AXStartTextMarkerForTextMarkerRange", range)
-            .flatMap { parameterized("AXUIElementForTextMarker", $0) }
-            .flatMap { Self.axElement($0) }
-        guard let leaf else { return (nil, EditableResolution(markerRangePresent: true)) }
+        let marker = parameterized("AXStartTextMarkerForTextMarkerRange", range)
+        let leaf = marker.flatMap { parameterized("AXUIElementForTextMarker", $0) }.flatMap { Self.axElement($0) }
+        guard let leaf else {
+            return (nil, EditableResolution(markerRangePresent: true, startMarkerPresent: marker != nil))
+        }
         let ancestor = leaf.elementAttribute("AXHighestEditableAncestor") ?? leaf.elementAttribute("AXEditableAncestor")
         return (ancestor, EditableResolution(
-            markerRangePresent: true, leafRole: leaf.role, ancestorRole: ancestor?.role, ancestorSubrole: ancestor?.subrole
+            markerRangePresent: true, startMarkerPresent: true, leafRole: leaf.role, ancestorRole: ancestor?.role, ancestorSubrole: ancestor?.subrole
         ))
     }
 
@@ -156,6 +157,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
 struct EditableResolution: Sendable, Equatable {
     var markerRangePresent: Bool
+    var startMarkerPresent = false
     var leafRole: String?
     var ancestorRole: String?
     var ancestorSubrole: String?
@@ -164,7 +166,7 @@ struct EditableResolution: Sendable, Equatable {
 
     var summary: String {
         let ancestor = ancestorRole.map { role in [role, ancestorSubrole].compactMap { $0 }.joined(separator: " ") } ?? "-"
-        return "marker range present \(markerRangePresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
+        return "marker range present \(markerRangePresent), start marker present \(startMarkerPresent), leaf \(leafRole ?? "-"), editable ancestor \(ancestor)"
     }
 }
 
@@ -181,5 +183,9 @@ final class WebAreaLog: @unchecked Sendable { // reason: the seen set is only to
 
     func isFirst(pid: pid_t, resolved: Bool) -> Bool {
         lock.withLock { seen.insert(Key(pid: pid, resolved: resolved)).inserted }
+    }
+
+    func endSession(pid: pid_t) {
+        lock.withLock { _ = seen.remove(Key(pid: pid, resolved: false)) }
     }
 }
