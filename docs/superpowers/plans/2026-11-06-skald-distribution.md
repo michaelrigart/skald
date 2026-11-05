@@ -3,9 +3,8 @@
 **Status:** Approved (not started). Runs on `feat/skald-distribution`, branched from
 `feat/skald-v1` once v1's tasks are done.
 
-**Execution notes:** batches by `Depends on:`, shared files and shared build output — {1, 5},
-then 2, 3, 4, 8, 6, 7 and 9 one at a time (Tasks 1–4 and 6–8 all build into `build/`, and Tasks 1
-and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
+**Execution notes:** one task at a time, in this order: 1, 5, 2, 3, 4, 8, 6, 7, 9 (most tasks
+build into `build/`, and Tasks 1 and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -273,19 +272,31 @@ task only adds the tests that are missing and says so.
   add it as `origin`, push `main`, then `feat/skald-v1` and `feat/skald-distribution`. Open v1's
   draft pull request against `main`, then this one (its description notes it is stacked on v1).
 - [ ] **Step 3:** Watch CI on both; fix failures in new commits.
+- [ ] **Step 4, after v1's pull request merges:** rebase `feat/skald-distribution` onto `main`
+  (dropping v1's commits if v1 was squash-merged), force-push it with a lease, check the pull
+  request now shows only this plan's commits, let CI pass again, and run the pre-merge review on
+  the rebased branch before it merges.
 
 ### Task 11: Acceptance with Michael
 
 **Depends on:** Task 10. Needs Michael at the Mac.
 
-- [ ] **Step 1:** Record what the switch to team signing cost (measured during v1's probe runs on
-  2026-11-06: the grant at the switch, and whether later rebuilds kept it) in the README, AGENTS.md,
-  `CHANGELOG.md` and the cask caveats, dropping any "not yet confirmed" hedge.
-- [ ] **Step 2:** Run the Release product from outside `/Applications` (quit the installed copy
+- [ ] **Step 1: Grant retention, on this branch's final builds.** With the grant Skald already
+  holds (no new grant): reinstall a team-signed Debug rebuild of this branch's head in
+  `/Applications` (`rm -rf` then `ditto`), launch it with `open`, and check it is trusted
+  (`AXIsProcessTrusted`, as the app logs at launch, or its permission status in the status
+  menu). Then the same for the Release product of `scripts/release --dry-run`. Record both
+  results, and the one grant at the switch from ad hoc (from v1's probe runs), under Signing in
+  the spec as "Measured on <date>".
+- [ ] **Step 2:** Update every place that states the grant behaviour — README, AGENTS.md,
+  `CHANGELOG.md`, the cask caveats — from Step 1's results only, dropping the "should survive"
+  hedge only where Step 1 measured it.
+- [ ] **Step 3:** Run the Release product from outside `/Applications` (quit the installed copy
   first): the move notice shows, nothing is checked. Delete that copy afterwards.
-- [ ] **Step 3:** The menu bar glyph in a light and a dark menu bar, and the icon in Finder and the
+- [ ] **Step 4:** The menu bar glyph in a light and a dark menu bar, and the icon in Finder and the
   Dock.
-- [ ] **Step 4, after both pull requests merge:** Michael runs `scripts/release`; then
-  `brew install --cask michaelrigart/tap/skald`, "Open Anyway", one Accessibility grant; Skald
-  checks text and Settings shows the version (spec acceptance 7). Acceptance 8 is checked at the
-  second release.
+- [ ] **Step 5, after both pull requests merge:** Michael runs `scripts/release`; then
+  `brew install --cask michaelrigart/tap/skald` and "Open Anyway". Record whether macOS asked
+  for Accessibility again (the release is team-signed like the builds in Step 1, so it should
+  not); grant it only if asked. Skald checks text and Settings shows the version (spec
+  acceptance 7). Acceptance 8 is checked at the second release.
