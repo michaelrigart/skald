@@ -62,7 +62,7 @@ private func search(
 
 @Test func theSearchStopsAtTheVisitLimit() {
     let wide = Tree(role: "AXWebArea", kids: (0 ..< 50).map { _ in Tree(role: "AXLink") } + [Tree(role: "AXTextArea", focused: true, tag: "late")])
-    let limited = search(wide, limits: SearchLimits(maxVisited: 10, maxDepth: 40, maxMs: 150))
+    let limited = search(wide, limits: SearchLimits(maxVisited: 10, maxDepth: 40, maxMs: 600))
     #expect(limited.found == nil)
     #expect(limited.visited == 10)
     #expect(search(wide).found?.tag == "late")
@@ -72,29 +72,29 @@ private func search(
     var chain = Tree(role: "AXTextArea", focused: true, tag: "bottom")
     for _ in 0 ..< 4 { chain = Tree(role: "AXGroup", kids: [chain]) }
     let tree = Tree(role: "AXWebArea", kids: [chain])
-    #expect(search(tree, limits: SearchLimits(maxVisited: 3000, maxDepth: 5, maxMs: 150)).found?.tag == "bottom")
-    let cut = search(tree, limits: SearchLimits(maxVisited: 3000, maxDepth: 4, maxMs: 150))
+    #expect(search(tree, limits: SearchLimits(maxVisited: 6000, maxDepth: 5, maxMs: 600)).found?.tag == "bottom")
+    let cut = search(tree, limits: SearchLimits(maxVisited: 6000, maxDepth: 4, maxMs: 600))
     #expect(cut.found == nil)
     #expect(cut.visited == 4)
 }
 
 @Test func theSearchStopsWhenTheTimeIsUp() {
-    let wide = Tree(role: "AXWebArea", kids: (0 ..< 50).map { _ in Tree(role: "AXLink") } + [Tree(role: "AXTextArea", focused: true, tag: "late")])
+    let wide = Tree(role: "AXWebArea", kids: (0 ..< 200).map { _ in Tree(role: "AXLink") } + [Tree(role: "AXTextArea", focused: true, tag: "late")])
     var now = 0
     let result = search(wide, clock: {
         now += 10
         return now
     })
     #expect(result.found == nil)
-    #expect(result.visited < 50)
-    #expect(result.elapsedMs > 150)
+    #expect(result.visited < 200)
+    #expect(result.elapsedMs > 600)
 }
 
 @Test func theDefaultLimitsAreTheAgreedOnes() {
     let limits = SearchLimits()
-    #expect(limits.maxVisited == 3000)
+    #expect(limits.maxVisited == 6000)
     #expect(limits.maxDepth == 40)
-    #expect(limits.maxMs == 150)
+    #expect(limits.maxMs == 600)
 }
 
 @Test func theResultSaysWhetherItWasAPreferredNode() {

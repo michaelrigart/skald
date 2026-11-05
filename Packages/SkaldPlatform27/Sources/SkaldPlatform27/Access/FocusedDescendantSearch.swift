@@ -9,9 +9,9 @@ struct SearchNodeInfo: Equatable {
 }
 
 struct SearchLimits {
-    var maxVisited = 3000
+    var maxVisited = 6000
     var maxDepth = 40
-    var maxMs = 150
+    var maxMs = 600
 }
 
 struct SearchResult<Node> {
