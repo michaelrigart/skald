@@ -4,7 +4,6 @@ import Foundation
 enum ProbeMarker {
     static let pending = "~skald-probe~"
     static let replacement = "~skald-ok~"
-    static let earlierWord = "alpha"
 
     static var length: Int { (pending as NSString).length }
 
@@ -78,10 +77,6 @@ struct WriteStart: Sendable {
     var beforeLength: Int
 
     var markerLocation: Int { beforeLocation + beforeLength }
-
-    var hadEarlierWord: Bool {
-        original.range(of: ProbeMarker.earlierWord, options: .caseInsensitive) != nil
-    }
 
     var expectedAfterWrite: String {
         (original as NSString).replacingCharacters(

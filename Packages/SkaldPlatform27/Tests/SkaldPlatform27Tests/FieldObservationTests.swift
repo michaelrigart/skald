@@ -81,7 +81,7 @@ private func written(before: String? = "Hello ther", after: String? = "Hello the
     #expect(observation.line.undoExact)
 }
 
-@Test func earlierHistorySurvivesOnlyAfterTheSecondUndoRemovesAlpha() {
+@Test func earlierHistorySurvivesOnceASecondUndoChangesTheValue() {
     var observation = written()
     observation.recordUndo()
     observation.absorb(reading(value: original))
@@ -162,19 +162,6 @@ private let baseline = BoundsBaseline(
     #expect(!BoundsComparison.isStable(.scrolled, old: baseline, bounds: nil, windowOrigin: nil))
 }
 
-@Test func anAutoCapitalisedAlphaIsNotMistakenForAnUndoneHistory() {
-    let capitalised = "Alpha Hello there ~skald-probe~"
-    var observation = FieldObservation(app: "com.example.editor", reading: reading(value: capitalised))
-    observation.recordWrite(WriteStart(original: capitalised, before: nil, beforeLocation: 8, beforeLength: 10))
-    observation.absorb(reading(value: "Alpha Hello there ~skald-ok~"))
-    observation.recordUndo()
-    observation.absorb(reading(value: capitalised))
-    #expect(observation.line.undoExact)
-    observation.recordUndo()
-    observation.absorb(reading(value: capitalised))
-    #expect(!observation.line.undoEarlierHistory)
-}
-
 @Test func anAppendedReplacementIsNotACleanWrite() {
     var observation = observation()
     observation.recordWrite(start())
@@ -202,15 +189,23 @@ private let baseline = BoundsBaseline(
     #expect(!observation.line.canWrite)
 }
 
-@Test func historyNeedsAnEarlierWordToHaveBeenThere() {
-    let plain = "Hello there ~skald-probe~"
-    var observation = FieldObservation(app: "com.example.editor", reading: reading(value: plain))
-    observation.recordWrite(WriteStart(original: plain, before: nil, beforeLocation: 2, beforeLength: 10))
-    observation.absorb(reading(value: "Hello there ~skald-ok~"))
+@Test func aSecondUndoThatRemovesOnlyThePastedMarkerKeepsTheEarlierHistory() {
+    var observation = written()
     observation.recordUndo()
-    observation.absorb(reading(value: plain))
-    observation.recordUndo()
-    observation.absorb(reading(value: "Hello"))
+    observation.absorb(reading(value: original))
     #expect(observation.line.undoExact)
+    observation.recordUndo()
+    observation.absorb(reading(value: "alpha Hello there "))
+    #expect(observation.line.undoEarlierHistory)
+}
+
+@Test func aSecondUndoNeedsAnExactFirstOne() {
+    var observation = observation()
+    observation.recordWrite(start())
+    observation.absorb(reading(value: "alpha Hello there ~skald-ok~"))
+    observation.recordUndo()
+    observation.recordUndo()
+    observation.absorb(reading(value: "alpha Hello there "))
+    #expect(!observation.line.undoExact)
     #expect(!observation.line.undoEarlierHistory)
 }

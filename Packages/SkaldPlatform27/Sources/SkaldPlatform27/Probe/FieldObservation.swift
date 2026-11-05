@@ -100,9 +100,7 @@ struct FieldObservation {
         if undoPresses >= 1, !line.undoExact, value == write.original {
             line.undoExact = true
         }
-        if undoPresses >= 2, line.undoExact, !line.undoEarlierHistory, write.hadEarlierWord,
-           value != write.original, value.range(of: ProbeMarker.earlierWord, options: .caseInsensitive) == nil
-        {
+        if undoPresses >= 2, line.undoExact, value != write.original {
             line.undoEarlierHistory = true
         }
     }
