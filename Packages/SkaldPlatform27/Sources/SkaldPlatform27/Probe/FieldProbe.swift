@@ -102,6 +102,33 @@ struct WriteStart: Sendable {
     }
 }
 
+struct PreparedWrite: Sendable {
+    var field: AXElement
+    var value: String
+    var markerRange: CFRange
+    var originalSelection: CFRange?
+    var before: AttributedSnapshot?
+    var beforeLocation: Int
+    var beforeLength: Int
+    var selectionWaitedMs: Int
+
+    func start(method: WriteMethod) -> WriteStart {
+        WriteStart(
+            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, method: method
+        )
+    }
+}
+
+enum Preparation: Sendable {
+    case ready(PreparedWrite)
+    case aborted(reason: String)
+}
+
+enum PasteAttempt: Sendable {
+    case sent(WriteStart, PasteOutcome)
+    case aborted(reason: String)
+}
+
 enum WriteAttempt: Sendable {
     case started(WriteStart)
     case aborted(reason: String)
@@ -138,13 +165,20 @@ enum FieldProbe {
         return reading
     }
 
-    static func write(pid: pid_t, method: WriteMethod) -> WriteAttempt? {
+    static func write(pid: pid_t) -> WriteAttempt? {
+        switch prepare(pid: pid) {
+        case nil: nil
+        case let .aborted(reason): .aborted(reason: reason)
+        case let .ready(prepared): .started(writeByAccessibility(prepared, pid: pid))
+        }
+    }
+
+    static func prepare(pid: pid_t) -> Preparation? {
         guard let field = focusedField(pid), !isSecure(field), let value = field.value else { return nil }
         let originalSelection = field.selectedRange
         guard let markerRange = ProbeMarker.range(in: value, caret: originalSelection) else { return nil }
-        let markerLocation = markerRange.location
-        let beforeLocation = max(0, markerLocation - contextLength)
-        let beforeLength = markerLocation - beforeLocation
+        let beforeLocation = max(0, markerRange.location - contextLength)
+        let beforeLength = markerRange.location - beforeLocation
         let before = beforeLength > 0
             ? field.attributedString(for: CFRange(location: beforeLocation, length: beforeLength)).map(AttributedSnapshot.init)
             : nil
@@ -154,18 +188,41 @@ enum FieldProbe {
             let seen = describeSelection(field, markerRange)
             return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(originalSelection, in: field))")
         }
-        switch method {
-        case .ax:
-            let textSettable = field.isSettable(kAXSelectedTextAttribute)
-            let textResult = field.setSelectedText(ProbeMarker.replacement)
-            PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(waited) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
-        case .paste:
-            let outcome = PasteWrite.send(to: pid, field: field, original: value)
-            PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(waited) ms, \(PasteWrite.describe(outcome), privacy: .public)")
-        }
-        return .started(WriteStart(
-            original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, method: method
+        return .ready(PreparedWrite(
+            field: field, value: value, markerRange: markerRange, originalSelection: originalSelection,
+            before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, selectionWaitedMs: waited
         ))
+    }
+
+    static func writeByAccessibility(_ prepared: PreparedWrite, pid: pid_t) -> WriteStart {
+        let textSettable = prepared.field.isSettable(kAXSelectedTextAttribute)
+        let textResult = prepared.field.setSelectedText(ProbeMarker.replacement)
+        PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(prepared.selectionWaitedMs) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
+        return prepared.start(method: .ax)
+    }
+
+    /// Phase d of the paste write: the pasteboard is staged; nothing is posted unless the selection is still on the marker in the same field.
+    static func writeByPaste(_ prepared: PreparedWrite, pid: pid_t) -> PasteAttempt {
+        let recheck = PasteRecheck(
+            targetIsFrontmost: AXElement.focusedApplicationPID() == pid,
+            sameField: focusedField(pid).map { $0.isSame(as: prepared.field) } ?? false,
+            selectionOnMarker: selectionIsMarker(prepared.field, prepared.markerRange)
+        )
+        if let reason = recheck.failure {
+            return .aborted(reason: "\(reason) before the paste; \(cancel(prepared))")
+        }
+        let outcome = PasteWrite.send(
+            to: pid, field: prepared.field, original: prepared.value, selectionWaitedMs: prepared.selectionWaitedMs
+        )
+        return .sent(prepared.start(method: .paste), outcome)
+    }
+
+    static func cancel(_ prepared: PreparedWrite) -> String {
+        restore(prepared.originalSelection, in: prepared.field)
+    }
+
+    static func currentValue(pid: pid_t) -> String? {
+        focusedField(pid)?.value
     }
 
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {

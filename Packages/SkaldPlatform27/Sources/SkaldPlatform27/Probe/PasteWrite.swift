@@ -1,45 +1,54 @@
-import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
 
+struct PasteOutcome: Sendable {
+    var selectionWaitedMs: Int
+    var posted: Bool
+    var valueChangedAfterMs: Int?
+    var finalValue: String?
+}
+
+struct PasteRecheck: Sendable {
+    var targetIsFrontmost: Bool
+    var sameField: Bool
+    var selectionOnMarker: Bool
+
+    var failure: String? {
+        if !targetIsFrontmost { return "the target app is no longer frontmost" }
+        if !sameField { return "the focused element changed" }
+        if !selectionOnMarker { return "the selection left the marker" }
+        return nil
+    }
+}
+
 enum PasteWrite {
-    static let timeoutMs = 1000
+    static let timeoutMs = 3000
     static let pollMs = 25
     static let settleMs = 200
     static let layoutDependentVKeyCode = CGKeyCode(kVK_ANSI_V)
 
-    struct Outcome {
-        var posted: Bool
-        var valueChangedAfterMs: Int?
-        var restoration: PasteboardSwap.Restoration
-    }
-
-    /// Callers must have verified that the selection is on the marker before calling.
-    static func send(to pid: pid_t, field: AXElement, original: String) -> Outcome {
-        let swap = PasteboardSwap()
-        swap.stage(ProbeMarker.replacement)
+    /// Callers must have staged the pasteboard and re-checked the selection immediately before.
+    static func send(to pid: pid_t, field: AXElement, original: String, selectionWaitedMs: Int) -> PasteOutcome {
         let posted = postCommandV(to: pid)
         var changedAfter: Int?
         if posted {
             changedAfter = waitForChange(of: field, from: original)
             usleep(useconds_t(settleMs * 1000))
         }
-        return Outcome(posted: posted, valueChangedAfterMs: changedAfter, restoration: swap.restore())
+        return PasteOutcome(
+            selectionWaitedMs: selectionWaitedMs, posted: posted, valueChangedAfterMs: changedAfter, finalValue: field.value
+        )
     }
 
-    static func describe(_ outcome: Outcome) -> String {
-        let value: String
-        if !outcome.posted {
-            value = "key events could not be created"
-        } else if let changed = outcome.valueChangedAfterMs {
-            value = "value changed after \(changed) ms"
-        } else {
-            value = "value unchanged after \(timeoutMs) ms"
-        }
-        let pasteboard = outcome.restoration == .restored
-            ? "pasteboard restored" : "pasteboard left alone (changed by another app)"
-        return "\(value), \(pasteboard)"
+    static func describe(_ outcome: PasteOutcome) -> String {
+        if !outcome.posted { return "key events could not be created" }
+        if let changed = outcome.valueChangedAfterMs { return "value changed after \(changed) ms" }
+        return "value unchanged after \(timeoutMs) ms"
+    }
+
+    static func describe(_ restoration: PasteboardSwap.Restoration) -> String {
+        restoration == .restored ? "pasteboard restored" : "pasteboard left alone (changed by another app)"
     }
 
     private static func postCommandV(to pid: pid_t) -> Bool {

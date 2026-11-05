@@ -19,6 +19,14 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         application(pid: pid).elementAttribute(kAXFocusedUIElementAttribute)
     }
 
+    public static func focusedApplicationPID() -> pid_t? {
+        AXElement(AXUIElementCreateSystemWide()).elementAttribute(kAXFocusedApplicationAttribute)?.pid
+    }
+
+    public func isSame(as other: AXElement) -> Bool {
+        CFEqual(element, other.element)
+    }
+
     public var role: String? { stringAttribute(kAXRoleAttribute) }
     public var subrole: String? { stringAttribute(kAXSubroleAttribute) }
     public var value: String? { stringAttribute(kAXValueAttribute) }

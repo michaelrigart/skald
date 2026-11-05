@@ -34,23 +34,23 @@ private func filled() -> NSPasteboard {
     return pasteboard
 }
 
-@Test func theSnapshotRestoresEveryItemWithEveryType() {
+@MainActor @Test func theSnapshotRestoresEveryItemWithEveryType() {
     let pasteboard = filled()
     defer { pasteboard.releaseGlobally() }
     let before = contents(of: pasteboard)
     #expect(before.count == 3)
 
     let swap = PasteboardSwap(pasteboard)
-    swap.stage(ProbeMarker.replacement)
+    #expect(swap.stage(ProbeMarker.replacement) == .staged)
     #expect(contents(of: pasteboard) != before)
     #expect(swap.restore() == .restored)
     #expect(contents(of: pasteboard) == before)
 }
 
-@Test func theStagedItemCarriesTheStringAndTheThreeClipboardManagerMarkers() throws {
+@MainActor @Test func theStagedItemCarriesTheStringAndTheThreeClipboardManagerMarkers() throws {
     let pasteboard = filled()
     defer { pasteboard.releaseGlobally() }
-    PasteboardSwap(pasteboard).stage(ProbeMarker.replacement)
+    #expect(PasteboardSwap(pasteboard).stage(ProbeMarker.replacement) == .staged)
 
     let items = try #require(pasteboard.pasteboardItems)
     #expect(items.count == 1)
@@ -61,21 +61,21 @@ private func filled() -> NSPasteboard {
     }
 }
 
-@Test func anEmptyPasteboardIsLeftEmptyAfterTheRestore() {
+@MainActor @Test func anEmptyPasteboardIsLeftEmptyAfterTheRestore() {
     let pasteboard = privatePasteboard()
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     let swap = PasteboardSwap(pasteboard)
-    swap.stage(ProbeMarker.replacement)
+    #expect(swap.stage(ProbeMarker.replacement) == .staged)
     #expect(swap.restore() == .restored)
     #expect(contents(of: pasteboard).isEmpty)
 }
 
-@Test func theRestoreLeavesAlonePasteboardContentSomeoneElseWrote() {
+@MainActor @Test func theRestoreLeavesAlonePasteboardContentSomeoneElseWrote() {
     let pasteboard = filled()
     defer { pasteboard.releaseGlobally() }
     let swap = PasteboardSwap(pasteboard)
-    swap.stage(ProbeMarker.replacement)
+    #expect(swap.stage(ProbeMarker.replacement) == .staged)
 
     pasteboard.clearContents()
     pasteboard.setString("written by another app", forType: .string)
@@ -89,4 +89,64 @@ private func filled() -> NSPasteboard {
     #expect(WriteMethod(for: .native) == .ax)
     #expect(WriteMethod(for: .chromium) == .paste)
     #expect(WriteMethod(for: .firefox) == .paste)
+}
+
+@MainActor @Test func stagingIsRefusedWhenTheClipboardChangedSinceTheSnapshot() {
+    let pasteboard = filled()
+    defer { pasteboard.releaseGlobally() }
+    let swap = PasteboardSwap(pasteboard)
+    let before = contents(of: pasteboard)
+
+    pasteboard.clearContents()
+    pasteboard.setString("copied meanwhile", forType: .string)
+    let theirs = contents(of: pasteboard)
+
+    #expect(swap.stage(ProbeMarker.replacement) == .changedSinceSnapshot)
+    #expect(contents(of: pasteboard) == theirs)
+    #expect(contents(of: pasteboard) != before)
+    #expect(swap.restore() == .restored)
+    #expect(contents(of: pasteboard) == theirs)
+}
+
+@MainActor @Test func aConcealedOrTransientItemCannotBeRestoredFaithfully() {
+    for marker in ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"] {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item([(.string, Data("secret".utf8)), (NSPasteboard.PasteboardType(marker), Data())])])
+        let swap = PasteboardSwap(pasteboard)
+        #expect(!swap.canRestoreFaithfully, "\(marker)")
+        #expect(swap.stage(ProbeMarker.replacement) == .unrestorable)
+        #expect(contents(of: pasteboard).first?["public.utf8-plain-text"] == Data("secret".utf8))
+    }
+}
+
+@MainActor @Test func anOrdinaryOrEmptyClipboardCanBeRestoredFaithfully() {
+    let pasteboard = filled()
+    defer { pasteboard.releaseGlobally() }
+    #expect(PasteboardSwap(pasteboard).canRestoreFaithfully)
+    let empty = privatePasteboard()
+    defer { empty.releaseGlobally() }
+    empty.clearContents()
+    #expect(PasteboardSwap(empty).canRestoreFaithfully)
+}
+
+@Test func aTypeWithoutDataCannotBeRestoredFaithfully() {
+    #expect(PasteboardSwap.isRestorable([[("public.utf8-plain-text", true), ("public.rtf", true)], [("public.png", true)]]))
+    #expect(!PasteboardSwap.isRestorable([[("public.utf8-plain-text", true), ("public.png", false)]]))
+    #expect(!PasteboardSwap.isRestorable([[("org.nspasteboard.ConcealedType", true)]]))
+}
+
+@Test func thePasteIsPostedOnlyWhenTheTargetIsStillFocusedOnTheMarker() {
+    let ok = PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: true)
+    #expect(ok.failure == nil)
+    #expect(PasteRecheck(targetIsFrontmost: false, sameField: true, selectionOnMarker: true).failure != nil)
+    #expect(PasteRecheck(targetIsFrontmost: true, sameField: false, selectionOnMarker: true).failure != nil)
+    #expect(PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: false).failure != nil)
+    let reasons = Set([
+        PasteRecheck(targetIsFrontmost: false, sameField: true, selectionOnMarker: true).failure,
+        PasteRecheck(targetIsFrontmost: true, sameField: false, selectionOnMarker: true).failure,
+        PasteRecheck(targetIsFrontmost: true, sameField: true, selectionOnMarker: false).failure,
+    ])
+    #expect(reasons.count == 3)
 }

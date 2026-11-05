@@ -289,8 +289,11 @@ public final class Probe {
         }
         guard shouldWrite else { return }
 
-        let method = WriteMethod(for: session.mode)
-        let attempt = await queue.run { FieldProbe.write(pid: pid, method: method) }
+        let attempt: WriteAttempt?
+        switch WriteMethod(for: session.mode) {
+        case .ax: attempt = await queue.run { FieldProbe.write(pid: pid) }
+        case .paste: attempt = await pasteWrite(session)
+        }
         guard session === current else { return }
         guard let attempt else {
             PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
@@ -314,6 +317,45 @@ public final class Probe {
         case let .aborted(reason):
             session.observation.recordWriteAborted()
             PlatformLog.probe.notice("write aborted: \(session.observation.line.app, privacy: .public): \(reason, privacy: .public)")
+        }
+    }
+
+    /// Pasteboard work stays on the main actor; the AX queue only selects, re-checks and posts.
+    private func pasteWrite(_ session: FieldSession) async -> WriteAttempt? {
+        let pid = session.pid
+        let swap = PasteboardSwap()
+        guard swap.canRestoreFaithfully else {
+            return .aborted(reason: "paste skipped: clipboard holds concealed or promised content")
+        }
+        let preparation = await queue.run { FieldProbe.prepare(pid: pid) }
+        let prepared: PreparedWrite
+        switch preparation {
+        case nil: return nil
+        case let .aborted(reason): return .aborted(reason: reason)
+        case let .ready(found): prepared = found
+        }
+        guard session === current else {
+            _ = await queue.run { FieldProbe.cancel(prepared) }
+            return nil
+        }
+        guard swap.stage(ProbeMarker.replacement) == .staged else {
+            let selection = await queue.run { FieldProbe.cancel(prepared) }
+            return .aborted(reason: "the clipboard changed since the snapshot; \(selection)")
+        }
+        let attempt = await queue.run { FieldProbe.writeByPaste(prepared, pid: pid) }
+        let restoration = swap.restore()
+        switch attempt {
+        case let .aborted(reason):
+            return .aborted(reason: "\(reason); \(PasteWrite.describe(restoration))")
+        case let .sent(start, outcome):
+            PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(outcome.selectionWaitedMs) ms, \(PasteWrite.describe(outcome), privacy: .public), \(PasteWrite.describe(restoration), privacy: .public)")
+            let later = await queue.run { FieldProbe.currentValue(pid: pid) }
+            if later != outcome.finalValue {
+                let before = outcome.finalValue.map { String(($0 as NSString).length) } ?? "unreadable"
+                let after = later.map { String(($0 as NSString).length) } ?? "unreadable"
+                PlatformLog.probe.notice("value changed after the restore: \(session.observation.line.app, privacy: .public): \(before, privacy: .public) units before, \(after, privacy: .public) after")
+            }
+            return .started(start)
         }
     }
 
