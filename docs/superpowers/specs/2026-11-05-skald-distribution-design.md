@@ -122,9 +122,9 @@ Models are already gated on `SystemLanguageModel.default.isAvailable`; any other
 depends on the machine (the system spell server, CPU timing under load) is a defect to fix so it
 passes there, not a test to skip. The CPU sampling test that failed once under load on
 2026-11-05 is one to harden. The one exception is the guard against real company names in
-`Eval/` and in file names: it reads a private list that never enters the repository or CI, so
-it runs on Michael's Mac and in the audit before every push, and skips in CI (Michael's
-decision, 2026-11-06).
+`Eval/` and in every tracked text file: it reads a private list that never enters the
+repository or CI, so it runs whenever the suites run on Michael's Mac, and in the history audit
+before the first push, and skips in CI (Michael's decision, 2026-11-06).
 
 ### Changelog
 
