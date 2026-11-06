@@ -40,6 +40,37 @@ private func longParagraph() -> String {
     #expect(Paragraphs.around(caret: 1, in: "\n\n", offset: 0) == nil)
 }
 
+/// A line of spaces is a blank line: the caret resting on one checked the whitespace and missed the text above it.
+@Test func aWhitespaceOnlyLineIsNotAParagraph() {
+    let text = "first\n  \n\t \u{00A0}\nsecond"
+    #expect(Paragraphs.all(in: text, offset: 0).map(\.text) == ["first", "second"])
+    #expect(Paragraphs.all(in: "  \n\t", offset: 0).isEmpty)
+}
+
+@Test func aLineWithTextBesideWhitespaceStaysAParagraph() {
+    #expect(Paragraphs.all(in: "  indented", offset: 0).map(\.text) == ["  indented"])
+}
+
+@Test func caretAfterAWhitespaceLineBelongsToTheParagraphAbove() {
+    let text = "We flew to teh office yesterday\n  \n"
+    #expect(Paragraphs.around(caret: text.utf16.count, in: text, offset: 0)?.text == "We flew to teh office yesterday")
+    let tabs = "first\n\t\t\nsecond\n\t\n"
+    #expect(Paragraphs.around(caret: tabs.utf16.count, in: tabs, offset: 0)?.text == "second")
+}
+
+@Test func caretInsideAWhitespaceLineBelongsToTheParagraphAbove() {
+    let text = "first\n    \nsecond"
+    #expect(Paragraphs.around(caret: 8, in: text, offset: 0)?.text == "first")
+}
+
+@Test func caretInAWhitespaceLineBeforeAnyTextBelongsToTheParagraphBelow() {
+    #expect(Paragraphs.around(caret: 1, in: "   \nfirst", offset: 0)?.text == "first")
+}
+
+@Test func aFieldOfWhitespaceHasNoCaretParagraph() {
+    #expect(Paragraphs.around(caret: 2, in: "  \n \t", offset: 0) == nil)
+}
+
 @Test func chunkKeysFollowTheCaretOntoABlankLine() {
     let text = "first line\n\nsecond line\n\n"
     let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 25, length: 0), totalLength: text.utf16.count)

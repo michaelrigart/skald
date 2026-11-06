@@ -16,6 +16,7 @@ public enum Paragraphs {
         unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
     }
 
+    /// The non-blank lines. A line holding only whitespace is blank, as an empty one is.
     public static func all(in text: String, offset: Int) -> [Paragraph] {
         let units = Array(text.utf16)
         var result: [Paragraph] = []
@@ -23,7 +24,7 @@ public enum Paragraphs {
         var i = 0
 
         func close(at end: Int) {
-            guard end > start else { return }
+            guard end > start, !units[start..<end].allSatisfy(isWhitespace) else { return }
             result.append(Paragraph(
                 range: TextRange(location: offset + start, length: end - start),
                 text: String(decoding: units[start..<end], as: UTF16.self)
