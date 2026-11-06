@@ -89,6 +89,11 @@ public final class SystemTextAccess: TextAccess {
         return CapabilityTable.capabilities(access, measured: measured)
     }
 
+    /// The field focused right now in an app Skald is on in, or nil; the panel captures it.
+    public func focusedField() async -> FieldID? {
+        await queue.run { [observer] in observer.focusedField() }
+    }
+
     public func capture(of field: FieldID) async -> SelectionCapture? {
         guard isAppEnabled(field.app) else { return nil }
         return await queue.run { [observer] in

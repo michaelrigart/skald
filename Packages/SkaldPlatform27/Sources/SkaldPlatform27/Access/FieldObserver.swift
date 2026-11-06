@@ -234,6 +234,12 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
         registry.newest(app: app)
     }
 
+    /// The field the observer last saw focused, while it is still the focused element of the focused app.
+    func focusedField() -> FieldID? {
+        guard let id = driver.current, let entry = registry.entry(id), isFocused(entry) else { return nil }
+        return id
+    }
+
     /// Asked live: the field is the focused element of the system's focused app, resolved as at registration.
     func isFocused(_ entry: Registry.Entry) -> Bool {
         guard let pid = entry.element.pid, AXElement.focusedApplicationPID() == pid else { return false }

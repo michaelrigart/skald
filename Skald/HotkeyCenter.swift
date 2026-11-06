@@ -18,8 +18,10 @@ final class HotkeyCenter {
         }
     }
 
-    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void) {
-        guard installHandler() else { return }
+    /// False when the system refused the hotkey, for one it reserves or another app holds.
+    @discardableResult
+    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void) -> Bool {
+        guard installHandler() else { return false }
         let id = nextID
         nextID += 1
         var ref: EventHotKeyRef?
@@ -28,10 +30,11 @@ final class HotkeyCenter {
         )
         guard status == noErr, let ref else {
             Log.app.notice("hotkey not registered: OSStatus \(status)")
-            return
+            return false
         }
         refs[id] = ref
         actions[id] = action
+        return true
     }
 
     func unregisterAll() {

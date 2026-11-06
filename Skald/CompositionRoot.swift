@@ -24,6 +24,8 @@ final class CompositionRoot {
     private var onboarding: Onboarding?
     private var settingsWindow: SettingsWindowController?
     private var overlay: OverlayController?
+    private var panel: PanelController?
+    private var panelWindow: PanelWindow?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var pauseEnd: Task<Void, Never>?
     private var frontApp: NSRunningApplication?
@@ -104,6 +106,13 @@ final class CompositionRoot {
         )
         overlay.start()
         self.overlay = overlay
+        let panelWindow = PanelWindow()
+        let panel = PanelController(window: panelWindow, clipboard: SystemClipboard())
+        panelWindow.attach(panel)
+        panelWindow.onClose = { [weak panel] in panel?.close() }
+        self.panelWindow = panelWindow
+        self.panel = panel
+        registerPanelHotkey()
         syncLoginItem(launchAtLogin: model.settings.launchAtLogin, changed: false)
         applyPause()
         applyRouting()
@@ -116,6 +125,8 @@ final class CompositionRoot {
         observers = []
         overlay?.stop()
         overlay = nil
+        hotkeys.unregisterAll()
+        panel?.close()
         pauseEnd?.cancel()
         commands.finish()
     }
@@ -151,6 +162,7 @@ final class CompositionRoot {
         if settings.appOverrides != previous.appOverrides { textAccess.appSwitchesChanged() }
         if settings.launchAtLogin != previous.launchAtLogin { syncLoginItem(launchAtLogin: settings.launchAtLogin, changed: true) }
         if settings.pausedUntil != previous.pausedUntil { applyPause() }
+        if settings.panelHotkey != previous.panelHotkey { registerPanelHotkey() }
         applyRouting()
     }
 
@@ -206,6 +218,58 @@ final class CompositionRoot {
             settings: settings, appleAvailability: conditions.apple,
             thermalPaused: conditions.thermalPaused, claudeKeyPresent: conditions.claudeKeyPresent
         )
+    }
+
+    // MARK: The panel
+
+    private func registerPanelHotkey() {
+        hotkeys.unregisterAll()
+        let hotkey = model.settings.panelHotkey
+        let registered = hotkeys.register(hotkey) { [weak self] in self?.panelHotkeyPressed() }
+        model.hotkeyNote = registered ? nil : "macOS didn't accept \(hotkey.displayName); it may be reserved or taken by another app. Record another shortcut."
+    }
+
+    /// Captures the focused field before the panel shows: the selection, or the caret's paragraph. With no
+    /// field, the panel works on the clipboard's text and offers only Copy. A second press closes the panel.
+    private func panelHotkeyPressed() {
+        guard let panel else { return }
+        if panel.isOpen { return panel.close() }
+        let source = Self.otherApp(NSWorkspace.shared.frontmostApplication)
+        let settings = model.settings
+        let engines = makeEngines()
+        Task { [textAccess, liveRouter, apple] in
+            var capture: SelectionCapture?
+            if source != nil, let field = await textAccess.focusedField() {
+                capture = await textAccess.capture(of: field)
+            }
+            let writes = if let capture { await textAccess.capabilities(for: capture.field.app).contains(.cleanWrite) } else { false }
+            let picker = await liveRouter.current.pickerEngines
+            let text = capture?.selectedText ?? SystemClipboard.text() ?? ""
+            let session = PanelSession(
+                capture: capture,
+                text: text,
+                detector: SystemLanguageDetector(),
+                editGuard: EditGuard(neverTouch: Set(settings.neverTouch)),
+                oracle: SystemWordOracle(),
+                confirmer: AppleConfirmer(engine: apple),
+                engines: engines,
+                router: liveRouter,
+                access: capture == nil ? nil : textAccess
+            )
+            let target = capture.map { capture in
+                PanelOpening.Target(writes: writes) {
+                    if let source {
+                        NSApp.yieldActivation(to: source)
+                        source.activate()
+                    }
+                    return await textAccess.waitForFocus(on: capture.field, timeout: .seconds(1))
+                }
+            }
+            Log.ui.notice("panel opened: field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
+            panel.open(PanelOpening(
+                session: session, text: text, target: target, engines: picker, engine: settings.panelDefaultEngine
+            ))
+        }
     }
 
     // MARK: Accessibility

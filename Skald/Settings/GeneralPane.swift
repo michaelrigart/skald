@@ -17,6 +17,9 @@ struct GeneralPane: View {
                 LabeledContent("Panel hotkey") {
                     HotkeyRecorder(hotkey: model.binding(\.panelHotkey))
                 }
+                if let note = model.hotkeyNote {
+                    Text(note).font(.callout).foregroundStyle(.red)
+                }
                 Text("Opens the fix and rewrite panel on the selection, or on the paragraph at the caret.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
