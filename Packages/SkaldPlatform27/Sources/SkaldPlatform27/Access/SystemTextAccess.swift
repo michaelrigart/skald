@@ -132,11 +132,6 @@ public final class SystemTextAccess: TextAccess {
         return outcome
     }
 
-    /// Screen bounds of a character range, top-left origin, for the underlines.
-    public func bounds(_ r: TextRange, in field: FieldID) async -> CGRect? {
-        await queue.run { [observer] in observer.entry(field)?.source.bounds(for: r) }
-    }
-
     /// Screen bounds of each range in one `AXQueue` job, nil where there are none; after the app first fails to
     /// answer in time, the rest are nil without being asked for.
     public func bounds(_ ranges: [TextRange], in field: FieldID) async -> [CGRect?] {

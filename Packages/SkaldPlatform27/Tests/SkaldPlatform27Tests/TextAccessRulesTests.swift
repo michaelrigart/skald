@@ -328,7 +328,6 @@ private let replaced = TextRange(location: 10, length: 4)
 @Test func anAbortAfterSelectingRestoresTheSelectionUnshifted() {
     let user = TextRange(location: 30, length: 0)
     #expect(TextAccessRules.caretTarget(user: user, replaced: replaced, replacementLength: 7, end: .abortedAfterSelecting) == user)
-    #expect(TextAccessRules.caretTarget(user: user, replaced: replaced, replacementLength: 7, end: .abortedBeforeSelecting) == nil)
 }
 
 @Test func anUnconfirmedPasteNeverTouchesTheSelection() {

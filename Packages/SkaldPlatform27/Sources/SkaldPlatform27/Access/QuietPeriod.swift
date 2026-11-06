@@ -7,14 +7,6 @@ enum QuietPeriod {
     /// A field that keeps changing this long without a quiet interval is given up on.
     static let changingLimit: Duration = .seconds(10)
 
-    static func remaining(
-        now: ContinuousClock.Instant, lastKeystroke: ContinuousClock.Instant?, lastValueChange: ContinuousClock.Instant?
-    ) -> Duration? {
-        guard let last = [lastKeystroke, lastValueChange].compactMap({ $0 }).max() else { return nil }
-        let elapsed = last.duration(to: now)
-        return elapsed < required ? required - elapsed : nil
-    }
-
     /// The whole field as the quiet interval compares it.
     struct State: Sendable, Equatable {
         let length: Int

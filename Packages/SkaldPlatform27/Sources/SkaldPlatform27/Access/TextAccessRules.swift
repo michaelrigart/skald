@@ -11,7 +11,6 @@ enum FocusAttempt: Sendable, Equatable {
 /// How a write ended, for the caret rule.
 enum WriteEnd: Sendable, Equatable {
     case confirmed
-    case abortedBeforeSelecting
     case abortedAfterSelecting
     /// A paste was sent but not seen (Task 19): a late paste must still land on the range.
     case unconfirmed
@@ -187,7 +186,7 @@ enum TextAccessRules {
             return TextRange(location: start, length: finish - start)
         case .abortedAfterSelecting:
             return user
-        case .abortedBeforeSelecting, .unconfirmed:
+        case .unconfirmed:
             return nil
         }
     }
