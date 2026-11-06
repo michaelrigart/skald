@@ -1,7 +1,8 @@
 # Skald Distribution Implementation Plan
 
-**Status:** Approved (not started). Runs on `feat/skald-distribution`, branched from
-`feat/skald-v1` once v1's tasks are done.
+**Status:** In progress (branch `feat/skald-distribution`, branched from `feat/skald-v1` at
+`08d308b`; no merge request yet, because the repository has no remote). Tasks 1–9 run now;
+Tasks 10 and 11 with Michael.
 
 **Execution notes:** one task at a time, in this order: 1, 5, 2, 3, 4, 8, 6, 7, 9 (most tasks
 build into `build/`, and Tasks 1 and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
