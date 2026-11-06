@@ -34,7 +34,7 @@ final class SkaldApp: NSObject, NSApplicationDelegate {
         let probe = Probe()
         self.probe = probe
         Task {
-            await probe.run(for: .seconds(15 * 60))
+            await probe.run(for: .seconds(60 * 60))
             NSApp.terminate(nil)
         }
     }
