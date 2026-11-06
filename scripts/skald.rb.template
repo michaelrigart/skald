@@ -1,0 +1,44 @@
+cask "skald" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/michaelrigart/skald/releases/download/#{version}/Skald-#{version}.zip"
+  name "Skald"
+  desc "Spelling and grammar checker for the menu bar"
+  homepage "https://github.com/michaelrigart/skald"
+
+  livecheck do
+    url :url
+    regex(/^(\d{8}-\d{4})$/i)
+    strategy :github_latest
+  end
+
+  depends_on arch: :arm64
+  depends_on macos: :golden_gate
+
+  app "Skald.app", target: "/Applications/Skald.app"
+
+  uninstall quit: "com.michaelrigart.skald"
+
+  zap trash: [
+    "~/Library/Application Support/com.michaelrigart.skald",
+    "~/Library/Preferences/com.michaelrigart.skald.plist",
+  ]
+
+  caveats <<~EOS
+    Skald is signed but not notarized, so macOS blocks its first launch.
+    After the first install, open System Settings > Privacy & Security and
+    choose "Open Anyway" for Skald. Upgrades should not need this again.
+
+    Then allow Skald under Accessibility in System Settings > Privacy &
+    Security. Upgrades should keep this permission; if macOS asks again,
+    repeat it.
+
+    Checks by the on-device model need Apple Intelligence turned on in
+    System Settings.
+
+    "brew uninstall --zap" keeps the Keychain item that holds your Claude API
+    key (service com.michaelrigart.skald, account claude-api-key). The README
+    says how to delete it.
+  EOS
+end
