@@ -32,6 +32,8 @@ struct FocusMachine {
     private(set) var generation = 0
     private(set) var frontPID: pid_t?
     private(set) var frontApp: String?
+    /// The frontmost app is observed: not Skald, and on in the app switches when it activated.
+    private(set) var frontObserved = false
     private(set) var current: FieldID?
 
     init(ownPID: pid_t) {
@@ -42,8 +44,21 @@ struct FocusMachine {
         generation += 1
         frontPID = pid
         frontApp = app
-        guard pid != ownPID, enabled else { return [.cancelRetries, .observe(pid: nil, app: nil)] + settle(nil) }
+        frontObserved = pid != ownPID && enabled
+        guard frontObserved else { return [.cancelRetries, .observe(pid: nil, app: nil)] + settle(nil) }
         return [.cancelRetries, .observe(pid: pid, app: app), .query(pid: pid, app: app, .activation)]
+    }
+
+    /// Accessibility was granted after launch: the frontmost app is observed and asked again, as on activation.
+    mutating func reactivated(isEnabled: (String) -> Bool) -> [Step] {
+        guard let frontPID, let frontApp else { return [] }
+        return activated(pid: frontPID, app: frontApp, enabled: isEnabled(frontApp))
+    }
+
+    /// The app switches changed: the frontmost app is dropped or observed only when its own switch flipped.
+    mutating func switchesChanged(isEnabled: (String) -> Bool) -> [Step] {
+        guard let frontPID, let frontApp, frontPID != ownPID, isEnabled(frontApp) != frontObserved else { return [] }
+        return activated(pid: frontPID, app: frontApp, enabled: isEnabled(frontApp))
     }
 
     mutating func focusChanged(pid: pid_t) -> [Step] {
@@ -113,6 +128,14 @@ final class FocusDriver: @unchecked Sendable { // reason: state is touched only 
 
     func focusChanged(pid: pid_t) {
         run(machine.focusChanged(pid: pid))
+    }
+
+    func reactivated(isEnabled: (String) -> Bool) {
+        run(machine.reactivated(isEnabled: isEnabled))
+    }
+
+    func switchesChanged(isEnabled: (String) -> Bool) {
+        run(machine.switchesChanged(isEnabled: isEnabled))
     }
 
     func fieldChanged(pid: pid_t, value: Bool) {

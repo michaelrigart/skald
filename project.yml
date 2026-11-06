@@ -16,6 +16,8 @@ targets:
     dependencies:
       - package: SkaldCore
       - package: SkaldPlatform27
+    scheme:
+      testTargets: [SkaldTests]
     info:
       path: Skald/Info.plist
       properties:
@@ -42,3 +44,20 @@ targets:
       configs:
         Release:
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  SkaldTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [SkaldTests]
+    dependencies:
+      - target: Skald
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michaelrigart.skald.tests
+        GENERATE_INFOPLIST_FILE: YES
+        ARCHS: arm64
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: CX4MWR5579
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

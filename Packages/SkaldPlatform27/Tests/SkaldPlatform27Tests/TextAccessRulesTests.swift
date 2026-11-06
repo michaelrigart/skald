@@ -761,3 +761,67 @@ private func makeDriver(_ clock: TestClock, port: FakePort) -> (FocusDriver, Asy
     #expect(!machine.retryTick(generation: machine.generation - 1, pid: notesPID))
     #expect(machine.retryTick(generation: machine.generation, pid: notesPID))
 }
+
+// MARK: A late grant and the app switches
+
+@Test func aGrantAfterLaunchObservesTheFrontmostAppAgainAndFindsItsField() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    #expect(port.events == [.focused(nil)])
+    port.focus[obsidianPID] = .element(obsidianField)
+    driver.reactivated(isEnabled: { _ in true })
+    #expect(port.observed == [obsidianPID, obsidianPID])
+    #expect(port.events == [.focused(nil), .focused(obsidianField)])
+    #expect(driver.current == obsidianField)
+}
+
+@Test func aGrantBeforeAnyActivationDoesNothing() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    driver.reactivated(isEnabled: { _ in true })
+    #expect(port.observed.isEmpty)
+    #expect(port.events.isEmpty)
+}
+
+@Test func turningOffTheFocusedAppEmitsNoFieldAtOnceAndStopsObservingIt() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    driver.switchesChanged(isEnabled: { $0 != "com.apple.Notes" })
+    #expect(port.events == [.focused(notesField), .focused(nil)])
+    #expect(port.observed == [notesPID, nil])
+    #expect(port.queries == [notesPID])
+    #expect(driver.current == nil)
+}
+
+@Test func turningOnTheFrontmostAppObservesItAndFindsItsField() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: false)
+    driver.switchesChanged(isEnabled: { _ in true })
+    #expect(port.events == [.focused(nil), .focused(notesField)])
+    #expect(port.observed == [nil, notesPID])
+}
+
+@Test func switchesThatLeaveTheFrontmostAppAloneChangeNothing() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    driver.switchesChanged(isEnabled: { _ in true })
+    #expect(port.events == [.focused(notesField)])
+    #expect(port.observed == [notesPID])
+    #expect(port.queries == [notesPID])
+}
+
+@Test func switchesNeverObserveSkaldItself() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    driver.activated(pid: skaldPID, app: "com.michaelrigart.skald", enabled: false)
+    driver.switchesChanged(isEnabled: { _ in true })
+    #expect(port.observed == [nil])
+    #expect(port.events == [.focused(nil)])
+}

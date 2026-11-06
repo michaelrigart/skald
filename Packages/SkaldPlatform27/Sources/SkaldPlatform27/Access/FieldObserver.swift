@@ -172,6 +172,16 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
         }
     }
 
+    /// Observes the frontmost app again and asks for its focus, as when it activated.
+    func reactivate() {
+        queue.enqueue { [self] in driver.reactivated(isEnabled: isAppEnabled) }
+    }
+
+    /// Drops the frontmost app when it was turned off, or observes it when it was turned on.
+    func switchesChanged() {
+        queue.enqueue { [self] in driver.switchesChanged(isEnabled: isAppEnabled) }
+    }
+
     private func activated(pid: pid_t, app: String?) {
         let app = app ?? "unknown"
         queue.enqueue { [self] in driver.activated(pid: pid, app: app, enabled: isAppEnabled(app)) }

@@ -40,6 +40,17 @@ public final class SystemTextAccess: TextAccess {
         observer.start()
     }
 
+    /// Accessibility was granted after launch: observe the frontmost app now, not at its next activation.
+    public func observeFrontmostApp() {
+        observer.reactivate()
+    }
+
+    /// The app switches changed: a frontmost app turned off ends its field at once (`focused(nil)`), and one
+    /// turned on is observed without waiting for its next activation.
+    public func appSwitchesChanged() {
+        observer.switchesChanged()
+    }
+
     public func snapshot(of field: FieldID) async -> FieldSnapshot? {
         guard isAppEnabled(field.app) else { return nil }
         return await queue.run { [observer] in
