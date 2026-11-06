@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import SkaldCore
@@ -61,64 +60,67 @@ private func eachLanguageHasFiftyCasesAThirdOfThemClean(_ language: Language) th
     #expect(clean * 3 >= own.count, "\(language): \(clean) of \(own.count) clean")
 }
 
-/// SHA-256 digests of the real company names that must never appear, lowercased without spaces, with their
-/// lengths in UTF-8 bytes, so this file doesn't name them either.
-private let companyDigests: [(length: Int, digest: String)] = [
-    (8, "0000000000000000000000000000000000000000000000000000000000000000"),
-    (7, "0000000000000000000000000000000000000000000000000000000000000000"),
-]
+/// Names no tracked file may contain, one per line, from an untracked list on this Mac:
+/// `$XDG_CONFIG_HOME/skald/forbidden-names`, else `~/.config/skald/forbidden-names`. Nil without the list,
+/// and the checks that need it are skipped.
+private let forbiddenNames: [String]? = {
+    let environment = ProcessInfo.processInfo.environment
+    let config = environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config")
+    guard let list = try? String(contentsOf: config.appending(path: "skald/forbidden-names"), encoding: .utf8) else { return nil }
+    let names = list.split(whereSeparator: \.isNewline).map(squeezed).filter { !$0.isEmpty }
+    return names.isEmpty ? nil : names
+}()
 
-private func sha256(_ text: String) -> String {
-    SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+/// Lowercased without whitespace, so "A B" also matches "ab" and "a b".
+private func squeezed<S: StringProtocol>(_ text: S) -> String {
+    text.lowercased().filter { !$0.isWhitespace }
 }
 
-/// True when the text, lowercased without spaces, holds a stretch whose digest is listed.
-private func contains(_ text: String, anyOf digests: [(length: Int, digest: String)]) -> Bool {
-    let bytes = Array(text.lowercased().filter { !$0.isWhitespace }.utf8)
-    return digests.contains { length, digest in
-        let target = stride(from: 0, to: digest.count, by: 2).map { offset -> UInt8 in
-            let start = digest.index(digest.startIndex, offsetBy: offset)
-            return UInt8(digest[start..<digest.index(start, offsetBy: 2)], radix: 16)!
-        }
-        return bytes.count >= length && bytes.withUnsafeBufferPointer { buffer in
-            (0...(bytes.count - length)).contains { SHA256.hash(data: UnsafeRawBufferPointer(UnsafeBufferPointer(rebasing: buffer[$0..<($0 + length)]))).elementsEqual(target) }
-        }
-    }
+private func contains(_ text: String, anyOf names: [String]) -> Bool {
+    let text = squeezed(text)
+    return names.contains { text.contains($0) }
 }
 
-@Test func theDigestCheckFindsANameInsideText() {
-    let fictional = [(length: 10, digest: sha256("brightline"))]
-    #expect(contains("We met the Bright line team today.", anyOf: fictional))
+@Test func theNameCheckFindsANameInsideText() {
+    let fictional = [squeezed("Bright Line")]
+    #expect(contains("We met the Brightline team today.", anyOf: fictional))
     #expect(!contains("We met the Northwind team today.", anyOf: fictional))
 }
 
-@Test func noCaseNamesARealCompany() throws {
-    let named = try allCases().filter { contains($0.text, anyOf: companyDigests) || contains($0.ref, anyOf: companyDigests) }
+@Test(.enabled(if: forbiddenNames != nil, "no forbidden-names list on this Mac"))
+func noCaseNamesARealCompany() throws {
+    let names = try #require(forbiddenNames)
+    let named = try allCases().filter { contains($0.text, anyOf: names) || contains($0.ref, anyOf: names) }
     #expect(named.isEmpty, "cases naming a real company: \(named.map(\.id))")
 }
 
-/// Every tracked text file: the repository without what is generated or never committed.
-private func trackedTextFiles() -> [URL] {
-    let root = evalDirectory.deletingLastPathComponent()
-    let skipped: Set<String> = [".git", ".build", "build", ".superpowers", ".swiftpm", "Skald.xcodeproj"]
-    let extensions: Set<String> = ["swift", "md", "json", "jsonl", "yml", "yaml", "toml", "plist", "entitlements", "txt"]
-    guard let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
-    var files: [URL] = []
-    for case let url as URL in walk {
-        if skipped.contains(url.lastPathComponent) {
-            walk.skipDescendants()
-        } else if extensions.contains(url.pathExtension) {
-            files.append(url)
-        }
-    }
-    return files
+/// Every file git tracks, as paths relative to the repository's root.
+private func trackedFiles(in root: URL) throws -> [String] {
+    let git = Process()
+    git.executableURL = URL(filePath: "/usr/bin/git")
+    git.arguments = ["-C", root.path, "ls-files", "-z"]
+    let output = Pipe()
+    git.standardOutput = output
+    try git.run()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    git.waitUntilExit()
+    guard git.terminationStatus == 0 else { return [] }
+    return String(decoding: data, as: UTF8.self).split(separator: "\0").map(String.init)
 }
 
-@Test func noTrackedFileNamesARealCompany() throws {
-    let files = trackedTextFiles()
+/// Every tracked file that reads as UTF-8 text, whatever its extension.
+@Test(.enabled(if: forbiddenNames != nil, "no forbidden-names list on this Mac"))
+func noTrackedFileNamesARealCompany() throws {
+    let names = try #require(forbiddenNames)
+    let root = evalDirectory.deletingLastPathComponent()
+    let files = try trackedFiles(in: root)
     #expect(files.count > 100)
-    let named = try files.filter { contains(try String(contentsOf: $0, encoding: .utf8), anyOf: companyDigests) }
-    #expect(named.isEmpty, "files naming a real company: \(named.map(\.lastPathComponent))")
+    let named = files.filter { path in
+        guard let text = try? String(contentsOf: root.appending(path: path), encoding: .utf8) else { return false }
+        return contains(text, anyOf: names)
+    }
+    #expect(named.isEmpty, "tracked files naming a real company: \(named)")
 }
 
 @Test(arguments: ["tuning", "heldout"])
