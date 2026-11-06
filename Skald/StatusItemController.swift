@@ -30,13 +30,27 @@ enum StatusState: Equatable {
         }
     }
 
-    var symbolName: String {
+    /// The system symbol for a state that has no glyph of its own; `.on` shows the app's menu bar glyph.
+    var symbolName: String? {
         switch self {
-        case .on: "text.badge.checkmark"
+        case .on: nil
         case .paused: "pause.circle"
         case .spellingOnly: "textformat.abc"
         case .noAccessibility: "exclamationmark.triangle"
         }
+    }
+
+    static let glyphName = "SkaldMenuBar"
+
+    func image() -> NSImage? {
+        let title = title()
+        guard let symbolName else {
+            let glyph = NSImage(named: Self.glyphName)
+            glyph?.isTemplate = true
+            glyph?.accessibilityDescription = title
+            return glyph
+        }
+        return NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
     }
 }
 
@@ -91,9 +105,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func show(_ state: StatusState) {
         self.state = state
-        let title = state.title()
-        item.button?.image = NSImage(systemSymbolName: state.symbolName, accessibilityDescription: title)
-        item.button?.toolTip = title
+        item.button?.image = state.image()
+        item.button?.toolTip = state.title()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

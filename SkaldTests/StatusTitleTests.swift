@@ -58,12 +58,21 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
     #expect(hot == .spellingOnly(.thermalPause))
 }
 
-@Test func eachStateHasASymbolTheSystemKnows() {
-    let states: [StatusState] = [.on, .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
-    #expect(Set(states.map(\.symbolName)).count == states.count)
-    for state in states {
-        #expect(NSImage(systemSymbolName: state.symbolName, accessibilityDescription: nil) != nil)
+@Test func eachStateHasAnIconOfItsOwn() {
+    let others: [StatusState] = [.paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
+    let symbols = others.compactMap(\.symbolName)
+    #expect(symbols.count == others.count)
+    #expect(Set(symbols).count == others.count)
+    #expect(StatusState.on.symbolName == nil)
+    for state in others {
+        #expect(NSImage(systemSymbolName: state.symbolName ?? "", accessibilityDescription: nil) != nil)
     }
+}
+
+@Test func theOnStateShowsTheMenuBarGlyphAsATemplate() throws {
+    let image = try #require(StatusState.on.image())
+    #expect(image.isTemplate)
+    #expect(image.accessibilityDescription == "Skald is on")
 }
 
 @Test func theTestHostBuildsNoCompositionRoot() throws {
