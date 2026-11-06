@@ -266,14 +266,15 @@ enum FieldProbe {
     }
 
     static func editableAncestorDiagnosis(pid: pid_t) -> String {
-        TextMarkerField.describeEditableAncestor(focusedField(pid).flatMap { TextMarkerField($0, readsToMeasure: true)?.selectionStartHasEditableAncestor })
+        let field = focusedField(pid).flatMap { mayReadText($0) ? $0 : nil }
+        return TextMarkerField.describeEditableAncestor(field.flatMap { TextMarkerField($0, readsToMeasure: true)?.selectionStartHasEditableAncestor })
     }
 
     /// Diagnostic only, numbers, booleans and roles: each step of a measurement, taken again right after an evaluation that logged no field kind.
     static func evaluationDiagnosis(pid: pid_t, measureReturnedNil: Bool, sessionCurrent: Bool) -> EvaluationDiagnosis {
         let focused = AXElement.focusedQuery(inApp: pid)
         let resolved = focusedField(pid)
-        let readable = resolved.flatMap { mayDiagnose($0) ? $0 : nil }
+        let readable = resolved.flatMap { mayReadText($0) ? $0 : nil }
         let value = readable.flatMap { readContent(of: $0).value }
         return EvaluationDiagnosis(
             measureReturnedNil: measureReturnedNil, sessionCurrent: sessionCurrent,
@@ -287,13 +288,9 @@ enum FieldProbe {
         )
     }
 
-    private static func mayDiagnose(_ element: AXElement) -> Bool {
-        EvaluationDiagnosis.mayRead(role: element.role, subrole: element.subrole)
-    }
-
     private static func markerState(of element: AXElement?) -> MarkerFieldState {
         guard let element else { return .unavailable }
-        guard mayDiagnose(element) else { return .notRead }
+        guard mayReadText(element) else { return .notRead }
         guard let markers = TextMarkerField(element, readsToMeasure: true) else { return .unavailable }
         let length = markers.text.map { ($0 as NSString).length }
         let caret = length.flatMap { markers.caret(textLength: $0) }
@@ -306,8 +303,9 @@ enum FieldProbe {
 
     static func measure(pid: pid_t, formatting: (location: Int, length: Int)?, forcing forced: FieldKind? = nil) -> FieldReading? {
         guard let field = focusedField(pid) else { return nil }
-        var reading = FieldReading(identity: field.identity, role: field.role ?? "", subrole: field.subrole ?? "")
-        if reading.isSecure { return reading }
+        let (role, subrole) = (field.role, field.subrole)
+        var reading = FieldReading(identity: field.identity, role: role ?? "", subrole: subrole ?? "")
+        guard mayReadText(role: role, subrole: subrole) else { return reading }
 
         let content = readContent(of: field, forcing: forced)
         reading.kind = content.kind
@@ -338,7 +336,7 @@ enum FieldProbe {
     }
 
     static func prepare(pid: pid_t, method: WriteMethod) -> Preparation? {
-        guard let resolved = resolvedField(pid), !isSecure(resolved.element) else { return nil }
+        guard let resolved = resolvedField(pid), mayReadText(resolved.element) else { return nil }
         let field = resolved.element
         let content = readContent(of: field)
         guard let value = content.value, let match = ProbeMarker.match(in: value, caret: content.selection) else { return nil }
@@ -425,7 +423,7 @@ enum FieldProbe {
     }
 
     static func recheck(pid: pid_t, baseline: BoundsBaseline, kind: RecheckKind) -> BoundsRecheck {
-        guard let field = focusedField(pid), !isSecure(field),
+        guard let field = focusedField(pid), mayReadText(field),
               length(of: field, value: nil) == baseline.length
         else { return .skipped }
         let bounds = field.bounds(for: baseline.range).flatMap { AXElement.usable($0) }
@@ -453,6 +451,16 @@ enum FieldProbe {
             let outcome = resolution.resolved ? "web area resolved" : "web area not resolved"
             PlatformLog.probe.notice("\(outcome, privacy: .public): \(app, privacy: .public): \(resolution.summary, privacy: .public)")
         }
+    }
+
+    /// The probe reads an element's text, ranged strings or text markers only when it could be a field: never a
+    /// secure one, by role or subrole, nor one whose role can't be read.
+    static func mayReadText(role: String?, subrole: String?) -> Bool {
+        TextAccessRules.isFieldCandidate(role: role, subrole: subrole, appEnabled: true)
+    }
+
+    static func mayReadText(_ element: AXElement) -> Bool {
+        mayReadText(role: element.role, subrole: element.subrole)
     }
 
     static func isSecure(_ field: AXElement) -> Bool {

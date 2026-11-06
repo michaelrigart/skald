@@ -36,16 +36,16 @@ import Testing
         + "on focused: initialises true, text length -, caret none")
 }
 
-@Test func theDiagnosisNeverReadsASecureFieldOrOneWhoseRoleIsUnreadable() {
-    #expect(EvaluationDiagnosis.mayRead(role: "AXTextArea", subrole: nil))
-    #expect(EvaluationDiagnosis.mayRead(role: "AXWebArea", subrole: nil))
-    #expect(!EvaluationDiagnosis.mayRead(role: "AXSecureTextField", subrole: nil))
-    #expect(!EvaluationDiagnosis.mayRead(role: "AXTextField", subrole: "AXSecureTextField"))
-    #expect(!EvaluationDiagnosis.mayRead(role: nil, subrole: nil))
-    #expect(!EvaluationDiagnosis.mayRead(role: nil, subrole: "AXSecureTextField"))
-}
-
 @Test func anUnreadFieldIsNamedInTheDiagnosis() {
     #expect(EvaluationDiagnosis.Outcome.classify(focusedFound: true, resolvedFound: true, resolvedReadable: false, valueRead: false) == .notRead)
     #expect(MarkerFieldState.notRead.summary == "not read")
+}
+
+@Test func theProbeReadsNoTextFromASecureFieldOrOneWhoseRoleIsUnreadable() {
+    #expect(FieldProbe.mayReadText(role: "AXTextArea", subrole: nil))
+    #expect(FieldProbe.mayReadText(role: "AXWebArea", subrole: nil))
+    #expect(!FieldProbe.mayReadText(role: "AXSecureTextField", subrole: nil))
+    #expect(!FieldProbe.mayReadText(role: "AXTextField", subrole: "AXSecureTextField"))
+    #expect(!FieldProbe.mayReadText(role: nil, subrole: nil))
+    #expect(!FieldProbe.mayReadText(role: nil, subrole: "AXSecureTextField"))
 }

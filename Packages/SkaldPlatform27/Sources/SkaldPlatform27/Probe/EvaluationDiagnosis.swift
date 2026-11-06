@@ -44,12 +44,6 @@ struct EvaluationDiagnosis: Sendable, Equatable {
         }
     }
 
-    /// The diagnosis reads an element's text or text markers only when it could be a field: never a secure
-    /// one, by role or subrole, nor one whose role can't be read.
-    static func mayRead(role: String?, subrole: String?) -> Bool {
-        TextAccessRules.isFieldCandidate(role: role, subrole: subrole, appEnabled: true)
-    }
-
     var measureReturnedNil: Bool
     var sessionCurrent: Bool
     var outcome: Outcome
