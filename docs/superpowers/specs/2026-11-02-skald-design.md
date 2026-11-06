@@ -2,8 +2,7 @@
 
 **Date:** 2026-11-02
 **Owner:** Michael Rigart
-**Status:** In progress (branch `feat/skald-v1`; no merge request yet, because the repository
-has no remote).
+**Status:** In progress (branch `feat/skald-v1`; no merge request yet).
 **Sign-off:** not yet given by Michael. On 2026-11-02 he asked for the work to continue without
 him overnight. Codex approved the spec in round 4 (`xr-1793578392-bfc59cef`). The calls marked
 as Claude's under Decisions are his to check.
@@ -177,7 +176,8 @@ running macOS 27.2, with a typical development workload running in the backgroun
 ## Goals (v1)
 
 1. **Check while typing.** After a pause, Skald checks the paragraph around the caret in the
-   focused text field, underlines issues in place, and offers a correction on click.
+   focused text field and spell-checks the rest of the field, underlines issues in place, and
+   offers a correction on click.
 2. **Proofread or rewrite on demand.** A global hotkey opens a panel for the selection, or the
    current paragraph when nothing is selected. It offers Fix (proofread), and rewrites: Clearer,
    Shorter, More formal, Friendlier. It shows the changes, and Replace puts the result back in
@@ -399,11 +399,15 @@ A fake implementation drives the core's tests.
    field is secure.
 2. After a pause in typing (builder's value, starting near 700 ms), the scheduler picks the
    paragraph around the caret. A blank or whitespace-only line has no paragraph of its own: the
-   caret there picks the nearest paragraph above, else the first below. Unchanged paragraphs are
-   not checked again.
+   caret there picks the nearest paragraph above, else the first below. Every other paragraph of
+   the text read is spell-checked in the background, one paragraph at a time, nearest the caret
+   first, so the whole field has spelling underlines after focus, launch and resume, and after a
+   paste or an edit away from the caret. Unchanged paragraphs are not checked again.
 3. **Spelling** comes first and immediately, from `NSSpellChecker` in the paragraph's language.
    Spelling flags go through the same edit guard as model edits. Once the model's result for the
-   paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn.
+   paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn. Only the
+   caret's paragraph gets the model check, so a paragraph spell-checked in the background keeps
+   its spelling flags until the caret visits it.
 4. **The model check** runs next: one request at a time; a newer pause cancels an older request.
    The instruction is short and names the paragraph's language (finding 2).
 5. **The result** goes through the diff and the edit guard. Surviving edits become issues,
@@ -504,6 +508,9 @@ finding 3.
   field's last confident language; for a field with none yet (just focused, or after a
   relaunch), the language of the nearest paragraph above that detects, then below, then of the
   whole text read. If none detects, the paragraph is left unchecked; a language is never assumed.
+  The field's last confident language is the language being typed: only the caret's paragraph
+  reads and sets it. A paragraph spell-checked in the background takes the order without that
+  step, so a language elsewhere in the field never decides the language of the line being typed.
   The same order, in the same code, applies to typing checks and to each paragraph of a panel
   selection (read within the selection, the whole text being the captured lines); when none
   detects there, the panel asks the user to pick a language.
@@ -545,7 +552,9 @@ Never user text, never the never-touch list, never the API key.
 - **Core unit tests** (Swift Testing) pin exact expected values:
   - **The scheduler:** a check starts after the pause on the injected clock; typing restarts
     the wait; a caret move to another paragraph schedules that one; a newer request cancels the
-    older one; a result for changed text is dropped; pause stops everything.
+    older one; a result for changed text is dropped; pause stops everything; the other
+    paragraphs are spell-checked one at a time, nearest the caret first, and focus, pause and
+    recheck drop that queue.
   - **The diff:** exact edits for insertions, deletions, replacements and accents.
   - **The edit guard:** every row of its outcome table, plus the whole-result rules.
   - **Fix in the panel:** a selection with an English and a Dutch paragraph is checked as two
@@ -689,6 +698,12 @@ Never user text, never the never-touch list, never the API key.
 - His old clipboard comes back only once the paste is seen in the field; an unconfirmed paste
   leaves the fix on the clipboard for good, with no deadline and no restore at quit.
 - Slack keeps paste writes even if typing straight after an accept joins its undo step.
+
+**Michael decided during acceptance (2026-11-06):**
+
+- Check the whole note, not only the caret's paragraph: the rest of the text read is
+  spell-checked in the background on focus, launch and resume, and the model stays on the
+  caret's paragraph.
 
 **Claude's calls, for Michael to check:**
 
