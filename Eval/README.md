@@ -111,7 +111,9 @@ and no request failed.
 Re-run for acceptance on 2026-11-06 on macOS 27.2, same guard, nothing tuned: every case scored as
 in the current grading (same precision, recall and clean-flagged figures, same verdicts), so the
 defaults below stand. Latencies (p50 / p90): model en 448 / 506 ms, nl 417 / 502 ms, fr 400 /
-440 ms; spelling 2 / 20–28 ms.
+440 ms; spelling 2 / 20–28 ms. Graded once more the same day after the final review's guard
+changes (British spelling first, a British/American variant swap dropped; found by review, not
+tuned on data): every output identical to the run before, case by case, in both modes.
 
 Superseded: the first grading, also on 2026-11-02 on macOS 27.2. It was graded before review
 narrowed three over-broad rules; the second grading describes the shipped guard. Every case scored
