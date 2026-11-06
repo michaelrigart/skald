@@ -16,3 +16,9 @@ import Testing
 @Test func fieldWithinTheLimitIsReadWhole() {
     #expect(ReadWindow.range(totalLength: 15_000, caret: 7_000) == TextRange(location: 0, length: 15_000))
 }
+
+@Test func aFieldAtTheLimitIsReadWhole() {
+    #expect(ReadWindow.limit == 20_000)
+    #expect(ReadWindow.range(totalLength: ReadWindow.limit, caret: 0) == TextRange(location: 0, length: 20_000))
+    #expect(ReadWindow.range(totalLength: ReadWindow.limit + 1, caret: 0).length == 10_000)
+}

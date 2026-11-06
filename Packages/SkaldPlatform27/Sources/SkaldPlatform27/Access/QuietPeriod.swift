@@ -39,7 +39,7 @@ enum QuietPeriod {
     /// The field's state, read whole; a field over 20,000 units is never read.
     static func read(length: Int?, text: (TextRange) -> String?, selection: () -> TextRange?) -> Read {
         guard let length else { return .unreadable }
-        guard length <= TextAccessRules.wholeValueLimit else { return .tooLong }
+        guard length <= ReadWindow.limit else { return .tooLong }
         guard let whole = text(TextRange(location: 0, length: length)), whole.utf16.count == length else { return .unreadable }
         return .state(State(length: length, text: whole, selection: selection()))
     }

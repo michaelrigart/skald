@@ -11,6 +11,11 @@ public struct Paragraph: Hashable, Sendable {
 }
 
 public enum Paragraphs {
+    /// The UTF-16 units paragraphs split at: line feed, carriage return, line and paragraph separators.
+    public static func isLineBreak(_ unit: UInt16) -> Bool {
+        unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
+    }
+
     public static func all(in text: String, offset: Int) -> [Paragraph] {
         let units = Array(text.utf16)
         var result: [Paragraph] = []
@@ -26,18 +31,13 @@ public enum Paragraphs {
         }
 
         while i < units.count {
-            switch units[i] {
-            case 0x0A, 0x2028, 0x2029:
-                close(at: i)
+            guard isLineBreak(units[i]) else {
                 i += 1
-                start = i
-            case 0x0D:
-                close(at: i)
-                i += (i + 1 < units.count && units[i + 1] == 0x0A) ? 2 : 1
-                start = i
-            default:
-                i += 1
+                continue
             }
+            close(at: i)
+            i += units[i] == 0x0D && i + 1 < units.count && units[i + 1] == 0x0A ? 2 : 1
+            start = i
         }
         close(at: units.count)
         return result

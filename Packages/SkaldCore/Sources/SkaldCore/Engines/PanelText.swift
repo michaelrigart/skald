@@ -18,10 +18,7 @@ public enum PanelText {
     }
 
     private static func isBreak(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar {
-        case "\n", "\r", "\u{2028}", "\u{2029}": true
-        default: false
-        }
+        scalar.value <= 0xFFFF && Paragraphs.isLineBreak(UInt16(scalar.value))
     }
 
     private static func isBlank(_ scalar: Unicode.Scalar) -> Bool {

@@ -96,3 +96,9 @@ private func longParagraph() -> String {
     #expect(keys.map(\.chunk.text).joined() == long)
     #expect(keys[1].chunk.range.location == 6 + 1200)
 }
+
+@Test func paragraphsBreakAtExactlyFourUnits() {
+    let breaks = (0...UInt16.max).filter(Paragraphs.isLineBreak)
+    #expect(breaks == [0x0A, 0x0D, 0x2028, 0x2029])
+    #expect(PanelText.paragraphs("a\u{2028}b\rc").map(\.text) == ["a", "b", "c"])
+}

@@ -36,7 +36,6 @@ struct WindowRead: Sendable, Equatable {
 
 /// The decisions behind `SystemTextAccess`, kept free of Accessibility calls.
 enum TextAccessRules {
-    static let wholeValueLimit = 20_000
     static let secureRole = "AXSecureTextField"
     static let webAreaRole = "AXWebArea"
     /// After the failed query at activation.
@@ -74,12 +73,12 @@ enum TextAccessRules {
     /// reads the field to measure it), or the field is over the read limit. nil when its length allows a read.
     static func markerUnreadKind(length: Int?) -> String? {
         guard let length else { return "the app gives no marker lengths" }
-        return length > wholeValueLimit ? "over the read limit" : nil
+        return length > ReadWindow.limit ? "over the read limit" : nil
     }
 
     /// A text-marker field's whole text, only when it is at most 20,000 units and agrees with its marker length.
     static func markerText(length: Int?, read: () -> String?) -> String? {
-        guard let length, length <= wholeValueLimit, let text = read(), text.utf16.count == length else { return nil }
+        guard let length, length <= ReadWindow.limit, let text = read(), text.utf16.count == length else { return nil }
         return text
     }
 
@@ -90,7 +89,7 @@ enum TextAccessRules {
         guard range.location >= 0, range.length >= 0 else { return nil }
         if range.length == 0 { return "" }
         if let text = ranged(), text.utf16.count == range.length { return text }
-        guard let total = length(), total <= wholeValueLimit, range.end <= total,
+        guard let total = length(), total <= ReadWindow.limit, range.end <= total,
               let whole = value(), whole.utf16.count == total
         else { return nil }
         return substring(of: whole, at: range)
@@ -134,9 +133,9 @@ enum TextAccessRules {
         let local = TextRange(location: selection.location - offset, length: selection.length)
         guard local.location >= 0, local.end <= units.count else { return nil }
         var start = local.location
-        while start > 0, !isLineBreak(units[start - 1]) { start -= 1 }
+        while start > 0, !Paragraphs.isLineBreak(units[start - 1]) { start -= 1 }
         var end = local.end
-        while end < units.count, !isLineBreak(units[end]) { end += 1 }
+        while end < units.count, !Paragraphs.isLineBreak(units[end]) { end += 1 }
         let line = TextRange(location: start, length: end - start)
         let context = ExpectedText(range: TextRange(location: start + offset, length: line.length), text: substring(of: text, at: line))
         if selection.length == 0 {
@@ -315,14 +314,9 @@ enum TextAccessRules {
 
     // MARK: Helpers
 
-    /// The units `Paragraphs` splits at.
-    private static func isLineBreak(_ unit: UInt16) -> Bool {
-        unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
-    }
-
     private static func isLineBreak(_ text: String?) -> Bool {
         guard let text, text.utf16.count == 1, let unit = text.utf16.first else { return false }
-        return isLineBreak(unit)
+        return Paragraphs.isLineBreak(unit)
     }
 
     private static func contains(_ selection: TextRange, total: Int) -> Bool {
