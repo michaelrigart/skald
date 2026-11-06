@@ -20,11 +20,19 @@ private func childrenCPUNanoseconds() -> UInt64 {
     child.arguments = ["-c", "while :; do :; done"]
     try child.run()
     let pid = child.processIdentifier
+    var reaped = false
+    defer {
+        if !reaped {
+            kill(pid, SIGKILL)
+            child.waitUntilExit()
+        }
+    }
     try await ContinuousClock().sleep(for: .milliseconds(400))
     kill(pid, SIGSTOP)
     let sampled = try #require(CPUSample.take(tree: pid).nanoseconds[pid])
     kill(pid, SIGKILL)
     child.waitUntilExit()
+    reaped = true
     let counted = childrenCPUNanoseconds() - before
     try #require(counted > 0)
     let ratio = Double(sampled) / Double(counted)
