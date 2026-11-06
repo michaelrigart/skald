@@ -35,3 +35,17 @@ import Testing
         + "resolved role AXWebArea, same as focused true; text markers on resolved: initialises true, text length 120, caret 34,0; "
         + "on focused: initialises true, text length -, caret none")
 }
+
+@Test func theDiagnosisNeverReadsASecureFieldOrOneWhoseRoleIsUnreadable() {
+    #expect(EvaluationDiagnosis.mayRead(role: "AXTextArea", subrole: nil))
+    #expect(EvaluationDiagnosis.mayRead(role: "AXWebArea", subrole: nil))
+    #expect(!EvaluationDiagnosis.mayRead(role: "AXSecureTextField", subrole: nil))
+    #expect(!EvaluationDiagnosis.mayRead(role: "AXTextField", subrole: "AXSecureTextField"))
+    #expect(!EvaluationDiagnosis.mayRead(role: nil, subrole: nil))
+    #expect(!EvaluationDiagnosis.mayRead(role: nil, subrole: "AXSecureTextField"))
+}
+
+@Test func anUnreadFieldIsNamedInTheDiagnosis() {
+    #expect(EvaluationDiagnosis.Outcome.classify(focusedFound: true, resolvedFound: true, resolvedReadable: false, valueRead: false) == .notRead)
+    #expect(MarkerFieldState.notRead.summary == "not read")
+}

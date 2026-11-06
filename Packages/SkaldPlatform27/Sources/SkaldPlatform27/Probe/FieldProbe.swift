@@ -273,10 +273,13 @@ enum FieldProbe {
     static func evaluationDiagnosis(pid: pid_t, measureReturnedNil: Bool, sessionCurrent: Bool) -> EvaluationDiagnosis {
         let focused = AXElement.focusedQuery(inApp: pid)
         let resolved = focusedField(pid)
-        let value = resolved.flatMap { readContent(of: $0).value }
+        let readable = resolved.flatMap { mayDiagnose($0) ? $0 : nil }
+        let value = readable.flatMap { readContent(of: $0).value }
         return EvaluationDiagnosis(
             measureReturnedNil: measureReturnedNil, sessionCurrent: sessionCurrent,
-            outcome: .classify(focusedFound: focused.element != nil, resolvedFound: resolved != nil, valueRead: value != nil),
+            outcome: .classify(
+                focusedFound: focused.element != nil, resolvedFound: resolved != nil, resolvedReadable: readable != nil, valueRead: value != nil
+            ),
             focusedQueryError: focused.error.rawValue,
             resolvedRole: resolved?.role,
             sameAsFocused: resolved.flatMap { field in focused.element.map { field.isSame(as: $0) } },
@@ -284,8 +287,14 @@ enum FieldProbe {
         )
     }
 
+    private static func mayDiagnose(_ element: AXElement) -> Bool {
+        EvaluationDiagnosis.mayRead(role: element.role, subrole: element.subrole)
+    }
+
     private static func markerState(of element: AXElement?) -> MarkerFieldState {
-        guard let element, let markers = TextMarkerField(element, readsToMeasure: true) else { return .unavailable }
+        guard let element else { return .unavailable }
+        guard mayDiagnose(element) else { return .notRead }
+        guard let markers = TextMarkerField(element, readsToMeasure: true) else { return .unavailable }
         let length = markers.text.map { ($0 as NSString).length }
         let caret = length.flatMap { markers.caret(textLength: $0) }
         return MarkerFieldState(initialises: true, textLength: length, caretLocation: caret?.location, caretLength: caret?.length)

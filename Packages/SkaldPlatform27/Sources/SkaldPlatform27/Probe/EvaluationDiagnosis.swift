@@ -10,13 +10,17 @@ enum EvaluationTrigger: String, Sendable {
 
 struct MarkerFieldState: Sendable, Equatable {
     static let unavailable = MarkerFieldState(initialises: false, textLength: nil, caretLocation: nil, caretLength: nil)
+    /// The element is secure or its role can't be read: its text markers were never asked.
+    static let notRead = MarkerFieldState(initialises: false, textLength: nil, caretLocation: nil, caretLength: nil, read: false)
 
     var initialises: Bool
     var textLength: Int?
     var caretLocation: Int?
     var caretLength: Int?
+    var read = true
 
     var summary: String {
+        guard read else { return "not read" }
         guard initialises else { return "initialises false" }
         let caret = caretLocation.map { "\($0),\(caretLength ?? 0)" } ?? "none"
         return "initialises true, text length \(textLength.map(String.init) ?? "-"), caret \(caret)"
@@ -30,12 +34,20 @@ struct EvaluationDiagnosis: Sendable, Equatable {
         case resolutionFailed = "resolution failed"
         case valueNil = "value nil"
         case valueRead = "value read"
+        case notRead = "not read (secure or unreadable role)"
 
-        static func classify(focusedFound: Bool, resolvedFound: Bool, valueRead: Bool) -> Outcome {
+        static func classify(focusedFound: Bool, resolvedFound: Bool, resolvedReadable: Bool = true, valueRead: Bool) -> Outcome {
             if !focusedFound { return .noFocusedElement }
             if !resolvedFound { return .resolutionFailed }
+            if !resolvedReadable { return .notRead }
             return valueRead ? .valueRead : .valueNil
         }
+    }
+
+    /// The diagnosis reads an element's text or text markers only when it could be a field: never a secure
+    /// one, by role or subrole, nor one whose role can't be read.
+    static func mayRead(role: String?, subrole: String?) -> Bool {
+        TextAccessRules.isFieldCandidate(role: role, subrole: subrole, appEnabled: true)
     }
 
     var measureReturnedNil: Bool
