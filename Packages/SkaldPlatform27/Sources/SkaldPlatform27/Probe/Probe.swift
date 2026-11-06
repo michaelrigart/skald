@@ -246,10 +246,8 @@ public final class Probe {
         )
         current = session
         if session.observation.line.isSecure { return }
-        if let prior = written.prior(for: reading.identity) {
-            session.observation.adopt(prior)
-            session.writtenIdentity = reading.identity
-            PlatformLog.probe.notice("already written in this run: \(bundleID, privacy: .public): no second write, undo presses so far \(prior.undoPresses)")
+        if let match = written.prior(identity: reading.identity, pid: pid, value: reading.value) {
+            adoptPriorWrite(match, session: session)
         }
         await retarget(pid: pid)
         guard session === current else { return }
@@ -271,7 +269,14 @@ public final class Probe {
     /// Keeps the run's record of a written field current, so a later session continues its undo count.
     private func rememberWrite(_ session: FieldSession) {
         guard let identity = session.writtenIdentity, let prior = session.observation.priorWrite else { return }
-        written.record(prior, for: identity)
+        written.record(prior, for: identity, pid: session.pid)
+    }
+
+    /// The field was written earlier in this run: no second write, but its undo presses are still measured.
+    private func adoptPriorWrite(_ match: WrittenFields.Match, session: FieldSession) {
+        session.observation.adopt(match.prior)
+        session.writtenIdentity = match.identity
+        PlatformLog.probe.notice("already written in this run: \(session.observation.line.app, privacy: .public): no second write, undo presses so far \(match.prior.undoPresses)")
     }
 
     private func retarget(pid: pid_t) async {
@@ -445,6 +450,10 @@ public final class Probe {
             session: session, app: app
         )
         guard shouldWrite else { return }
+        if let match = written.prior(identity: session.observation.identity, pid: pid, value: reading.value) {
+            adoptPriorWrite(match, session: session)
+            return
+        }
 
         let method: WriteMethod = reading.kind == .textMarkers ? .paste : WriteMethod(for: session.mode)
         if method == .paste,

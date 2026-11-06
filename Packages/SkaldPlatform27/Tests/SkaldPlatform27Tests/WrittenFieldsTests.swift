@@ -16,14 +16,24 @@ private func pasted() -> WriteStart {
     return start
 }
 
-@Test func aWrittenFieldIsRememberedByItsIdentityOnly() {
+@Test func aWrittenFieldIsRememberedByItsIdentity() {
     var fields = WrittenFields()
-    #expect(fields.prior(for: "1-2") == nil)
-    fields.record(PriorWrite(start: pasted(), undoPresses: 0), for: "1-2")
-    #expect(fields.prior(for: "1-2")?.undoPresses == 0)
-    #expect(fields.prior(for: "1-3") == nil)
-    fields.record(PriorWrite(start: pasted(), undoPresses: 1), for: "1-2")
-    #expect(fields.prior(for: "1-2")?.undoPresses == 1)
+    #expect(fields.prior(identity: "1-2", pid: 1, value: nil) == nil)
+    fields.record(PriorWrite(start: pasted(), undoPresses: 0), for: "1-2", pid: 1)
+    #expect(fields.prior(identity: "1-2", pid: 1, value: nil)?.prior.undoPresses == 0)
+    #expect(fields.prior(identity: "1-3", pid: 1, value: nil) == nil)
+    fields.record(PriorWrite(start: pasted(), undoPresses: 1), for: "1-2", pid: 1)
+    #expect(fields.prior(identity: "1-2", pid: 1, value: nil)?.prior.undoPresses == 1)
+}
+
+@Test func aFieldWithANewHashIsStillRecognisedByTheValueBeforeTheWriteInTheSameApp() {
+    var fields = WrittenFields()
+    fields.record(PriorWrite(start: pasted(), undoPresses: 1), for: "1-2", pid: 1)
+    let rehashed = fields.prior(identity: "1-9", pid: 1, value: original)
+    #expect(rehashed?.identity == "1-2")
+    #expect(rehashed?.prior.undoPresses == 1)
+    #expect(fields.prior(identity: "2-9", pid: 2, value: original) == nil)
+    #expect(fields.prior(identity: "1-9", pid: 1, value: "other text ~skald-probe~") == nil)
 }
 
 @Test func aLaterSessionOnAWrittenFieldNeverWritesButStillMeasuresUndo() {
