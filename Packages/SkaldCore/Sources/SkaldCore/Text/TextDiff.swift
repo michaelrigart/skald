@@ -12,6 +12,11 @@ public struct Edit: Hashable, Sendable {
     public let spliceRange: TextRange
     /// The revised text between the same two unchanged tokens.
     public let spliceText: String
+    /// What a replace request writes: the splice, or for a deletion whose splice text is empty, the splice
+    /// widened over one neighbouring unchanged token (the preceding one when there is one), so a write never
+    /// carries an empty replacement. "See you you" → "See you" writes "you" over "you you".
+    public let writeRange: TextRange
+    public let writeText: String
 }
 
 public enum TextDiff {
@@ -52,6 +57,18 @@ public enum TextDiff {
             let revisedStart = op.j1 > 0 ? b[op.j1 - 1].range.end : 0
             let revisedEnd = op.j2 < b.count ? b[op.j2].range.location : revisedUnits.count
 
+            var writeStart = spliceStart, writeEnd = spliceEnd
+            var writeTextStart = revisedStart, writeTextEnd = revisedEnd
+            if revisedStart == revisedEnd {
+                if op.i1 > 0, op.j1 > 0 {
+                    writeStart = a[op.i1 - 1].range.location
+                    writeTextStart = b[op.j1 - 1].range.location
+                } else if op.i2 < a.count, op.j2 < b.count {
+                    writeEnd = a[op.i2].range.end
+                    writeTextEnd = b[op.j2].range.end
+                }
+            }
+
             edits.append(Edit(
                 tokenSpan: op.i1..<op.i2,
                 replacementTokens: b[op.j1..<op.j2].map(\.text),
@@ -59,7 +76,9 @@ public enum TextDiff {
                 original: originalText,
                 replacement: replacementText,
                 spliceRange: TextRange(location: spliceStart, length: spliceEnd - spliceStart),
-                spliceText: slice(revisedUnits, revisedStart, revisedEnd)
+                spliceText: slice(revisedUnits, revisedStart, revisedEnd),
+                writeRange: TextRange(location: writeStart, length: writeEnd - writeStart),
+                writeText: slice(revisedUnits, writeTextStart, writeTextEnd)
             ))
         }
         return edits

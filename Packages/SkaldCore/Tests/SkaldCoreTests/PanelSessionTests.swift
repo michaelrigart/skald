@@ -325,6 +325,13 @@ func aRefusalFromTextAccessIsReturned(_ outcome: ReplaceOutcome) async {
     #expect(await rig.access.replacements.map(\.field) == [otherField])
 }
 
+@Test func anEmptyReplacementFailsAndWritesNothing() async {
+    let capture = SelectionCapture(field: field, selection: TextRange(location: 21, length: 3), selectedText: "teh", context: context)
+    let rig = Rig(text: "teh", capture: capture)
+    #expect(await rig.session.replace(with: "") == .failed)
+    #expect(await rig.access.replacements.isEmpty)
+}
+
 @Test func withoutACaptureReplaceIsUnsupportedAndWritesNothing() async {
     let rig = Rig(text: flew)
     #expect(await rig.session.replace(with: "We flew") == .unsupported)

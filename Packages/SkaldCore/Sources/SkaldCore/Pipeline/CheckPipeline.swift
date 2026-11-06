@@ -148,12 +148,12 @@ public actor CheckPipeline {
     }
 
     public func accept(_ id: UUID) async -> ReplaceOutcome {
-        guard let issue = tracker.issue(id) else { return .failed }
-        let splice = issue.edit.spliceRange
+        guard let issue = tracker.issue(id), !issue.edit.writeText.isEmpty else { return .failed }
+        let write = issue.edit.writeRange
         let outcome = await access.replace(
-            TextRange(location: issue.chunk.range.location + splice.location, length: splice.length),
+            TextRange(location: issue.chunk.range.location + write.location, length: write.length),
             expected: issue.expected,
-            with: issue.edit.spliceText,
+            with: issue.edit.writeText,
             in: issue.key.field
         )
         tracker.removeAll { $0.id == id }

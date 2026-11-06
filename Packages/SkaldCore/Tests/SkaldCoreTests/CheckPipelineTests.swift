@@ -503,6 +503,27 @@ struct CheckPipelineTests {
         #expect(await rig.visible().isEmpty)
     }
 
+    @Test("Accepting a deletion at the end of the paragraph writes the neighbouring token, never an empty text",
+          arguments: [("Thanks for the update, see you you", "you you", "you"), ("Thanks for the quick update!!", "!!", "!")])
+    func acceptingADeletionAtTheEndNeverSendsAnEmptyText(_ text: String, _ replaced: String, _ written: String) async throws {
+        let engine = FakeEngine { request, _ in
+            .success(request.text.hasSuffix("you you") ? String(request.text.dropLast(4)) : String(request.text.dropLast()))
+        }
+        let rig = Rig(makeSettings(), engine: engine, misspellings: [:])
+        await rig.focus(text)
+        await rig.check()
+        let issue = try #require(await rig.modelIssues().first)
+        #expect(issue.edit.replacement.isEmpty)
+
+        #expect(await rig.pipeline.accept(issue.id) == .replaced)
+        let replacement = try #require(await rig.access.replacements.first)
+        let at = (text as NSString).range(of: replaced, options: .backwards)
+        #expect(replacement.range == TextRange(location: at.location, length: at.length))
+        #expect(replacement.text == written)
+        let result = (text as NSString).replacingCharacters(in: at, with: replacement.text)
+        #expect(result == String(text.dropLast(replaced == "!!" ? 1 : 4)))
+    }
+
     @Test func aRefusedAcceptAlsoDropsTheIssue() async throws {
         let rig = Rig(makeSettings(model: false))
         await rig.access.answerReplacements(with: .refusedChanged)

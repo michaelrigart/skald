@@ -81,6 +81,7 @@ struct PastePlan {
     /// Why the write stopped before ⌘V, as a fixed kind.
     private(set) var abortReason: String?
     private let changesText: Bool
+    private let hasText: Bool
     private var selected = false
     private var stageRequested = false
     private var recheckRequested = false
@@ -88,13 +89,16 @@ struct PastePlan {
     private var finished = false
 
     /// `changesText` is false when the replacement equals the text at the range: the field would show the expected
-    /// paragraph before the paste lands, so it could never prove the paste.
-    init(changesText: Bool = true) {
+    /// paragraph before the paste lands, so it could never prove the paste. `hasText` is false for an empty
+    /// replacement, which the core never sends: a paste of nothing would stage an empty clipboard.
+    init(changesText: Bool = true, hasText: Bool = true) {
         self.changesText = changesText
+        self.hasText = hasText
     }
 
     mutating func start() -> [Step] {
-        changesText ? [.snapshot] : abort(.failed, "the replacement equals the text at the range")
+        guard hasText else { return abort(.failed, "the replacement is empty") }
+        return changesText ? [.snapshot] : abort(.failed, "the replacement equals the text at the range")
     }
 
     mutating func next(_ input: Input) -> [Step] {
@@ -238,7 +242,7 @@ final class PasteWriter {
         }
         defer { writing.remove(field.app) }
 
-        var plan = PastePlan(changesText: target.changesText)
+        var plan = PastePlan(changesText: target.changesText, hasText: !replacement.isEmpty)
         var steps = plan.start()
         var report = Report()
         var swap: PasteboardSwap?

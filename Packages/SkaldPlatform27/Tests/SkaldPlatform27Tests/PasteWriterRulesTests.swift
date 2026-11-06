@@ -193,6 +193,13 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     #expect(plan.next(.clipboard(restorable: true)) == [])
 }
 
+@Test func anEmptyReplacementFailsBeforeTheSnapshotAndStagesNothing() {
+    var plan = PastePlan(hasText: false)
+    #expect(plan.start() == [.finish(.failed)])
+    #expect(plan.abortReason == "the replacement is empty")
+    #expect(plan.next(.clipboard(restorable: true)) == [])
+}
+
 @Test func aFieldThatKeepsChangingFails() {
     #expect(steps(Script(quiet: .keptChanging)) == [.snapshot, .watchQuiet, .finish(.failed)])
 }
@@ -742,6 +749,17 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     #expect(held(pasteboard) == "old content")
     #expect(!target.calls.contains("recheckAndPost"))
     #expect(target.carets == [.abortedAfterSelecting])
+}
+
+@MainActor @Test func anEmptyReplacementFailsWithNothingStaged() async {
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let before = pasteboard.changeCount
+    let target = FakeTarget()
+    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("", in: slack, target: target) }) == .failed)
+    #expect(target.calls.isEmpty)
+    #expect(pasteboard.changeCount == before)
+    #expect(held(pasteboard) == "old content")
 }
 
 @MainActor @Test func aReplacementThatChangesNothingFailsWithNothingTouched() async {

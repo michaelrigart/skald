@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SkaldCore
+import struct SkaldCore.TextRange
 
 private func apply(_ edit: Edit, to text: String) -> String {
     let ns = text as NSString
@@ -10,6 +11,15 @@ private func apply(_ edit: Edit, to text: String) -> String {
 
 private func applyAll(_ edits: [Edit], to text: String) -> String {
     edits.reversed().reduce(text) { apply($1, to: $0) }
+}
+
+private func write(_ edit: Edit, to text: String) -> String {
+    let r = NSRange(location: edit.writeRange.location, length: edit.writeRange.length)
+    return (text as NSString).replacingCharacters(in: r, with: edit.writeText)
+}
+
+private func substring(_ text: String, _ range: TextRange) -> String {
+    (text as NSString).substring(with: NSRange(location: range.location, length: range.length))
 }
 
 @Test func repeatedWordIsOneDeletion() {
@@ -85,4 +95,42 @@ private func applyAll(_ edits: [Edit], to text: String) -> String {
     let edits = TextDiff.edits(from: "", to: "a")
     #expect(edits.count == 1)
     #expect(edits[0].range == TextRange(location: 0, length: 0))
+}
+
+@Test("A deletion at the end writes the preceding unchanged token in place of both",
+      arguments: [("See you you", "See you", "you you", "you"), ("Thanks!!", "Thanks!", "!!", "!")])
+func aDeletionAtTheEndWritesItsNeighbour(_ original: String, _ revised: String, _ written: String, _ text: String) throws {
+    let edit = try #require(TextDiff.edits(from: original, to: revised).first)
+    #expect(edit.spliceText.isEmpty)
+    #expect(substring(original, edit.writeRange) == written)
+    #expect(edit.writeText == text)
+    #expect(write(edit, to: original) == revised)
+}
+
+@Test func aDeletionAtTheStartWritesTheFollowingUnchangedToken() throws {
+    let edit = try #require(TextDiff.edits(from: "Hello hello there", to: "hello there").first)
+    #expect(substring("Hello hello there", edit.writeRange) == "Hello hello")
+    #expect(edit.writeText == "hello")
+    #expect(edit.range == TextRange(location: 0, length: 5))
+}
+
+@Test func aDeletionBetweenWordsWritesItsSpliceAsItIs() throws {
+    let edit = try #require(TextDiff.edits(from: "We saw the the cat", to: "We saw the cat").first)
+    #expect(edit.spliceText == " ")
+    #expect(edit.writeRange == edit.spliceRange)
+    #expect(edit.writeText == edit.spliceText)
+}
+
+@Test func everyWriteIsNonEmptyAndReproducesTheRevisedText() throws {
+    let cases: [EvalCase] = try EvalScorer.loadJSONL(Fixtures.url("testset"))
+    let outputs: [EvalOutput] = try EvalScorer.loadJSONL(Fixtures.url("out-apple-v3"))
+    let byID = Dictionary(uniqueKeysWithValues: cases.map { ($0.id, $0) })
+    for row in outputs {
+        guard let out = row.output, let item = byID[row.id] else { continue }
+        let edits = TextDiff.edits(from: item.text, to: out)
+        let written = edits.reversed().reduce(item.text) { write($1, to: $0) }
+        let trim = CharacterSet.whitespacesAndNewlines
+        #expect(written.trimmingCharacters(in: trim) == out.trimmingCharacters(in: trim), "row \(row.id)")
+        #expect(edits.allSatisfy { !$0.writeText.isEmpty }, "row \(row.id)")
+    }
 }

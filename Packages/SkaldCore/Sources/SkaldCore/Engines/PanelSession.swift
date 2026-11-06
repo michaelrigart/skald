@@ -75,9 +75,11 @@ public actor PanelSession {
         return result
     }
 
-    /// Writes `revised` over the captured selection, provided its paragraphs still read as captured.
+    /// Writes `revised` over the captured selection, provided its paragraphs still read as captured. No replace
+    /// request carries an empty text.
     public func replace(with revised: String) async -> ReplaceOutcome {
         guard let capture, let access else { return .unsupported }
+        guard !revised.isEmpty else { return .failed }
         return await access.replace(capture.selection, expected: capture.context, with: revised, in: capture.field)
     }
 
