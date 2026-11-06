@@ -167,3 +167,15 @@ private func filled() -> NSPasteboard {
     let frontmostThenSelection = PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: false)
     #expect(frontmostThenSelection.failure == PasteRecheck(sameField: true, targetIsFrontmost: false, selectionOnMarker: true).failure)
 }
+
+@Test func theProbeRestoresTheClipboardAfterThePasteOnlyWhenTheFieldShowsTheExpectedValue() {
+    func outcome(posted: Bool = true, final: String?) -> PasteOutcome {
+        PasteOutcome(selectionWaitedMs: 0, posted: posted, valueChangedAfterMs: nil, finalValue: final)
+    }
+    let expected = "They are ready."
+    #expect(PasteWrite.clipboard(after: outcome(final: expected), expected: expected) == .restore)
+    #expect(PasteWrite.clipboard(after: outcome(final: "They is ready."), expected: expected) == .keepMarker)
+    #expect(PasteWrite.clipboard(after: outcome(final: "They are ready. Later"), expected: expected) == .keepMarker)
+    #expect(PasteWrite.clipboard(after: outcome(final: nil), expected: expected) == .keepMarker)
+    #expect(PasteWrite.clipboard(after: outcome(posted: false, final: "They is ready."), expected: expected) == .restore)
+}

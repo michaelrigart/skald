@@ -533,22 +533,38 @@ public final class Probe {
             return .aborted(reason: "\(refusal); \(selection)")
         }
         let attempt = await queue.run { FieldProbe.writeByPaste(prepared, pid: pid) }
-        let restoration = swap.restore()
         switch attempt {
         case let .aborted(reason):
-            return .aborted(reason: "\(reason); \(PasteWrite.describe(restoration))")
+            return .aborted(reason: "\(reason); \(PasteWrite.describe(swap.restore()))")
         case let .sent(start, outcome):
-            PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(outcome.selectionWaitedMs) ms, \(PasteWrite.describe(outcome), privacy: .public), \(PasteWrite.describe(restoration), privacy: .public)")
-            watchForLatePaste(prepared.field, kind: prepared.kind, seen: outcome.finalValue, app: session.observation.line.app)
+            let expected = start.expectedAfterWrite
+            let clipboard: String
+            let pending: PasteboardSwap?
+            switch PasteWrite.clipboard(after: outcome, expected: expected) {
+            case .restore:
+                clipboard = PasteWrite.describe(swap.restore())
+                pending = nil
+            case .keepMarker:
+                clipboard = PasteWrite.unconfirmed
+                pending = swap
+            }
+            PlatformLog.probe.notice("write sent (paste): pid \(pid): selection on the marker after \(outcome.selectionWaitedMs) ms, \(PasteWrite.describe(outcome), privacy: .public), \(clipboard, privacy: .public)")
+            watchForLatePaste(
+                prepared.field, kind: prepared.kind, seen: outcome.finalValue, expected: expected, pending: pending, app: session.observation.line.app
+            )
             return .started(start)
         }
     }
 
-    /// A slow app may apply the paste after the restore: look again once, a second later, in lengths only.
-    private func watchForLatePaste(_ field: AXElement, kind: FieldKind, seen: String?, app: String) {
+    /// A slow app may apply the paste late: look again once, a second later, in lengths only. An unconfirmed
+    /// paste's clipboard goes back only if the field now shows the expected value.
+    private func watchForLatePaste(_ field: AXElement, kind: FieldKind, seen: String?, expected: String, pending: PasteboardSwap?, app: String) {
         Task {
             try? await clock.sleep(for: Self.latePasteWait)
             let later = await queue.run { FieldProbe.text(of: field, kind: kind) }
+            if let pending, later == expected {
+                PlatformLog.probe.notice("late paste confirmed: \(app, privacy: .public): \(PasteWrite.describe(pending.restore()), privacy: .public)")
+            }
             guard later != seen else { return }
             let before = seen.map { String(($0 as NSString).length) } ?? "unreadable"
             let after = later.map { String(($0 as NSString).length) } ?? "unreadable"

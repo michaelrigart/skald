@@ -47,6 +47,20 @@ enum PasteWrite {
         return "value unchanged after \(timeoutMs) ms"
     }
 
+    /// What the probe does with the clipboard once ⌘V was posted.
+    enum Clipboard: Equatable {
+        case restore
+        /// The field doesn't show the expected value: a late paste would insert whatever the clipboard holds.
+        case keepMarker
+    }
+
+    static let unconfirmed = "paste unconfirmed; clipboard holds the probe marker"
+
+    /// Nothing posted means nothing can paste; otherwise only the expected value proves the app consumed the paste.
+    static func clipboard(after outcome: PasteOutcome, expected: String) -> Clipboard {
+        !outcome.posted || outcome.finalValue == expected ? .restore : .keepMarker
+    }
+
     static func describe(_ restoration: PasteboardSwap.Restoration) -> String {
         restoration == .restored ? "pasteboard restored" : "pasteboard left alone (changed by another app)"
     }
