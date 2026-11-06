@@ -75,7 +75,7 @@ private struct OnboardingView: View {
             Text("Skald needs Accessibility access")
                 .font(.title2.bold())
             Text("Skald reads the text field you are typing in to check its spelling and grammar, and changes it only when you accept a fix. macOS lets an app do that only with Accessibility access.")
-            Text("Click Open Accessibility Settings: macOS adds Skald to the Accessibility list in Privacy & Security, and you switch it on there.")
+            Text("Click Open Accessibility Settings: macOS adds Skald to Privacy & Security › Device Control and Data Access, and you switch it on there.")
             Text("Your text stays on this Mac, unless you choose the Mac Studio or Claude in the panel.")
                 .foregroundStyle(.secondary)
             HStack {
