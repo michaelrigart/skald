@@ -481,8 +481,10 @@ finding 3.
 
 ### The panel
 
-- **Opens** with a global hotkey on the selection, or the current paragraph. It never steals the
-  field's text: it works on a copy and writes back only on Replace.
+- **Opens** with a global hotkey on the selection, or the current paragraph (with the caret on a
+  blank or whitespace-only line, the nearest paragraph above, else the first below: the same rule
+  as checking while typing). It never steals the field's text: it works on a copy and writes back
+  only on Replace.
 - **Actions:**
   - **Fix** splits the selection into paragraphs, checks each one in its own language exactly as
     checking while typing does (same request, same guard), and puts the result back together
