@@ -49,3 +49,16 @@ import Testing
     #expect(!FieldProbe.mayReadText(role: nil, subrole: nil))
     #expect(!FieldProbe.mayReadText(role: nil, subrole: "AXSecureTextField"))
 }
+
+@Test func aDelayedReadGetsNoTextOnceTheFieldTurnedSecureOrItsRoleUnreadable() {
+    func read(_ kind: FieldKind, role: String?, subrole: String? = nil) -> String? {
+        FieldProbe.text(kind: kind, role: role, subrole: subrole, value: { "value" }, markerText: { "markers" })
+    }
+    #expect(read(.ranges, role: "AXTextArea") == "value")
+    #expect(read(.textMarkers, role: "AXWebArea") == "markers")
+    for kind in [FieldKind.ranges, .textMarkers] {
+        #expect(read(kind, role: "AXSecureTextField") == nil)
+        #expect(read(kind, role: "AXTextField", subrole: "AXSecureTextField") == nil)
+        #expect(read(kind, role: nil) == nil)
+    }
+}

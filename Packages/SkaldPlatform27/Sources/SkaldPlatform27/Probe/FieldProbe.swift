@@ -298,7 +298,16 @@ enum FieldProbe {
     }
 
     static func text(of field: AXElement, kind: FieldKind) -> String? {
-        kind == .textMarkers ? TextMarkerField(field, readsToMeasure: true)?.text : field.value
+        text(kind: kind, role: field.role, subrole: field.subrole, value: { field.value }, markerText: {
+            TextMarkerField(field, readsToMeasure: true)?.text
+        })
+    }
+
+    /// The field's text as it reads now, the delayed reads after a write included: nothing from a field that is
+    /// secure or whose role can't be read at this moment, though it was readable when the write was prepared.
+    static func text(kind: FieldKind, role: String?, subrole: String?, value: () -> String?, markerText: () -> String?) -> String? {
+        guard mayReadText(role: role, subrole: subrole) else { return nil }
+        return kind == .textMarkers ? markerText() : value()
     }
 
     static func measure(pid: pid_t, formatting: (location: Int, length: Int)?, forcing forced: FieldKind? = nil) -> FieldReading? {
@@ -377,7 +386,7 @@ enum FieldProbe {
                 return .aborted(reason: "marker selection rejected (AXError \(selectResult.rawValue)); \(cancel(prepared))")
             }
             guard let waited = waitForMarkerSelection({
-                TextMarkerField.isMarkerSelection(selectedString: markers.selectedString, pair: match.pair)
+                mayReadText(field) && TextMarkerField.isMarkerSelection(selectedString: markers.selectedString, pair: match.pair)
             }) else {
                 return .aborted(reason: "marker selection does not cover the marker after \(selectionWaitMs) ms; \(cancel(prepared))")
             }
@@ -415,6 +424,7 @@ enum FieldProbe {
         case .ranges:
             return restore(prepared.originalSelection, in: prepared.field)
         case .textMarkers:
+            guard mayReadText(prepared.field) else { return "the field can no longer be read; selection left alone" }
             guard let original = prepared.originalMarkerSelection, let markers = TextMarkerField(prepared.field, readsToMeasure: true) else {
                 return "no original selection to restore"
             }
@@ -487,6 +497,7 @@ enum FieldProbe {
     }
 
     private static func describeSelection(_ field: AXElement, _ markerRange: CFRange, pair: ProbeMarker.Pair) -> String {
+        guard mayReadText(field) else { return "the field can no longer be read" }
         let range = field.selectedRange.map { "\($0.location),\($0.length)" } ?? "none"
         let text = field.selectedText.map { "\(($0 as NSString).length) units, is marker \($0 == pair.pending)" } ?? "none"
         let ranged = field.string(for: markerRange).map { "is marker \($0 == pair.pending)" } ?? "none"
@@ -494,7 +505,8 @@ enum FieldProbe {
     }
 
     private static func selectionIsMarker(_ prepared: PreparedWrite) -> Bool {
-        switch prepared.kind {
+        guard mayReadText(prepared.field) else { return false }
+        return switch prepared.kind {
         case .ranges: selectionIsMarker(prepared.field, prepared.markerRange, pair: prepared.pair)
         case .textMarkers:
             TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field, readsToMeasure: true)?.selectedString, pair: prepared.pair)
@@ -502,6 +514,7 @@ enum FieldProbe {
     }
 
     private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange, pair: ProbeMarker.Pair) -> Bool {
+        guard mayReadText(field) else { return false }
         if let selectedText = field.selectedText { return selectedText == pair.pending }
         guard let selected = field.selectedRange else { return false }
         return selected.location == markerRange.location && selected.length == markerRange.length
