@@ -354,6 +354,27 @@ struct CheckPipelineTests {
         #expect(await rig.spelling.calls.last?.language == .nl)
     }
 
+    /// After a relaunch no field has a language yet: a short paragraph typed beside longer text took none and went unchecked.
+    @Test func aShortParagraphInAFreshFieldTakesTheLanguageOfTheTextAroundIt() async {
+        let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
+        let text = "Ik heb de nieuwe versie gedownloaded.\n\ntot morgn"
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.map(\.language) == [.nl])
+        #expect(await rig.spelling.calls.map(\.text) == ["tot morgn"])
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
+    }
+
+    @Test func aShortParagraphAloneInAFreshFieldStaysUnchecked() async {
+        let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
+        await rig.focus("tot morgn", caret: 9)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.isEmpty)
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == nil)
+    }
+
     @Test func onlyTheNewestTwentyFieldsKeepTheirLanguage() {
         var languages = FieldLanguages()
         let fields = (0...20).map { FieldID(app: "com.example.mail", token: "\($0)") }
