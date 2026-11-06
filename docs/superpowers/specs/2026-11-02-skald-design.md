@@ -210,7 +210,9 @@ Skald has failed, even if it works, if it:
 - rewrites, rephrases or translates when the user asked for a fix, or while checking as they
   type;
 - changes any text the user didn't accept, or replaces text that changed since it was checked;
-- leaves the clipboard different from how it found it after a paste write;
+- leaves the clipboard different from how it found it after a paste write, unless the user
+  or another app copied something meanwhile (or a paste the app never handled keeps the fix
+  there for up to 30 s, see the text access contract);
 - sends text off the Mac unless the user chose a remote engine for that action or made one the
   panel's default;
 - writes user text to disk, logs it, or collects telemetry. Only the never-touch list is stored;
@@ -305,13 +307,33 @@ Names are left to the builder.
   - **Paste,** where an app reads but ignores or misplaces Accessibility writes (Electron
     apps, Firefox), and in fields read through text markers (Mail): select the range
     through Accessibility and verify the selection; put the replacement on the clipboard,
-    marked transient and concealed so clipboard managers skip it; post ⌘V to that app alone; wait for the field to change; then put the clipboard back
-    exactly as it was. Right before ⌘V, Skald checks again that the app is still frontmost,
-    the focused element is the same one and the selection still covers the range; any change
-    aborts, restores the clipboard and the selection, and leaves the text untouched. It waits
-    until the field has been unchanged for 1.5 s, so the paste gets an undo step of its own in apps that merge edits made close together. It doesn't paste when
-    the clipboard holds content it can't put back faithfully (concealed or promised data), or
-    when the clipboard changed since Skald saved it; the suggestion then offers Copy.
+    marked transient and concealed so clipboard managers skip it; post ⌘V to that app alone;
+    wait until the field holds the paragraph with the replacement applied. Right before ⌘V,
+    Skald checks again that the app is still frontmost, the focused element is the same one
+    and the selection still covers the range; any change aborts before anything is pasted.
+    It pastes only once the field has been unchanged for 1.5 s, so the paste gets an undo
+    step of its own in apps that merge edits made close together (Slack). It doesn't paste
+    when the clipboard holds content it can't put back faithfully (concealed or promised
+    data), or when the clipboard changed since Skald saved it; the suggestion then offers
+    Copy.
+  - **The clipboard after a paste** goes back to what it held, but only while it still holds
+    Skald's replacement: if the user or another app copied something meanwhile, that newer
+    content stays. When the field doesn't show the replacement within 3 s, the accept fails
+    and Skald keeps its replacement on the clipboard instead of putting the old content
+    back, so a paste the app handles late inserts the fix, never the old clipboard (which
+    may hold a password). It puts the old content back once the field shows the
+    replacement, after 30 s, or when Skald quits, each time only while the clipboard still
+    holds Skald's replacement.
+  - **When the paste lands on changed text** (the user typed in the moment before the app
+    handled ⌘V), the field shows something other than the expected paragraph: the accept is
+    reported as failed, and ⌘Z undoes the paste like any other edit.
+  - **The caret.** After a write, and after an abort that had already moved the selection,
+    Skald puts the caret back where the user had it (shifted by the length change when it
+    was after the range), but only while the field is still focused and its selection is
+    still the one Skald left. If the user moved it meanwhile, Skald leaves it alone.
+  - **Typing right after an accept** in an app that merges edits made close together
+    (Slack) may join the accept's undo step: Skald can't mark where a step ends. The probe
+    measured the edit before an accept, not the one after; acceptance checks it.
 - **Snapshots** of the focused field: its text, selection and an identity stable while the
   field lives. Reads are bounded: a field longer than a limit is checked only around the caret.
 - **Bounds** for a character range, in screen coordinates, used to draw underlines.
@@ -531,7 +553,8 @@ Never user text, never the never-touch list, never the API key.
   - checking while typing in Notes, Mail, Zen (a plain field and Basecamp's editor), and each
     Electron app the feasibility check marked as supported;
   - accepting, ignoring and never-flagging; ⌘Z after an accept, in an app written through
-    Accessibility and in one written by paste, with the clipboard unchanged afterwards;
+    Accessibility and in one written by paste, with the clipboard unchanged afterwards and
+    the caret back where it was; in Slack, typing straight after an accept, then ⌘Z;
   - the panel's Fix and rewrites on This Mac and Claude, and on the Mac Studio once it is
     available (until then its client is tested against a stub server);
   - `powermetrics` during ten minutes of normal writing: GPU at idle level, no sustained CPU
@@ -653,6 +676,12 @@ Never user text, never the never-touch list, never the API key.
   Studio.
 - The evaluation data uses fictional company names and the spec names no machine details,
   because the repository will be public.
+- A paste the target app doesn't handle within 3 s leaves Skald's fix on the clipboard for up
+  to 30 s rather than restoring the old content: a late paste of the fix is harmless, a late
+  paste of the old clipboard could put a password in a chat.
+- After an accept, the caret goes back to where Michael had it, when he hasn't moved it.
+- Typing within about a second after an accept in Slack may join the accept's undo step; it is
+  checked at acceptance, and Slack keeps paste writes either way.
 
 ## Appendix: seed evaluation set
 
