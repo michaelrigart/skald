@@ -64,7 +64,7 @@ public final class SystemTextAccess: TextAccess {
 
     public func snapshot(of field: FieldID) async -> FieldSnapshot? {
         guard isAppEnabled(field.app) else { return nil }
-        return await queue.run { [observer] in
+        return await queue.run(while: isOn(field.app), otherwise: nil) { [observer] in
             observer.read(app: field.app) { observer.entry(field).flatMap { TextAccessRules.snapshot(of: field, reader: $0.source) } }
         }
     }
@@ -73,7 +73,7 @@ public final class SystemTextAccess: TextAccess {
         guard isAppEnabled(app) else { return [] }
         let access = CapabilityTable.access(for: app)
         guard !access.probed.isEmpty else { return access.capabilities }
-        let measured = await queue.run { [observer] () -> AccessCapabilities in
+        let measured = await queue.run(while: isOn(app), otherwise: []) { [observer] () -> AccessCapabilities in
             guard let entry = observer.newest(app: app) else { return [] }
             var found: AccessCapabilities = []
             if access.probed.contains(.fieldFrame), entry.element.frame.flatMap({ AXElement.usable($0) }) != nil {
@@ -86,17 +86,18 @@ public final class SystemTextAccess: TextAccess {
             }
             return found
         }
+        guard isAppEnabled(app) else { return [] }
         return CapabilityTable.capabilities(access, measured: measured)
     }
 
     /// The field focused right now in an app Skald is on in, or nil; the panel captures it.
     public func focusedField() async -> FieldID? {
-        await queue.run { [observer] in observer.focusedField() }
+        await queue.run { [observer, isAppEnabled] in observer.focusedField().flatMap { isAppEnabled($0.app) ? $0 : nil } }
     }
 
     public func capture(of field: FieldID) async -> SelectionCapture? {
         guard isAppEnabled(field.app) else { return nil }
-        return await queue.run { [observer] in
+        return await queue.run(while: isOn(field.app), otherwise: nil) { [observer] in
             observer.read(app: field.app) { observer.entry(field).flatMap { TextAccessRules.capture(of: field, reader: $0.source) } }
         }
     }
@@ -104,7 +105,7 @@ public final class SystemTextAccess: TextAccess {
     public func replace(_ range: TextRange, expected: ExpectedText, with text: String, in field: FieldID) async -> ReplaceOutcome {
         guard isAppEnabled(field.app) else { return .unsupported }
         let access = CapabilityTable.access(for: field.app)
-        let step = await queue.run { [observer] () -> ReplaceRun in
+        let step = await queue.run(while: isOn(field.app), otherwise: .done(.unsupported)) { [observer] () -> ReplaceRun in
             guard let entry = observer.entry(field) else { return .done(.refusedOtherField) }
             let decision = TextAccessRules.replaceStep(
                 range, expected: expected, isFocusedField: observer.isFocused(entry),
@@ -135,7 +136,7 @@ public final class SystemTextAccess: TextAccess {
     /// Screen bounds of each range in one `AXQueue` job, nil where there are none; after the app first fails to
     /// answer in time, the rest are nil without being asked for.
     public func bounds(_ ranges: [TextRange], in field: FieldID) async -> [CGRect?] {
-        await queue.run { [observer] in
+        await queue.run(while: isOn(field.app), otherwise: ranges.map { _ in nil }) { [observer] in
             guard let reader = observer.entry(field)?.source else { return ranges.map { _ in nil } }
             return TextAccessRules.bounds(of: ranges) { reader.boundsRead(for: $0) }
         }
@@ -143,7 +144,9 @@ public final class SystemTextAccess: TextAccess {
 
     /// The field's frame on screen, top-left origin, for the badge.
     public func frame(of field: FieldID) async -> CGRect? {
-        await queue.run { [observer] in observer.entry(field)?.element.frame.flatMap { AXElement.usable($0) } }
+        await queue.run(while: isOn(field.app), otherwise: nil) { [observer] in
+            observer.entry(field)?.element.frame.flatMap { AXElement.usable($0) }
+        }
     }
 
     /// True once `field` is the focused element of the focused app again, false after `timeout`.
@@ -155,8 +158,14 @@ public final class SystemTextAccess: TextAccess {
 
     private func pasteWrite(_ range: TextRange, expected: ExpectedText, with text: String, in field: FieldID) async -> ReplaceOutcome {
         let jobs = AXPasteJobs(observer: observer, field: field, range: range, original: expected, replacement: text)
-        let target = QueuedPasteTarget(queue: queue, jobs: jobs) { [isAppEnabled] in isAppEnabled(field.app) }
+        let target = QueuedPasteTarget(queue: queue, jobs: jobs, isOn: isOn(field.app))
         return await writer.write(text, in: field, target: target)
+    }
+
+    /// The app's switch, asked again inside each queued job: one queued behind others must not read or write in an
+    /// app turned off while it waited.
+    private func isOn(_ app: String) -> @Sendable () -> Bool {
+        { [isAppEnabled] in isAppEnabled(app) }
     }
 }
 

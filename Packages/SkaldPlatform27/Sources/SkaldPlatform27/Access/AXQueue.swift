@@ -29,6 +29,14 @@ public final class AXQueue: Sendable {
         }
     }
 
+    /// Runs `body` as one job when `isOn` still holds as the job starts, else answers `off`: a job queued behind
+    /// others must not read or write in an app turned off while it waited.
+    public func run<T: Sendable>(
+        while isOn: @Sendable @escaping () -> Bool, otherwise off: T, _ body: @Sendable @escaping () -> T
+    ) async -> T {
+        await run { isOn() ? body() : off }
+    }
+
     /// Runs `body` after everything already queued, in submission order; for callbacks that must not wait.
     public func enqueue(_ body: @Sendable @escaping () -> Void) {
         queue.async {

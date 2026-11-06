@@ -232,30 +232,28 @@ struct QueuedPasteTarget<Jobs: PasteJobs>: PasteTarget {
     var changesText: Bool { jobs.changesText }
 
     func state() async -> QuietPeriod.Read {
-        await queue.run { [jobs, isOn] in isOn() ? jobs.state() : .turnedOff }
+        await queue.run(while: isOn, otherwise: .turnedOff) { [jobs] in jobs.state() }
     }
 
     func select() async -> (start: PastePlan.SelectionStart, user: TextRange?) {
-        await queue.run { [jobs, isOn] in isOn() ? jobs.select() : (.refused(.turnedOff), nil) }
+        await queue.run(while: isOn, otherwise: (.refused(.turnedOff), nil)) { [jobs] in jobs.select() }
     }
 
     func covers() async -> Bool {
-        await queue.run { [jobs, isOn] in isOn() && jobs.covers() }
+        await queue.run(while: isOn, otherwise: false) { [jobs] in jobs.covers() }
     }
 
     /// One `AXQueue` job, so no queued callback or read runs between the last check and ⌘V.
     func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
-        await queue.run { [jobs, isOn] in isOn() ? jobs.recheckAndPost(keyCode: keyCode) : .mismatch(.turnedOff) }
+        await queue.run(while: isOn, otherwise: .mismatch(.turnedOff)) { [jobs] in jobs.recheckAndPost(keyCode: keyCode) }
     }
 
     func read() async -> PastePlan.Read {
-        await queue.run { [jobs, isOn] in isOn() ? jobs.read() : .unreadable }
+        await queue.run(while: isOn, otherwise: .unreadable) { [jobs] in jobs.read() }
     }
 
     func restoreCaret(_ end: WriteEnd, user: TextRange?) async {
-        await queue.run { [jobs, isOn] in
-            if isOn() { jobs.restoreCaret(end, user: user) }
-        }
+        await queue.run(while: isOn, otherwise: ()) { [jobs] in jobs.restoreCaret(end, user: user) }
     }
 }
 
