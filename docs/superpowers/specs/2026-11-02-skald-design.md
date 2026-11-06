@@ -411,8 +411,11 @@ A fake implementation drives the core's tests.
    range bounds are missing or unreliable but whose field frame is known, a small badge at the
    field's corner shows the number of issues and opens them as a list of cards. Without either,
    the app gets the panel only.
-7. **A card** opens from an underline: the change with context, and Accept (↩), Ignore, and
-   Never flag this word. Accept replaces exactly the flagged range through text access.
+7. **A card** opens from an underline: the change with context, and Accept, Ignore, and
+   Never flag this word. Accept replaces exactly the flagged range through text access. The
+   card never takes keyboard focus from the field, so it has no ↩ shortcut: Return would also
+   reach the app, and catching it would mean intercepting the user's typing (decided
+   2026-11-06, Task 16).
 
 Paragraphs are bounded by line breaks. Very long fields are checked only around the caret.
 
