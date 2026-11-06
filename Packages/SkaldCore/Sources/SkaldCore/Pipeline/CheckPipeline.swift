@@ -65,6 +65,10 @@ public actor CheckPipeline {
     /// cancels is removed without a report, since the scheduler has already let it go.
     private var modelJobs: [Int: Task<Void, Never>] = [:]
     private var epoch = 0
+    /// Advanced by every field event the scheduler acts on and every lifecycle change: pause, resume, update and
+    /// recheck. A read keeps its answer only while the revision it started at is current.
+    private var readRevision = 0
+    private var readsInFlight = 0
     private var isPaused = false
     private var currentField: FieldID?
     private var fieldLanguages = FieldLanguages()
@@ -118,6 +122,7 @@ public actor CheckPipeline {
         guard p != isPaused else { return }
         isPaused = p
         epoch += 1
+        readRevision += 1
         send(p ? .paused : .resumed)
     }
 
@@ -131,10 +136,13 @@ public actor CheckPipeline {
         editGuard = EditGuard(neverTouch: Set(new.neverTouch))
         appleUnavailable = nil
         epoch += 1
+        readRevision += 1
         if switchesChanged {
             send(.recheck)
         } else if discarded, let currentField {
             send(.field(.focused(currentField)))
+        } else if readsInFlight > 0 {
+            send(.reread)
         }
         let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
         if !touching.isEmpty { send(.forget(touching)) }
@@ -178,9 +186,13 @@ public actor CheckPipeline {
     // MARK: Events, and the hooks tests drive directly
 
     func receive(_ event: FieldEvent) {
-        if case .focused(let field) = event {
+        switch event {
+        case .focused(let field):
             currentField = field
             epoch += 1
+            readRevision += 1
+        case .edited(let field), .caretMoved(let field):
+            if field == currentField { readRevision += 1 }
         }
         send(.field(event))
     }
@@ -261,8 +273,13 @@ public actor CheckPipeline {
         return task
     }
 
+    /// A snapshot taken before a newer field event or lifecycle change is stale: that change scheduled its own read.
     private func read(_ field: FieldID) async {
-        guard let snapshot = await access.snapshot(of: field) else { return }
+        let revision = readRevision
+        readsInFlight += 1
+        let snapshot = await access.snapshot(of: field)
+        readsInFlight -= 1
+        guard let snapshot, revision == readRevision else { return }
         send(.snapshot(snapshot))
     }
 

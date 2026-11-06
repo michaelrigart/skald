@@ -87,6 +87,15 @@ private func focusedScheduler() -> CheckScheduler {
     #expect(scheduler.handle(.timerFired, at: ms(20)).isEmpty)
 }
 
+@Test func aRereadArmsThePauseForTheFocusedFieldOnly() {
+    var scheduler = CheckScheduler()
+    #expect(scheduler.handle(.reread, at: ms(0)).isEmpty)
+    _ = scheduler.handle(.field(.focused(field)), at: ms(0))
+    #expect(scheduler.handle(.reread, at: ms(300)) == [.armTimer(deadline: ms(300) + pause)])
+    _ = scheduler.handle(.paused, at: ms(400))
+    #expect(scheduler.handle(.reread, at: ms(500)).isEmpty)
+}
+
 @Test func eventsForAnotherFieldAreIgnored() {
     var scheduler = focusedScheduler()
     #expect(scheduler.handle(.field(.edited(other)), at: ms(0)).isEmpty)

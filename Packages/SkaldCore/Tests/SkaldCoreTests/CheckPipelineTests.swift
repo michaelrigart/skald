@@ -232,6 +232,66 @@ struct CheckPipelineTests {
         #expect(await rig.visible().map(\.fieldRange.location) == [before.utf16.count + 11, before.utf16.count + 11])
     }
 
+    // MARK: Stale reads
+
+    private static let fixed = "We flew to the office in paris yesterday"
+
+    /// Starts a read of `flew` and holds it, so the field can change before the read's answer arrives.
+    private func holdARead(_ rig: Rig) async {
+        await rig.access.holdSnapshots()
+        await rig.focus(flew)
+        rig.pass()
+        await rig.access.waitForSnapshots(1)
+    }
+
+    /// Releases the held read with its old text, then lets the newer event's read run.
+    private func releaseTheOldReadAndCheckAgain(_ rig: Rig) async {
+        await rig.access.releaseSnapshot(0)
+        await rig.pipeline.drain()
+        await rig.access.stopHoldingSnapshots()
+        await rig.check()
+    }
+
+    @Test func aReadAnsweredAfterAnEditIsDiscardedAndTheNextReadIsChecked() async {
+        let rig = Rig(makeSettings())
+        await holdARead(rig)
+        await rig.access.set(Self.fixed, caret: 0, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        await releaseTheOldReadAndCheckAgain(rig)
+
+        #expect(await rig.spelling.texts == [Self.fixed])
+        #expect(await rig.engine.texts == [Self.fixed])
+        #expect(await rig.visible().isEmpty)
+    }
+
+    @Test func aReadAnsweredAfterFocusWentAwayAndCameBackIsDiscarded() async {
+        let rig = Rig(makeSettings())
+        await holdARead(rig)
+        await rig.pipeline.receive(.focused(fieldB))
+        await rig.access.set(Self.fixed, caret: 0, in: fieldA)
+        await rig.pipeline.receive(.focused(fieldA))
+        await releaseTheOldReadAndCheckAgain(rig)
+
+        #expect(await rig.spelling.texts == [Self.fixed])
+        #expect(await rig.engine.texts == [Self.fixed])
+    }
+
+    /// An update that neither rechecks nor stops a check re-arms nothing of its own, so the read it made stale is
+    /// taken again after the pause.
+    @Test func aReadMadeStaleByAPlainUpdateIsTakenAgain() async {
+        let settings = makeSettings()
+        let rig = Rig(settings)
+        await holdARead(rig)
+        var neverTouch = settings
+        neverTouch.addNeverTouch("Talos")
+        await rig.update(neverTouch)
+        await releaseTheOldReadAndCheckAgain(rig)
+
+        #expect(await rig.access.reads == 2)
+        #expect(await rig.spelling.texts == [flew])
+        #expect(await Set(rig.visible().map(\.word)) == ["teh"])
+    }
+
     @Test func textChangedDuringTheModelCheckDropsItsResult() async {
         let first = "We flew to teh office yesterday"
         let second = "We drove to teh depot today"

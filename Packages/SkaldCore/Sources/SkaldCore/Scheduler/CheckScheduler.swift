@@ -4,6 +4,8 @@ public enum SchedulerEvent: Sendable {
     case field(FieldEvent), timerFired, snapshot(FieldSnapshot)
     case modelFinished(generation: Int), modelFailed(generation: Int)
     case forget([ParagraphKey]), paused, resumed, recheck
+    /// A read in flight was made stale by a change that schedules nothing of its own: read again after the pause.
+    case reread
 }
 
 public enum SchedulerEffect: Equatable, Sendable {
@@ -109,6 +111,9 @@ public struct CheckScheduler: Sendable {
             return effects
         case .resumed:
             return resume(at: now)
+        case .reread:
+            guard currentField != nil else { return [] }
+            return [.armTimer(deadline: now + pause)]
         case .recheck:
             var effects = cancelRunning()
             effects.append(.clearIssues)
