@@ -42,11 +42,12 @@ func aWindowMoveOrResizeIsAGeometryChange(name: String) {
     #expect(registrations.missing.isEmpty)
 }
 
-/// Moving the caret can scroll the field, so the overlay must hear of it.
-@Test func aCaretMoveIsACaretGeometryChange() {
+/// Moving the caret can scroll the field, and an edit ends the overlay's clipboard notice (ruling R123), so the
+/// overlay must hear of both.
+@Test func aCaretMoveIsACaretGeometryChangeAndAnEditATextOne() {
     let field = FieldID(app: "com.example.editor", token: "1")
     #expect(TextAccessRules.geometryChange(for: .caretMoved(field)) == .caret)
-    #expect(TextAccessRules.geometryChange(for: .edited(field)) == nil)
+    #expect(TextAccessRules.geometryChange(for: .edited(field)) == .text)
     #expect(TextAccessRules.geometryChange(for: .focused(field)) == nil)
     #expect(TextAccessRules.geometryChange(for: .focused(nil)) == nil)
 }

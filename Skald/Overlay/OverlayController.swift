@@ -23,8 +23,6 @@ final class OverlayController {
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
     private var parking = CardParking()
-    /// The field's other issues when each card's Accept ran, for `parking`.
-    private var issuesAtAccept: [UUID: Set<IssueMark>] = [:]
     /// The word a hover card belongs to, or nil while the badge's list or nothing is open.
     private var cardAnchor: CGRect?
     private var hover = HoverTracker()
@@ -59,6 +57,7 @@ final class OverlayController {
                     switch change {
                     case .window: self?.moved(.window)
                     case .caret: self?.moved(.caret)
+                    case .text: self?.moved(.edit)
                     }
                 }
             },
@@ -109,13 +108,11 @@ final class OverlayController {
         requestRedraw()
     }
 
-    /// The words may be elsewhere now: the marks are read again, and a window move or a scroll closes a card
-    /// that is only offering its choices.
+    /// The words may be elsewhere now: the marks are read again, a window move or a scroll closes a card that is
+    /// only offering its choices, and an edit closes a clipboard notice.
     private func moved(_ change: LayoutChange) {
-        if change != .caret {
-            cards.retain { $0.survives(change) }
-            resetHover()
-        }
+        if change != .caret { cards.retain { $0.survives(change) } }
+        if change == .window || change == .scroll { resetHover() }
         requestRedraw()
     }
 
@@ -175,10 +172,7 @@ final class OverlayController {
         let model = IssueCardModel(
             issue: issue, writes: writes, clipboard: clipboard,
             actions: .init(
-                accept: { [weak self, pipeline] id in
-                    self?.accepting(id)
-                    return await pipeline.accept(id)
-                },
+                accept: { [pipeline] id in await pipeline.accept(id) },
                 ignore: { [pipeline] id in Task { await pipeline.ignore(id) } },
                 neverFlag: { [weak self] id in self?.neverFlag(id) }
             )
@@ -190,16 +184,9 @@ final class OverlayController {
         return model
     }
 
-    private func accepting(_ id: UUID) {
-        let open = Set(cards.cards.map(\.id))
-        issuesAtAccept = issuesAtAccept.filter { open.contains($0.key) }
-        issuesAtAccept[id] = IssueMark.marks(of: snapshot.issues, except: id)
-    }
-
-    /// Ruling R121: a write that finished after focus moved hides its card, and parks it when unconfirmed.
+    /// Rulings R121 and R123: a write that finished after focus moved hides its card, and parks it when unconfirmed.
     private func finished(_ card: IssueCardModel) {
-        let issues = issuesAtAccept.removeValue(forKey: card.id) ?? []
-        switch parking.finished(card, focused: snapshot.field, anchor: cards.anchor, screen: cards.screen, issues: issues) {
+        switch parking.finished(card, focused: snapshot.field, anchor: cards.anchor, screen: cards.screen) {
         case .stays: break
         case .hides: cards.retain { $0 !== card }
         case .closes: card.close()

@@ -307,8 +307,11 @@ enum TextAccessRules {
 
     /// The geometry change a field event means: a caret move can scroll the field.
     static func geometryChange(for event: FieldEvent) -> GeometryChange? {
-        if case .caretMoved = event { return .caret }
-        return nil
+        switch event {
+        case .caretMoved: .caret
+        case .edited: .text
+        case .focused: nil
+        }
     }
 
     // MARK: Helpers

@@ -29,9 +29,10 @@ enum CardOutcome: Equatable {
 }
 
 /// Why the words may have moved on screen. A window move or a scroll moves them from under a ready card; a
-/// caret move only redraws, since typing and clicking end a ready card by themselves.
+/// caret move only redraws, since typing and clicking end a ready card by themselves. An edit changed the
+/// field's text: it ends a clipboard notice.
 enum LayoutChange: Equatable {
-    case window, caret, scroll
+    case window, caret, scroll, edit
 }
 
 /// The flagged words and their surroundings, cut by UTF-16 units and widened to whole characters.
@@ -77,8 +78,13 @@ struct CardContent: Equatable {
         case ready
         case working
         case finished(reason: String, offersCopy: Bool)
+        /// Ruling R123: an unconfirmed card shown again once its field has focus again, with one line and no
+        /// choices.
+        case notice
         case closed
     }
+
+    static let clipboardNotice = "The last fix wasn't confirmed; the clipboard holds it."
 
     let id: UUID
     let field: FieldID
@@ -113,7 +119,7 @@ struct CardContent: Equatable {
         switch phase {
         case .ready: return !writes && !fix.isEmpty
         case .finished(_, let offersCopy): return offersCopy
-        case .working, .closed: return false
+        case .working, .notice, .closed: return false
         }
     }
 
@@ -153,6 +159,12 @@ struct CardContent: Equatable {
         close()
     }
 
+    /// The unconfirmed card, back over its field after focus went elsewhere and returned.
+    func becomeNotice() {
+        guard case .finished = phase else { return }
+        phase = .notice
+    }
+
     func close() {
         guard phase != .closed else { return }
         phase = .closed
@@ -161,36 +173,30 @@ struct CardContent: Equatable {
 
     /// A ready card lasts while its issue is visible in its field. Once Accept runs, the pipeline has dropped
     /// the issue: a working card stays until its outcome, and a finished one while its field keeps focus, so
-    /// it doesn't follow the user to another app.
+    /// it doesn't follow the user to another app. A clipboard notice ignores the issues and ends on any focus change.
     func survives(visible: Set<UUID>, in field: FieldID?) -> Bool {
         switch phase {
         case .ready: field == self.field && visible.contains(id)
         case .working: true
-        case .finished: field == self.field
+        case .finished, .notice: field == self.field
         case .closed: false
         }
     }
 
-    /// A ready card is anchored to words that a window move or a scroll has moved; any other card stays.
+    /// A ready card is anchored to words that a window move or a scroll has moved; an edit ends a clipboard
+    /// notice; any other card stays.
     func survives(_ change: LayoutChange) -> Bool {
-        phase != .ready || change == .caret
+        switch phase {
+        case .ready: change == .caret || change == .edit
+        case .notice: change != .edit
+        case .working, .finished, .closed: true
+        }
     }
 }
 
-/// A field's issues as a parked card compares them: where each is and what it changes, not its id, which a
-/// re-check renews.
-struct IssueMark: Hashable {
-    let key: ParagraphKey
-    let edit: Edit
-
-    static func marks(of issues: [Issue], except id: UUID? = nil) -> Set<IssueMark> {
-        Set(issues.filter { $0.id != id }.map { IssueMark(key: $0.key, edit: $0.edit) })
-    }
-}
-
-/// Ruling R121: a card whose write finishes after focus moved to another field doesn't stay over the other app.
-/// An unconfirmed one is hidden and shown again when its field is focused again, so Skald still says the clipboard
-/// holds the fix; it is dropped when another card opens or when its field's issues changed. Any other outcome closes.
+/// Rulings R121 and R123: a card whose write finishes after focus moved to another field doesn't stay over the
+/// other app. An unconfirmed one is hidden, and shown once as a clipboard notice when its field is focused again,
+/// whatever its issues are by then; it is dropped when another card opens. Any other outcome closes.
 struct CardParking {
     enum AfterFinish: Equatable {
         case stays, hides, closes
@@ -200,27 +206,24 @@ struct CardParking {
         let card: IssueCardModel
         let anchor: CGRect
         let screen: CGRect
-        /// The field's other issues when Accept ran.
-        let issues: Set<IssueMark>
     }
 
     private(set) var parked: Parked?
 
     /// Where `card` goes now that its write finished, `focused` being the field focused now.
-    mutating func finished(
-        _ card: IssueCardModel, focused: FieldID?, anchor: CGRect, screen: CGRect, issues: Set<IssueMark>
-    ) -> AfterFinish {
+    mutating func finished(_ card: IssueCardModel, focused: FieldID?, anchor: CGRect, screen: CGRect) -> AfterFinish {
         guard case .finished = card.phase, focused != card.field else { return .stays }
         guard card.outcome == .unconfirmed else { return .closes }
-        parked = Parked(card: card, anchor: anchor, screen: screen, issues: issues)
+        parked = Parked(card: card, anchor: anchor, screen: screen)
         return .hides
     }
 
-    /// The parked card to show again, once, when a snapshot for its field shows the issues it was parked with.
+    /// The parked card, as a clipboard notice, the first time a snapshot shows its field focused again.
     mutating func received(_ snapshot: IssueSnapshot) -> Parked? {
         guard let parked, snapshot.field == parked.card.field else { return nil }
         self.parked = nil
-        return IssueMark.marks(of: snapshot.issues) == parked.issues ? parked : nil
+        parked.card.becomeNotice()
+        return parked
     }
 
     mutating func otherCardOpened() {

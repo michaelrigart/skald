@@ -3,9 +3,9 @@ import Foundation
 import SkaldCore
 import struct SkaldCore.TextRange
 
-/// Why the focused field may have moved on screen.
+/// Why the focused field may have moved on screen; `text` is an edit of the field's text.
 public enum GeometryChange: Sendable, Equatable {
-    case window, caret
+    case window, caret, text
 }
 
 /// Text access on macOS 27 through Accessibility: fields read through character ranges or text markers, written
@@ -13,8 +13,8 @@ public enum GeometryChange: Sendable, Equatable {
 /// `AXQueue`; pasteboard work runs on the main actor.
 public final class SystemTextAccess: TextAccess {
     public let events: AsyncStream<FieldEvent>
-    /// The focused field may have moved on screen: one of its app's windows moved or changed size, or the
-    /// caret moved, which can scroll the field.
+    /// The focused field may have moved on screen: one of its app's windows moved or changed size, the caret
+    /// moved, which can scroll the field, or its text was edited.
     public let geometryChanges: AsyncStream<GeometryChange>
 
     private let queue = AXQueue()

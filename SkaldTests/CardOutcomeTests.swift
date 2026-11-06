@@ -142,7 +142,7 @@ import Testing
         await accepting.value
     }
 
-    // MARK: Ruling R121: a write that finishes after focus moved
+    // MARK: Rulings R121 and R123: a write that finishes after focus moved
 
     private let otherField = FieldID(app: "com.example.other", token: "2")
 
@@ -163,7 +163,7 @@ import Testing
         var after: CardParking.AfterFinish?
         var local = parking
         let other = otherField
-        card.onFinish = { after = local.finished(card, focused: other, anchor: .zero, screen: .zero, issues: []) }
+        card.onFinish = { after = local.finished(card, focused: other, anchor: .zero, screen: .zero) }
         let accepting = Task { await card.accept() }
         while card.phase != .working { await Task.yield() }
         #expect(card.survives(visible: [], in: otherField))
@@ -173,14 +173,27 @@ import Testing
         return (card, after)
     }
 
-    @Test func anUnconfirmedCardFinishedAfterFocusMovedIsHiddenThenShownWhenItsFieldIsFocusedAgain() async {
+    /// The field changes while focus is away; the notice doesn't depend on the issues, before or after the re-check.
+    @Test func anUnconfirmedCardFinishedAfterFocusMovedComesBackOnceAsAClipboardNoticeThatAnEditCloses() async {
         var parking = CardParking()
         let (card, after) = await finishAfterFocusMoved(.unconfirmed, parking: &parking)
         #expect(after == .hides)
         #expect(parking.received(IssueSnapshot(field: otherField, issues: [])) == nil)
-        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: []))?.card === card)
-        #expect(card.phase == .finished(reason: "The app didn't show the change. The clipboard now holds the fix.", offersCopy: false))
-        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
+
+        let cached = issue(in: "We was late", revised: "We were late")
+        let shown = parking.received(IssueSnapshot(field: flagged.key.field, issues: [cached]))
+        #expect(shown?.card === card)
+        #expect(card.phase == .notice)
+        #expect(!card.offersAccept && !card.offersCopy && card.neverFlagWord == nil)
+        #expect(parking.parked == nil)
+
+        let revalidated = issue(in: "We was late today", revised: "We were late today")
+        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [revalidated])) == nil)
+        #expect(card.survives(visible: [revalidated.id], in: flagged.key.field))
+        #expect(card.phase == .notice)
+        #expect(card.survives(.caret))
+        #expect(!card.survives(.edit))
+        #expect(!card.survives(visible: [], in: otherField))
     }
 
     @Test func aFailedCardFinishedAfterFocusMovedClosesAndIsNotShownAgain() async {
@@ -191,25 +204,28 @@ import Testing
         #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
     }
 
-    @Test func aParkedCardIsDroppedWhenAnotherCardOpensOrItsFieldsIssuesChanged() async {
-        var opened = CardParking()
-        _ = await finishAfterFocusMoved(.unconfirmed, parking: &opened)
-        opened.otherCardOpened()
-        #expect(opened.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
-
-        var changed = CardParking()
-        _ = await finishAfterFocusMoved(.unconfirmed, parking: &changed)
-        let another = issue(in: "We was late", revised: "We were late")
-        #expect(changed.received(IssueSnapshot(field: flagged.key.field, issues: [another])) == nil)
-        #expect(changed.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
+    @Test func aParkedCardIsDroppedWhenAnotherCardOpens() async {
+        var parking = CardParking()
+        let (card, _) = await finishAfterFocusMoved(.unconfirmed, parking: &parking)
+        parking.otherCardOpened()
+        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
+        #expect(card.phase != .notice)
     }
 
     @Test func aCardFinishedWhileItsFieldKeepsFocusStays() async {
         let finished = card(answer: .unconfirmed)
         await finished.accept()
         var parking = CardParking()
-        #expect(parking.finished(finished, focused: flagged.key.field, anchor: .zero, screen: .zero, issues: []) == .stays)
+        #expect(parking.finished(finished, focused: flagged.key.field, anchor: .zero, screen: .zero) == .stays)
         #expect(parking.parked == nil)
+    }
+
+    /// An edit only redraws a ready or finished card; their own rules end them.
+    @Test func anEditKeepsReadyAndFinishedCards() async {
+        #expect(card().survives(.edit))
+        let finished = card(answer: .failed)
+        await finished.accept()
+        #expect(finished.survives(.edit))
     }
 
     /// A deletion has no text to copy, so the reason mustn't tell the user to copy it.

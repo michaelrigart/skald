@@ -135,6 +135,20 @@ private struct IssueCardView: View {
     let card: IssueCardModel
 
     var body: some View {
+        if card.phase == .notice {
+            Text(IssueCardModel.clipboardNotice)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { card.close() }
+        } else {
+            choices
+        }
+    }
+
+    private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(change)
                 .lineLimit(3)
@@ -167,7 +181,7 @@ private struct IssueCardView: View {
                     copyButton
                     Button("Close") { card.close() }
                 }
-            case .closed:
+            case .notice, .closed:
                 EmptyView()
             }
         }
