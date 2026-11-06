@@ -1,6 +1,8 @@
 import SkaldCore
 
-/// The newest fields by identity: each keeps its element and the read source it was registered with.
+/// The newest fields by identity: each keeps its element and the read source it was registered with, and is handed
+/// out only while its element is still readable, asked at each lookup: an element registered as a text area can turn
+/// secure or lose its role later.
 struct FieldRegistry<Element, Source> {
     struct Entry {
         let id: FieldID
@@ -11,12 +13,14 @@ struct FieldRegistry<Element, Source> {
     static var limit: Int { 20 }
 
     private let isSame: (Element, Element) -> Bool
+    private let isReadable: (Element) -> Bool
     /// Oldest first.
     private var entries: [Entry] = []
     private var issued = 0
 
-    init(isSame: @escaping (Element, Element) -> Bool) {
+    init(isSame: @escaping (Element, Element) -> Bool, isReadable: @escaping (Element) -> Bool) {
         self.isSame = isSame
+        self.isReadable = isReadable
     }
 
     /// The focused element's field: the one already registered for it, else a new one when it is a candidate
@@ -37,10 +41,14 @@ struct FieldRegistry<Element, Source> {
     }
 
     func entry(_ id: FieldID) -> Entry? {
-        entries.last { $0.id == id }
+        entries.last { $0.id == id }.flatMap(readable)
     }
 
     func newest(app: String) -> Entry? {
-        entries.last { $0.id.app == app }
+        entries.last { $0.id.app == app }.flatMap(readable)
+    }
+
+    private func readable(_ entry: Entry) -> Entry? {
+        isReadable(entry.element) ? entry : nil
     }
 }

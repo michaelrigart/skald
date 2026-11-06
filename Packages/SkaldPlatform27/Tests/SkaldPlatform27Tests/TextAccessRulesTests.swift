@@ -493,7 +493,7 @@ private let replaced = TextRange(location: 10, length: 4)
 @Test func aSecureFieldIsNoFieldAndIsNeverRead() {
     #expect(TextAccessRules.isSecure(role: "AXSecureTextField", subrole: nil))
     #expect(TextAccessRules.isSecure(role: "AXTextField", subrole: "AXSecureTextField"))
-    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==) { _ in true }
     let reads = Recorder<Int>()
     for (role, subrole) in [("AXSecureTextField", nil), ("AXTextField", "AXSecureTextField")] as [(String, String?)] {
         let candidate = TextAccessRules.isFieldCandidate(role: role, subrole: subrole, appEnabled: true)
@@ -522,7 +522,7 @@ private let replaced = TextRange(location: 10, length: 4)
 // MARK: Registry
 
 @Test func theSameElementKeepsItsFieldAndItsSource() {
-    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==) { _ in true }
     let sources = Recorder<Int>()
     func focus(_ node: Node) -> FieldID? {
         registry.focus(node, app: "com.apple.Notes", isCandidate: true) {
@@ -538,7 +538,7 @@ private let replaced = TextRange(location: 10, length: 4)
 }
 
 @Test func theRegistryKeepsTheNewestTwentyFields() {
-    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==) { _ in true }
     let ids = (0 ..< 21).compactMap { registry.focus(Node(id: $0), app: "com.apple.Notes", isCandidate: true) { FakeField("") } }
     #expect(ids.count == 21)
     #expect(registry.entry(ids[0]) == nil)
@@ -547,9 +547,62 @@ private let replaced = TextRange(location: 10, length: 4)
 }
 
 @Test func aFieldWithoutASourceIsNotRegistered() {
-    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==) { _ in true }
     #expect(registry.focus(Node(id: 1), app: "com.apple.mail", isCandidate: true) { nil } == nil)
     #expect(registry.newest(app: "com.apple.mail") == nil)
+}
+
+/// An element whose role and subrole the test can change after it was registered.
+private final class Changing: @unchecked Sendable { // reason: role and subrole are only touched under the lock
+    private let lock = NSLock()
+    private var current: (role: String?, subrole: String?)
+
+    init(role: String?, subrole: String? = nil) {
+        current = (role, subrole)
+    }
+
+    var role: String? { lock.withLock { current.role } }
+    var subrole: String? { lock.withLock { current.subrole } }
+
+    func become(role: String?, subrole: String? = nil) {
+        lock.withLock { current = (role, subrole) }
+    }
+}
+
+/// The registry as the observer keeps it, touched only inside `AXQueue` jobs once the test registered its field.
+private final class Registered: @unchecked Sendable { // reason: only touched inside AXQueue jobs, which run one at a time
+    var registry = FieldRegistry<Changing, FakeField>(isSame: ===) {
+        TextAccessRules.isFieldCandidate(role: $0.role, subrole: $0.subrole, appEnabled: true)
+    }
+}
+
+@Test(arguments: [("AXSecureTextField", nil), ("AXTextArea", "AXSecureTextField"), (nil, nil)] as [(String?, String?)])
+func aFieldThatTurnsSecureOrUnreadableWhileAJobWaitsIsNotRead(_ role: String?, _ subrole: String?) async throws {
+    let element = Changing(role: "AXTextArea")
+    let source = FakeField("a secret")
+    let fields = Registered()
+    let id = try #require(fields.registry.focus(element, app: "com.apple.Notes", isCandidate: true) { source })
+    let queue = AXQueue()
+    let release = DispatchSemaphore(value: 0)
+    let started = Recorder<Bool>()
+    let blocker = Task {
+        await queue.run {
+            started.append(true)
+            release.wait()
+        }
+    }
+    for _ in 0 ..< 1_000 where started.values.isEmpty {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    let job = Task {
+        await queue.run { fields.registry.entry(id).flatMap { TextAccessRules.snapshot(of: id, reader: $0.source) } }
+    }
+    element.become(role: role, subrole: subrole)
+    release.signal()
+    await blocker.value
+    #expect(await job.value == nil)
+    #expect(await queue.run { fields.registry.newest(app: "com.apple.Notes") == nil })
+    #expect(source.valueReads == 0)
 }
 
 // MARK: Waiting for focus
@@ -613,7 +666,7 @@ private let replaced = TextRange(location: 10, length: 4)
 @Test func anElementWhoseRoleCantBeReadIsNoFieldAndIsNeverRead() {
     #expect(!TextAccessRules.isFieldCandidate(role: nil, subrole: nil, appEnabled: true))
     #expect(!TextAccessRules.isFieldCandidate(role: nil, subrole: "AXSearchField", appEnabled: true))
-    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==) { _ in true }
     let reads = Recorder<Int>()
     let candidate = TextAccessRules.isFieldCandidate(role: nil, subrole: nil, appEnabled: true)
     let id = registry.focus(Node(id: 1), app: "com.apple.Notes", isCandidate: candidate) {

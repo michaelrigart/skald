@@ -161,7 +161,9 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     private let moved: @Sendable () -> Void
 
     private var activation: NSObjectProtocol?
-    private var registry = Registry(isSame: { $0.isSame(as: $1) })
+    private var registry = Registry(isSame: { $0.isSame(as: $1) }) {
+        TextAccessRules.isFieldCandidate(role: $0.role, subrole: $0.subrole, appEnabled: true)
+    }
     private var session: ObserverSession?
     /// Contexts live as long as the observer, so a callback already running never sees a freed one.
     private var contexts: [pid_t: ObserverContext] = [:]
