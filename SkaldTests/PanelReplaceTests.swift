@@ -88,6 +88,30 @@ private final class FocusWait {
         return (controller, session, focus)
     }
 
+    /// Catches a slow capture from an earlier hotkey press reopening a panel the user closed.
+    @Test func anObsoleteOpeningNeverOpensThePanel() {
+        let controller = PanelController(window: window, clipboard: spy)
+        let opening = PanelOpening(session: FakeSession(outcome: .replaced), text: original, target: nil, engines: [.thisMac], engine: .thisMac)
+        let first = controller.reserveOpening()
+        let second = controller.reserveOpening()
+        #expect(!controller.open(opening, reserved: first))
+        #expect(controller.open(opening, reserved: second))
+        controller.close()
+        #expect(!controller.open(opening, reserved: second))
+        #expect(!controller.open(opening, reserved: first))
+        #expect(!controller.isOpen)
+        #expect(window.events == ["show", "hide"])
+    }
+
+    @Test func aCloseBeforeTheCaptureEndsKeepsThePanelClosed() {
+        let controller = PanelController(window: window, clipboard: spy)
+        let opening = PanelOpening(session: FakeSession(outcome: .replaced), text: original, target: nil, engines: [.thisMac], engine: .thisMac)
+        let pressed = controller.reserveOpening()
+        controller.close()
+        #expect(!controller.open(opening, reserved: pressed))
+        #expect(!controller.isOpen)
+    }
+
     @Test func aConfirmedReplaceClosesThePanelAfterTheFieldHasFocusAgain() async {
         let (controller, session, focus) = await panel(outcome: .replaced)
         #expect(controller.offersReplace)

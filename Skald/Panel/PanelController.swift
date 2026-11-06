@@ -95,6 +95,9 @@ struct PanelOpening {
     @ObservationIgnored private var generation = 0
     /// Set once a paste went out unconfirmed: the clipboard already holds the result.
     @ObservationIgnored private var clipboardHoldsResult = false
+    @ObservationIgnored private var lastReservation = 0
+    /// The one opening that may still open the panel: the newest hotkey press's, until a close or its own open.
+    @ObservationIgnored private var reservation: Int?
 
     init(window: any PanelPresenting, clipboard: any Clipboard) {
         self.window = window
@@ -122,10 +125,25 @@ struct PanelOpening {
         }
     }
 
+    /// A hotkey press's opening, reserved before its slow capture: a newer press, a close or an opening that
+    /// already won makes it obsolete, and an obsolete opening never opens the panel.
+    func reserveOpening() -> Int {
+        lastReservation += 1
+        reservation = lastReservation
+        return lastReservation
+    }
+
     /// Refused while a Replace is in flight, so its outcome is still shown.
     @discardableResult
     func open(_ opening: PanelOpening) -> Bool {
-        guard !isReplacing else { return false }
+        open(opening, reserved: reserveOpening())
+    }
+
+    /// Refused for an obsolete reservation, and while a Replace is in flight.
+    @discardableResult
+    func open(_ opening: PanelOpening, reserved: Int) -> Bool {
+        guard !isReplacing, reserved == reservation else { return false }
+        reservation = nil
         running?.cancel()
         generation += 1
         self.opening = opening
@@ -148,6 +166,7 @@ struct PanelOpening {
 
     func close() {
         guard !isReplacing else { return }
+        reservation = nil
         running?.cancel()
         running = nil
         generation += 1

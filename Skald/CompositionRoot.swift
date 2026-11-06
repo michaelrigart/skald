@@ -237,6 +237,7 @@ final class CompositionRoot {
         let source = Self.otherApp(NSWorkspace.shared.frontmostApplication)
         let settings = model.settings
         let engines = makeEngines()
+        let reserved = panel.reserveOpening()
         Task { [textAccess, liveRouter, pipeline, apple] in
             let focused = source == nil ? nil : await textAccess.focusedField()
             let captured = if let focused { await textAccess.capture(of: focused) } else { nil as SelectionCapture? }
@@ -275,7 +276,7 @@ final class CompositionRoot {
             opening.needsLanguage = await session.needsLanguage()
             if content == .unreadable { opening.notice = PanelController.unreadableNotice }
             if case .clipboard = content { opening.fromClipboard = true }
-            let opened = panel.open(opening)
+            let opened = panel.open(opening, reserved: reserved)
             Log.ui.notice("panel opened: \(opened, privacy: .public), field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
         }
     }
