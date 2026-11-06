@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 import ServiceManagement
 import SkaldCore
 import SkaldPlatform27
@@ -116,7 +115,7 @@ final class CompositionRoot {
         syncLoginItem(launchAtLogin: model.settings.launchAtLogin, changed: false)
         applyPause()
         applyRouting()
-        if !AXIsProcessTrusted() { showOnboarding() }
+        if !AccessibilityPermission.isGranted { showOnboarding() }
         Log.app.notice("Skald started")
     }
 
@@ -195,7 +194,7 @@ final class CompositionRoot {
 
     private func refreshStatus(_ conditions: Conditions) {
         let state = StatusState.resolve(
-            trusted: AXIsProcessTrusted(), pausedUntil: model.settings.pausedUntil, now: .now,
+            trusted: AccessibilityPermission.isGranted, pausedUntil: model.settings.pausedUntil, now: .now,
             apple: conditions.apple, thermalPaused: conditions.thermalPaused
         )
         statusItem?.show(state)

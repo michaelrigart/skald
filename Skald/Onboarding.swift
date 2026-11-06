@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+import SkaldPlatform27
 import SwiftUI
 
 /// The Accessibility explanation shown on a launch without the grant. While it is open it asks once a second
@@ -43,7 +43,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     private func check() {
-        guard AXIsProcessTrusted() else { return }
+        guard AccessibilityPermission.isGranted else { return }
         Log.app.notice("accessibility granted")
         stopPolling()
         window?.close()
@@ -52,8 +52,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// The prompt lists Skald in the Accessibility pane, switched off, so the user only has to switch it on.
     private static func requestAccess() {
-        // The value of kAXTrustedCheckOptionPrompt, a global var Swift 6 won't read without isolation.
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        AccessibilityPermission.request()
         NSWorkspace.shared.open(accessibilityPane)
     }
 
