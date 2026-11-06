@@ -30,9 +30,9 @@ cask "skald" do
     After the first install, open System Settings > Privacy & Security and
     choose "Open Anyway" for Skald. Upgrades should not need this again.
 
-    Then allow Skald under Accessibility in System Settings > Privacy &
-    Security. Upgrades should keep this permission; if macOS asks again,
-    repeat it.
+    Then allow Skald under System Settings > Privacy & Security > Device
+    Control and Data Access. Upgrades should keep this permission; if macOS
+    asks again, repeat it.
 
     Checks by the on-device model need Apple Intelligence turned on in
     System Settings.

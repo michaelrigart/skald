@@ -23,9 +23,11 @@ spell server and Foundation Models are unreachable inside the sandbox too.
   changelog tool), `scripts/tests/test-release-dry-run` and
   `scripts/tests/test-verify-app <Release Skald.app> <Debug Skald.app>`
 - Verify a built app: `scripts/verify-app [--team <ID>] <Skald.app> [<version>]`. It fails on a
-  bad signature, non-empty entitlements, `LSUIElement` not true, a wrong bundle identifier or
-  version, the probe in the executable, or (with `--team`) a different `TeamIdentifier`. Give it
-  a Release build: a Debug build contains the probe.
+  bad signature, a missing Hardened Runtime flag, `LSMinimumSystemVersion` below 27.0,
+  non-empty entitlements, `LSUIElement` not true, a wrong bundle identifier, architectures
+  other than exactly `arm64`, or the probe in the executable. With a `<version>` it also checks
+  `CFBundleShortVersionString` and `CFBundleVersion`; with `--team` it checks `TeamIdentifier`.
+  Give it a Release build: a Debug build contains the probe.
 - Release: `scripts/release [--dry-run] [--version <YYYYMMDD-HHMM>]`, on Michael's Mac only (it
   needs the signing certificate and pushes). Use `--dry-run` to check it; never run it for real
   unless Michael asks. `--version` resumes a failed release.

@@ -1,14 +1,18 @@
 # Skald
 
 Skald is a spelling and grammar checker for macOS that lives in the menu bar. It checks what
-you type in other apps, in English, Dutch and French, and runs on your Mac. It underlines
-issues in the field and offers the correction on a card. Where an app doesn't tell Skald
-where the text is, a small badge with a count of the issues sits on the field instead.
+you type in other apps, in English and Dutch, and in French in its panel, and runs on your
+Mac. It underlines issues in the field and offers the correction on a card. Where an app
+doesn't tell Skald where the text is, a small badge with a count of the issues sits on the
+field instead.
 
 ## Features
 
-- Checks spelling and grammar as you type, in Notes, Mail, Slack and the other apps under
-  [App support](#app-support).
+- Checks as you type in Notes, Mail, Slack and the other apps under
+  [App support](#app-support). By default it checks English and Dutch while you type, and
+  the on-device model's grammar checks are on for English only: Dutch gets spelling checks.
+  French is checked only in the panel. Change this in Settings > Languages with **Check while
+  typing** and **Model checks (grammar and spelling)**.
 - Underlines an issue in the field, or shows a badge with a count where the app doesn't allow
   that. A card offers the correction.
 - A panel, opened with a hotkey (Control-Option-G by default), to fix or rewrite the selection
@@ -24,10 +28,11 @@ where the text is, a small badge with a count of the issues sits on the field in
 - macOS 27 or later, on Apple silicon.
 - Skald must run from `/Applications`. From anywhere else it shows "Move Skald to the
   Applications folder, then open it again." and checks nothing.
-- The Accessibility permission, which System Settings lists as "Device Control and Data
-  Access". Skald needs it to read the text you type and to apply a correction.
-- Apple Intelligence, turned on in System Settings, for grammar checks by the on-device model.
-  Without it Skald checks spelling only.
+- The Accessibility permission, which System Settings > Privacy & Security lists as "Device
+  Control and Data Access". Skald needs it to read the text you type and to apply a
+  correction.
+- Apple Intelligence, turned on in System Settings, for the on-device model's checks (English
+  by default). Without it Skald checks spelling only.
 - To build: Xcode 27 and [mise](https://mise.jdx.dev) for XcodeGen.
 
 ## Install
@@ -43,8 +48,7 @@ first time you open it. After the first install:
 
 1. Open System Settings > Privacy & Security, find the message about Skald and click
    **Open Anyway**.
-2. Allow Skald under Privacy & Security > Accessibility (listed as Device Control and Data
-   Access).
+2. Allow Skald under System Settings > Privacy & Security > Device Control and Data Access.
 3. For grammar checks, turn on Apple Intelligence in System Settings.
 
 Upgrade with `brew upgrade --cask skald`. Releases are signed with the same certificate, and
@@ -57,9 +61,9 @@ permission has not been confirmed.
 
 If you built Skald yourself before, quit it and delete every copy first, including the build
 in your checkout's `build/`. A build signed differently from the Homebrew one has an old
-entry in the Accessibility list that can look switched on while it no longer applies. Remove
-it from the list, or run `tccutil reset Accessibility com.michaelrigart.skald`, then allow
-Skald again.
+entry in Device Control and Data Access that can look switched on while it no longer
+applies. Remove it there, or run `tccutil reset Accessibility com.michaelrigart.skald`, then
+allow Skald again.
 
 ## Build and install
 
@@ -87,9 +91,9 @@ Start Skald with `open` or Finder: launched from a terminal, macOS gives the Acc
 permission to the terminal.
 
 An ad hoc build is a different app to macOS every time you rebuild it, so you need to give
-the Accessibility permission again, and the old build's entry stays in the list without
-working. Run `tccutil reset Accessibility com.michaelrigart.skald` to clear it, then allow
-Skald again.
+the Accessibility permission again, and the old build's entry stays in Device Control and
+Data Access without working. Run `tccutil reset Accessibility com.michaelrigart.skald` to
+clear it, then allow Skald again.
 
 ## Tests
 
@@ -138,8 +142,9 @@ measured on macOS 27.2.
   Skald applies a correction by pasting it, and puts your clipboard back afterwards.
 - **Badge, Copy only:** Proton Mail. A paste adds a line break there, so the card offers Copy
   and you paste the correction yourself.
-- **Not supported:** an app that gives Skald neither the text nor the field's position gets
-  the panel only: select the text, press the hotkey, and copy the result.
+- **Panel only:** an app that gives Skald the text but not the field's position gets neither
+  underlines nor a badge. Select the text and press the hotkey to use the panel. Where the
+  app can't be written to, the panel offers Copy instead of Replace.
 
 Apps and fields not listed here haven't been measured. Skald does only what an app supports,
 and says what it can't do there.
