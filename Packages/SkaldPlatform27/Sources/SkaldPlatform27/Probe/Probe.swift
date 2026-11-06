@@ -60,6 +60,7 @@ private final class FieldSession {
     var evaluations = 0
     var loggedTrigger = false
     var sawKeystrokeEvaluation = false
+    var valueTrace = ValueTrace()
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
         self.pid = pid
@@ -420,6 +421,17 @@ public final class Probe {
         if !session.loggedSources, session.observation.awaitingWrite, reading.sources.contains(where: \.containsMarker) {
             session.loggedSources = true
             PlatformLog.probe.notice("marker sources: \(app, privacy: .public): \(reading.sources.map(\.description).joined(separator: "; "), privacy: .public)")
+        }
+        let traced = trigger == .keystroke && reading.kind == .ranges && session.observation.awaitingWrite
+        let sample = traced
+            ? ValueTrace.Sample(
+                valueLength: reading.value.map { ($0 as NSString).length }, characterCount: reading.characterCount,
+                selectionLocation: reading.selection?.location
+            )
+            : nil
+        let markerSeen = reading.value?.contains(ProbeMarker.pending) == true || !session.observation.awaitingWrite
+        if session.valueTrace.observe(sample, containsMarker: markerSeen) {
+            PlatformLog.probe.notice("value trace: \(app, privacy: .public): \(session.valueTrace.summary(keystrokes: session.keystrokes), privacy: .public)")
         }
         session.observation.absorb(reading)
         if session.undoPending, let value = reading.value, let check = session.observation.writeCheck(value) {
