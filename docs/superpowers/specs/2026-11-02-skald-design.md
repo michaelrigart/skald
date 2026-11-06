@@ -339,10 +339,12 @@ Names are left to the builder.
     this. It sees the field show something other than the expected paragraph and reports
     the accept as unconfirmed, as above; ⌘Z undoes the paste like any other edit. Michael
     accepted this risk (2026-11-06).
-  - **The caret.** After a write, and after an abort that had already moved the selection,
-    Skald puts the caret back where the user had it (shifted by the length change when it
-    was after the range), but only while the field is still focused and its selection is
-    still the one Skald left. If the user moved it meanwhile, Skald leaves it alone.
+  - **The caret.** After a confirmed write, Skald puts the caret back where the user had it
+    (shifted by the length change when it was after the range); after an abort that had
+    already moved the selection, it puts it back unshifted; while a paste is unconfirmed it
+    never moves the selection, so a late paste still lands on the range. Each time only
+    while the field is still focused and its selection is still the one Skald left; if the
+    user moved it meanwhile, Skald leaves it alone.
   - **Typing right after an accept** in an app that merges edits made close together
     (Slack) may join the accept's undo step: Skald can't mark where a step ends. The ⌘Z
     right after an accept still undoes exactly the fix. Michael decided (2026-11-06) that
