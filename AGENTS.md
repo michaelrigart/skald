@@ -20,7 +20,8 @@ spell server and Foundation Models are unreachable inside the sandbox too.
   (`ditto` merges into an existing bundle and would keep stale files)
 - Run: `open /Applications/Skald.app`
 - Script tests: `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'` (the
-  changelog tool), `scripts/tests/test-release-dry-run` and
+  changelog tool), `scripts/tests/test-release-dry-run`
+  (needs the signing certificate and Homebrew: it builds team-signed and runs `brew style`) and
   `scripts/tests/test-verify-app <Release Skald.app> <Debug Skald.app>`
 - Verify a built app: `scripts/verify-app [--team <ID>] <Skald.app> [<version>]`. It fails on a
   bad signature, a missing Hardened Runtime flag, `LSMinimumSystemVersion` below 27.0,

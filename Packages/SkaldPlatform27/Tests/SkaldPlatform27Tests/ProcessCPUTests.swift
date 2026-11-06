@@ -12,8 +12,8 @@ private func childrenCPUNanoseconds() -> UInt64 {
     return nanoseconds(usage.ru_utime) + nanoseconds(usage.ru_stime)
 }
 
-/// Load-independent: the child runs until it has used 50 ms of CPU, however long a loaded machine takes to give
-/// it that, and the CPU time a sample reads for it matches the kernel's within 20 %, so a sample left in Mach
+/// Load-independent: the child runs until it has used 50 ms of CPU, waiting up to 30 s of wall time for a loaded
+/// machine to give it that, and the CPU time a sample reads for it matches the kernel's within 20 %, so a sample left in Mach
 /// ticks (about 2.4 % of the nanoseconds) fails.
 @Test func aSampleReadsAChildsCPUTimeAsTheKernelCountsIt() async throws {
     let before = childrenCPUNanoseconds()
