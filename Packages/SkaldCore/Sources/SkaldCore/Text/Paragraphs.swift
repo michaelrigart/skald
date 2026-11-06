@@ -43,8 +43,13 @@ public enum Paragraphs {
         return result
     }
 
+    /// The paragraph the caret is in or at the end of. On a blank line it is the nearest paragraph above, else the
+    /// first below, so a caret resting after a paragraph still has that paragraph checked.
     public static func around(caret: Int, in text: String, offset: Int) -> Paragraph? {
-        all(in: text, offset: offset).first { $0.range.location <= caret && caret <= $0.range.end }
+        let paragraphs = all(in: text, offset: offset)
+        return paragraphs.first { $0.range.location <= caret && caret <= $0.range.end }
+            ?? paragraphs.last { $0.range.end < caret }
+            ?? paragraphs.first
     }
 
     public static func chunks(_ p: Paragraph, limit: Int = 1200) -> [Paragraph] {

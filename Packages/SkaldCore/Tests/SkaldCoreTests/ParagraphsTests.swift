@@ -24,6 +24,28 @@ private func longParagraph() -> String {
     #expect(Paragraphs.around(caret: 10, in: text, offset: 0)?.text == "first line")
 }
 
+/// Notes keeps the caret on the blank line after a paragraph; no check ran there until the caret moved into text.
+@Test func caretOnABlankLineBelongsToTheParagraphAbove() {
+    let text = "first line\n\nsecond line\n\n"
+    #expect(Paragraphs.around(caret: 11, in: text, offset: 0)?.text == "first line")
+    #expect(Paragraphs.around(caret: 25, in: text, offset: 0)?.text == "second line")
+}
+
+@Test func caretOnABlankLineBeforeAnyTextBelongsToTheParagraphBelow() {
+    #expect(Paragraphs.around(caret: 0, in: "\n\nfirst line", offset: 0)?.text == "first line")
+    #expect(Paragraphs.around(caret: 1, in: "\n\nfirst line", offset: 0)?.text == "first line")
+}
+
+@Test func aFieldWithoutTextHasNoCaretParagraph() {
+    #expect(Paragraphs.around(caret: 1, in: "\n\n", offset: 0) == nil)
+}
+
+@Test func chunkKeysFollowTheCaretOntoABlankLine() {
+    let text = "first line\n\nsecond line\n\n"
+    let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 25, length: 0), totalLength: text.utf16.count)
+    #expect(ParagraphKeys.chunkKeys(snapshot, caret: 25).map(\.parent.text) == ["second line"])
+}
+
 @Test func rangesAreShiftedByTheWindowOffset() {
     let all = Paragraphs.all(in: "one\ntwo", offset: 100)
     #expect(all.map(\.range) == [TextRange(location: 100, length: 3), TextRange(location: 104, length: 3)])
