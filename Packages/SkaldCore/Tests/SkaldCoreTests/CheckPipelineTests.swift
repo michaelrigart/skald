@@ -366,6 +366,29 @@ struct CheckPipelineTests {
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
     }
 
+    /// Mixed text can detect as one language throughout: Notes scored a mostly English note Dutch, so every short
+    /// English line in a fresh field was checked as Dutch.
+    @Test func aShortParagraphInAFreshFieldTakesTheLanguageOfTheParagraphAboveItBeforeTheWholeText() async {
+        let rig = Rig(makeSettings())
+        let text = "Thanks for the review of the doc.\n\nteh end\n\nIk heb de nieuwe versie gedownloaded."
+        await rig.focus(text, caret: 42)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.map(\.text) == ["teh end"])
+        #expect(await rig.spelling.calls.map(\.language) == [.en])
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .en)
+    }
+
+    @Test func aShortFirstParagraphInAFreshFieldTakesTheLanguageOfTheParagraphBelowIt() async {
+        let rig = Rig(makeSettings())
+        let text = "teh title\n\nThanks for the review of the doc.\n\nIk heb de nieuwe versie gedownloaded."
+        await rig.focus(text, caret: 9)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.map(\.text) == ["teh title"])
+        #expect(await rig.spelling.calls.map(\.language) == [.en])
+    }
+
     @Test func aShortParagraphAloneInAFreshFieldStaysUnchecked() async {
         let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
         await rig.focus("tot morgn", caret: 9)

@@ -380,9 +380,21 @@ public actor CheckPipeline {
     /// (just focused, or Skald just relaunched) takes the language of the text read around the paragraph.
     private func detectLanguage(of paragraph: Paragraph, in field: FieldID) -> Language? {
         let language = detector.detect(paragraph.text, previous: fieldLanguages[field])
-            ?? latest.flatMap { $0.field == field ? detector.detect($0.text, previous: nil) : nil }
+            ?? latest.flatMap { $0.field == field ? language(around: paragraph, in: $0) : nil }
         if let language { fieldLanguages[field] = language }
         return language
+    }
+
+    /// The nearest paragraph that detects, above before below, and only then the whole read: mixed text can
+    /// detect as one language throughout.
+    private func language(around paragraph: Paragraph, in snapshot: FieldSnapshot) -> Language? {
+        let paragraphs = Paragraphs.all(in: snapshot.text, offset: snapshot.offset)
+        let above = paragraphs.filter { $0.range.end <= paragraph.range.location }.reversed()
+        let below = paragraphs.filter { $0.range.location >= paragraph.range.end }
+        for neighbour in above + below {
+            if let language = detector.detect(neighbour.text, previous: nil) { return language }
+        }
+        return detector.detect(snapshot.text, previous: nil)
     }
 
     /// Anchors kept edits to the key's paragraph in the latest snapshot, or returns nil when it is gone.
