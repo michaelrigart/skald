@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import Testing
 @testable import SkaldPlatform27
@@ -56,3 +57,4 @@ private func slateColour() -> CGColor {
     let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)
     #expect(!FormattingFingerprint.kept(before: text([key: slateColour()]), after: text([key: red])))
 }
+#endif

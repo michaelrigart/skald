@@ -1,3 +1,4 @@
+#if DEBUG
 extension QuietPeriod {
     /// The probe's quiet period before its paste: what is left of it after the last keystroke or value change.
     static func remaining(
@@ -8,3 +9,4 @@ extension QuietPeriod {
         return elapsed < required ? required - elapsed : nil
     }
 }
+#endif

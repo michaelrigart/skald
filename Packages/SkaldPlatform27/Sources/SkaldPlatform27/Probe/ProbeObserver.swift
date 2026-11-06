@@ -1,3 +1,4 @@
+#if DEBUG
 import ApplicationServices
 import Foundation
 
@@ -70,3 +71,4 @@ final class ProbeObserver: @unchecked Sendable { // reason: state is touched onl
         observer = created
     }
 }
+#endif

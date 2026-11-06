@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import ApplicationServices
 import Foundation
@@ -538,3 +539,4 @@ enum FieldProbe {
         )
     }
 }
+#endif

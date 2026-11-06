@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -109,3 +110,4 @@ import Testing
     #expect(TextMarkerField.describeEditableAncestor(false) == "false")
     #expect(TextMarkerField.describeEditableAncestor(nil) == "unsupported")
 }
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 /// Remembers elements a lookup found nothing for, per app, until the app's focus changes.
@@ -49,3 +50,4 @@ final class FocusedSearchCache: @unchecked Sendable { // reason: the cache is on
         lock.withLock { cache.clear(pid: pid) }
     }
 }
+#endif

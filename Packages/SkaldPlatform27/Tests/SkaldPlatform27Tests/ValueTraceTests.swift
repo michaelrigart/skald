@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -36,3 +37,4 @@ private func reports(_ trace: inout ValueTrace, _ sample: ValueTrace.Sample?, ma
     }
     #expect(trace.summary(keystrokes: 5) == "keystrokes 5, value lengths -,-,-,-,-, characters -,-,-,-,-, selection locations -,-,-,-,-")
 }
+#endif

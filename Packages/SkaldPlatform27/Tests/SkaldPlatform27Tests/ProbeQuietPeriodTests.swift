@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -23,3 +24,4 @@ private func ago(_ milliseconds: Int) -> ContinuousClock.Instant {
     #expect(QuietPeriod.remaining(now: now, lastKeystroke: ago(1499), lastValueChange: nil) == .milliseconds(1))
     #expect(QuietPeriod.required == .milliseconds(1500))
 }
+#endif

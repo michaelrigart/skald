@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -62,3 +63,4 @@ import Testing
         #expect(read(kind, role: nil) == nil)
     }
 }
+#endif

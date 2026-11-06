@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -42,3 +43,4 @@ private func same(_ a: Int, _ b: Int) -> Bool { a == b }
     cache.remember(2, hash: 2, pid: 10, isSame: same)
     #expect(cache.contains(1, hash: 1, pid: 10, isSame: same))
 }
+#endif

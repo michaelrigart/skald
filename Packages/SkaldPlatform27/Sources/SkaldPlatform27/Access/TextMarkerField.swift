@@ -56,9 +56,11 @@ struct TextMarkerField {
         return CFRange(location: offset, length: length)
     }
 
+    #if DEBUG
     static func isMarkerSelection(selectedString: String?, pair: ProbeMarker.Pair) -> Bool {
         selectedString == pair.pending
     }
+    #endif
 
     static func anchor(for marker: CFRange, caret: CFRange?, textLength: Int) -> Anchor? {
         if let caret, caret.length == 0, caret.location == marker.location + marker.length { return .selectionStart }
@@ -108,6 +110,7 @@ struct TextMarkerField {
         }
     }
 
+    #if DEBUG
     /// Selects the marker's text: from `end`, step back one marker per UTF-16 unit of the marker.
     func selectMarker(endingAt end: AXTextMarker) -> AXError {
         var start = end
@@ -119,6 +122,7 @@ struct TextMarkerField {
         }
         return setSelection(AXTextMarkerRangeCreate(nil, start, end))
     }
+    #endif
 
     func setSelection(_ range: AXTextMarkerRange) -> AXError {
         AXUIElementSetAttributeValue(element.element, Self.selectedAttribute as CFString, range)

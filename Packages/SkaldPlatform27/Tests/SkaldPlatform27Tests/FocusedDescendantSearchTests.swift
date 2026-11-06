@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -106,3 +107,4 @@ private func search(
     #expect(search(deepest).found != nil)
     #expect(!search(none).preferred)
 }
+#endif

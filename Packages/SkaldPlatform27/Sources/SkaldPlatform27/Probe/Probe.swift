@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import ApplicationServices
 import Foundation
@@ -695,3 +696,4 @@ public final class Probe {
         diagnosedPIDs.insert(pid)
     }
 }
+#endif

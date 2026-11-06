@@ -1,3 +1,4 @@
+#if DEBUG
 /// Does a ranges field report the typing at all? Numbers from the first keystroke-triggered evaluations of a session
 /// whose value has not shown the marker.
 struct ValueTrace {
@@ -34,3 +35,4 @@ struct ValueTrace {
             + "selection locations \(list(\.selectionLocation))"
     }
 }
+#endif

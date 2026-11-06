@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -45,3 +46,4 @@ import Testing
     #expect(diagnosis.summary(afterMs: 3000) == "after 3000 ms: element found false role -, focused query AXError -25204 in 251 ms; "
         + "1 s timeout query answered true, element found true, AXError 0, 640 ms")
 }
+#endif

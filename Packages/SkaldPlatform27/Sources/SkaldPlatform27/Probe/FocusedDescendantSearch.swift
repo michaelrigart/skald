@@ -1,3 +1,4 @@
+#if DEBUG
 struct SearchNodeInfo: Equatable {
     var role: String?
     var focused: Bool
@@ -46,3 +47,4 @@ enum FocusedDescendantSearch {
         return SearchResult(found: deepest?.node, visited: visited, elapsedMs: elapsedMs())
     }
 }
+#endif

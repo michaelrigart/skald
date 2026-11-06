@@ -1,3 +1,4 @@
+#if DEBUG
 enum MarkerRetry {
     static let maxAttempts = 5
     static let interval: Duration = .milliseconds(300)
@@ -15,3 +16,4 @@ enum MarkerRetry {
         return attempts < maxAttempts ? .retry(attempts + 1) : .gaveUp(attempts: attempts)
     }
 }
+#endif

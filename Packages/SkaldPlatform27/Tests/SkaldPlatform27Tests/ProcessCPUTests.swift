@@ -1,3 +1,4 @@
+#if DEBUG
 import Darwin
 import Foundation
 import Testing
@@ -43,3 +44,4 @@ private func childrenCPUNanoseconds() -> UInt64 {
     #expect(ProcessTree.members(of: getpid()).first == getpid())
     #expect(ProcessTree.members(of: getppid()).contains(getpid()))
 }
+#endif

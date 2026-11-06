@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 struct ProbeLine: Codable, Equatable {
@@ -50,3 +51,4 @@ struct ProbeLine: Codable, Equatable {
         value.map { String(format: "%.1f", $0) } ?? "-"
     }
 }
+#endif

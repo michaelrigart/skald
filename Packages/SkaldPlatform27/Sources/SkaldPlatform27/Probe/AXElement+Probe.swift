@@ -1,3 +1,4 @@
+#if DEBUG
 import ApplicationServices
 import Foundation
 
@@ -171,3 +172,4 @@ final class WebAreaLog: @unchecked Sendable { // reason: the seen set is only to
         }
     }
 }
+#endif

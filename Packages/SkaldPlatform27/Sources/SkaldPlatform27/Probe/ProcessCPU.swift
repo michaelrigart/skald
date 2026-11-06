@@ -1,3 +1,4 @@
+#if DEBUG
 import Darwin
 import Foundation
 
@@ -69,3 +70,4 @@ enum ProcessTree {
         return Array(pids.prefix(max(count, 0))).filter { $0 > 0 }
     }
 }
+#endif

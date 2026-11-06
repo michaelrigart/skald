@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 
 enum FormattingFingerprint {
@@ -81,3 +82,4 @@ private extension FormattingFingerprint.Run {
         return copy == self
     }
 }
+#endif
