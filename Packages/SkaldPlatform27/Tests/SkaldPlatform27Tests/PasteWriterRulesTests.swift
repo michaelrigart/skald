@@ -72,8 +72,13 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     ])
 }
 
-@Test func anUnrestorableClipboardIsUnsupportedBeforeAnythingIsTouched() {
-    #expect(steps(Script(restorable: false)) == [.snapshot, .finish(.unsupported)])
+@Test func anUnrestorableClipboardRefusesThePasteBeforeAnythingIsTouched() {
+    #expect(steps(Script(restorable: false)) == [.snapshot, .finish(.clipboardBusy)])
+}
+
+@Test func aClipboardThatTurnsUnrestorableBeforeTheStageRefusesThePaste() {
+    let taken = steps(Script(staging: .unrestorable))
+    #expect(Array(taken.suffix(2)) == [.restoreCaret(.abortedAfterSelecting), .finish(.clipboardBusy)])
 }
 
 @Test func aFieldOver20000UnitsIsUnsupportedWithNothingStaged() {
@@ -695,12 +700,12 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     #expect(await value(of: first) == .replaced)
 }
 
-@MainActor @Test func anUnrestorableClipboardIsUnsupportedAndNothingIsTouched() async {
+@MainActor @Test func anUnrestorableClipboardRefusesThePasteAndNothingIsTouched() async {
     let pasteboard = clipboard(holding: "a password", types: [NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")])
     defer { pasteboard.releaseGlobally() }
     let before = pasteboard.changeCount
     let target = FakeTarget()
-    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("are", in: slack, target: target) }) == .unsupported)
+    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("are", in: slack, target: target) }) == .clipboardBusy)
     #expect(target.calls.isEmpty)
     #expect(pasteboard.changeCount == before)
 }
@@ -797,7 +802,7 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     #expect(await value(of: next) == .replaced)
 }
 
-@MainActor @Test func anUnconfirmedPasteMakesTheNextPasteWriteUnsupported() async throws {
+@MainActor @Test func anUnconfirmedPasteRefusesTheNextPasteWriteForTheClipboard() async throws {
     let clock = TestClock()
     let pasteboard = clipboard(holding: "old content")
     defer { pasteboard.releaseGlobally() }
@@ -806,7 +811,7 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     let paste = writer(clock, pasteboard)
     #expect(try await unconfirmedWrite(clock, paste, target) == .unconfirmed)
     let next = FakeTarget()
-    #expect(await value(of: Task { await paste.write("is", in: FieldID(app: "md.obsidian", token: "3"), target: next) }) == .unsupported)
+    #expect(await value(of: Task { await paste.write("is", in: FieldID(app: "md.obsidian", token: "3"), target: next) }) == .clipboardBusy)
     #expect(next.calls.isEmpty)
     #expect(held(pasteboard) == "are")
 }

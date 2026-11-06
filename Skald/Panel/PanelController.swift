@@ -207,6 +207,7 @@ struct PanelOpening {
         switch outcome {
         case .replaced: ""
         case .unsupported: "Skald can't write in this field. Copy the result instead."
+        case .clipboardBusy: "Skald can't paste while the clipboard holds protected content or an earlier fix. Copy the result instead."
         case .failed: "The change didn't go through."
         case .refusedChanged: "The text changed since Skald read it."
         case .refusedOtherField: "The field isn't focused any more."

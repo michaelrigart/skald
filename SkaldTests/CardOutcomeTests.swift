@@ -23,6 +23,7 @@ import Testing
 
     @Test(arguments: [
         (ReplaceOutcome.unsupported, "Skald can't write in this field. Copy the fix instead."),
+        (.clipboardBusy, "Skald can't paste while the clipboard holds protected content or an earlier fix. Copy the fix instead."),
         (.failed, "The change didn't go through."),
         (.refusedChanged, "The text changed since Skald checked it."),
         (.refusedOtherField, "The field isn't focused any more."),
@@ -44,7 +45,7 @@ import Testing
         #expect(spy.writes.isEmpty)
     }
 
-    @Test(arguments: [ReplaceOutcome.unsupported, .failed, .refusedChanged, .refusedOtherField])
+    @Test(arguments: [ReplaceOutcome.unsupported, .clipboardBusy, .failed, .refusedChanged, .refusedOtherField])
     func copyFixAfterARefusalWritesTheFixExactlyOnce(outcome: ReplaceOutcome) async {
         let card = card(answer: outcome)
         await card.accept()

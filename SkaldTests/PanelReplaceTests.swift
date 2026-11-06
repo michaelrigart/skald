@@ -101,6 +101,7 @@ private final class FocusWait {
 
     @Test(arguments: [
         (ReplaceOutcome.unsupported, "Skald can't write in this field. Copy the result instead."),
+        (.clipboardBusy, "Skald can't paste while the clipboard holds protected content or an earlier fix. Copy the result instead."),
         (.failed, "The change didn't go through."),
         (.refusedChanged, "The text changed since Skald read it."),
         (.refusedOtherField, "The field isn't focused any more."),
@@ -143,7 +144,7 @@ private final class FocusWait {
         #expect(spy.writes.isEmpty)
     }
 
-    @Test(arguments: [ReplaceOutcome.unsupported, .failed, .refusedChanged, .refusedOtherField])
+    @Test(arguments: [ReplaceOutcome.unsupported, .clipboardBusy, .failed, .refusedChanged, .refusedOtherField])
     func copyAfterARefusalWritesTheResultExactlyOnce(outcome: ReplaceOutcome) async {
         let (controller, _, _) = await panel(outcome: outcome)
         await controller.replace()

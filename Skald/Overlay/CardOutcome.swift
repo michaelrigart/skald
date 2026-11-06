@@ -14,6 +14,11 @@ enum CardOutcome: Equatable {
         case .replaced: self = .close
         case .unsupported:
             self = .keepOpen(reason: "Skald can't write in this field." + (canCopy ? " Copy the fix instead." : ""), offersCopy: canCopy)
+        case .clipboardBusy:
+            self = .keepOpen(
+                reason: "Skald can't paste while the clipboard holds protected content or an earlier fix." + (canCopy ? " Copy the fix instead." : ""),
+                offersCopy: canCopy
+            )
         case .failed: self = .keepOpen(reason: "The change didn't go through.", offersCopy: canCopy)
         case .refusedChanged: self = .keepOpen(reason: "The text changed since Skald checked it.", offersCopy: canCopy)
         case .refusedOtherField: self = .keepOpen(reason: "The field isn't focused any more.", offersCopy: canCopy)

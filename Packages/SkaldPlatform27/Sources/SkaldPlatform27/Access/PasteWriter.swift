@@ -105,7 +105,7 @@ struct PastePlan {
         guard !finished else { return [] }
         switch input {
         case .clipboard(let restorable):
-            return restorable ? [.watchQuiet] : abort(.unsupported, "the clipboard holds concealed or promised content")
+            return restorable ? [.watchQuiet] : abort(.clipboardBusy, "the clipboard holds concealed or promised content")
         case .quiet(.quiet):
             return [.select]
         case .quiet(.tooLong):
@@ -139,7 +139,7 @@ struct PastePlan {
         case .staged(.changedSinceSnapshot):
             return abort(.failed, "the clipboard changed since the snapshot")
         case .staged(.unrestorable):
-            return abort(.unsupported, "the clipboard holds concealed or promised content")
+            return abort(.clipboardBusy, "the clipboard holds concealed or promised content")
         case .clipboardChangedBeforePaste:
             return abort(.failed, "the clipboard changed before the paste", restoreClipboard: false)
         case .rechecked(let result):
