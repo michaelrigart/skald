@@ -17,8 +17,9 @@ field instead.
   that. A card offers the correction.
 - A panel, opened with a hotkey (Control-Option-G by default), to fix or rewrite the selection
   or the current paragraph.
-- Checks while you type always stay on your Mac. The panel can also use an Ollama or
-  OpenAI-compatible server, or Claude, if you set one up in Settings.
+- Checks while you type always stay on your Mac. The panel can also use a Mac Studio
+  (Settings > Engines > Mac Studio, which takes any Ollama or OpenAI-compatible server), or
+  Claude, if you set one up in Settings.
 - Terminals, code editors and password managers are off by default. Secure text fields are
   never read.
 - Launches at login (you can turn this off in Settings).
@@ -134,9 +135,10 @@ way. `design/render` regenerates the app icon and the menu bar glyph from the SV
 What Skald can do depends on what each app tells it about its text fields. These were
 measured on macOS 27.2.
 
-- **Underlines, and corrections applied in place:** Notes, TextEdit, and text fields in Zen
+- **Underlines, and corrections applied in place:** Notes, TextEdit, and text areas in Zen
   (including the comment box on GitLab and the editor on Basecamp). The correction is one
-  undo step: Command-Z takes it back.
+  undo step: Command-Z takes it back. Notes and TextEdit take a correction directly; Zen
+  takes it by paste, and Skald puts your clipboard back afterwards.
 - **Badge with a count, corrections applied in place:** Slack, Signal, Obsidian and Mail's
   compose window. These apps don't tell Skald where a word is, only where the field is.
   Skald applies a correction by pasting it, and puts your clipboard back afterwards.
