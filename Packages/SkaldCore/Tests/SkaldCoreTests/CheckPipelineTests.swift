@@ -266,15 +266,44 @@ struct CheckPipelineTests {
         #expect(await rig.visible().isEmpty)
     }
 
-    @Test func theLastConfidentLanguageBelongsToTheFocusedField() async {
+    @Test func aFieldKeepsItsLastConfidentLanguageAcrossFocusChanges() async {
         let rig = Rig(makeSettings(), misspellings: ["gedownloaded": "gedownload"])
         await rig.focus("Ik heb de nieuwe versie gedownloaded")
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == nil)
         await rig.check()
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldB) == nil)
+        await rig.pipeline.receive(.focused(nil))
         await rig.pipeline.receive(.focused(fieldB))
-        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == nil)
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldB) == nil)
+    }
+
+    @Test func aShortParagraphInheritsItsOwnFieldsLanguageAfterAnAppSwitch() async {
+        let rig = Rig(makeSettings(), misspellings: ["gedownloaded": "gedownload", "morgn": "morgen"])
+        await rig.focus("Ik heb de nieuwe versie gedownloaded")
+        await rig.check()
+        await rig.pipeline.receive(.focused(nil))
+        await rig.access.set("Thanks for the review of the doc", caret: 0, in: fieldB)
+        await rig.pipeline.receive(.focused(fieldB))
+        await rig.check()
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldB) == .en)
+
+        await rig.focus("tot morgn")
+        await rig.check()
+        #expect(await rig.spelling.calls.last?.language == .nl)
+    }
+
+    @Test func onlyTheNewestTwentyFieldsKeepTheirLanguage() {
+        var languages = FieldLanguages()
+        let fields = (0...20).map { FieldID(app: "com.example.mail", token: "\($0)") }
+        for field in fields { languages[field] = .fr }
+        #expect(languages[fields[0]] == nil)
+        #expect(languages[fields[1]] == .fr)
+        languages[fields[1]] = .nl
+        languages[FieldID(app: "com.example.mail", token: "new")] = .en
+        #expect(languages[fields[1]] == .nl)
+        #expect(languages[fields[2]] == nil)
     }
 
     @Test func anUnavailableAppleRouterCancelsTheSuspendedModelCheck() async {

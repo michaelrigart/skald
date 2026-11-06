@@ -67,7 +67,7 @@ public actor CheckPipeline {
     private var epoch = 0
     private var isPaused = false
     private var currentField: FieldID?
-    private var fieldLanguage: Language?
+    private var fieldLanguages = FieldLanguages()
     private var latest: FieldSnapshot?
     private var appleUnavailable: UnavailableReason?
 
@@ -141,10 +141,10 @@ public actor CheckPipeline {
         publish()
     }
 
-    /// The field's last confident language while it is the focused field, else nil; the panel's paragraphs
-    /// too short to detect inherit it.
+    /// The field's last confident language, kept for the newest fields across focus changes; the panel's
+    /// paragraphs too short to detect inherit it.
     public func lastConfidentLanguage(for field: FieldID) -> Language? {
-        field == currentField ? fieldLanguage : nil
+        fieldLanguages[field]
     }
 
     public func accept(_ id: UUID) async -> ReplaceOutcome {
@@ -179,7 +179,6 @@ public actor CheckPipeline {
 
     func receive(_ event: FieldEvent) {
         if case .focused(let field) = event {
-            if field != currentField { fieldLanguage = nil }
             currentField = field
             epoch += 1
         }
@@ -270,7 +269,7 @@ public actor CheckPipeline {
     // MARK: Spelling
 
     private func startSpelling(_ key: ParagraphKey, chunk: Paragraph, parent: Paragraph) {
-        guard let language = detectLanguage(of: parent) else { return send(.forget([key])) }
+        guard let language = detectLanguage(of: parent, in: key.field) else { return send(.forget([key])) }
         let epoch = self.epoch
         let id = UUID()
         spellingJobs[key] = id
@@ -298,7 +297,7 @@ public actor CheckPipeline {
     // MARK: Model
 
     private func startModel(_ key: ParagraphKey, chunk: Paragraph, parent: Paragraph, generation: Int) {
-        guard let language = detectLanguage(of: parent) else { return send(.modelFailed(generation: generation)) }
+        guard let language = detectLanguage(of: parent, in: key.field) else { return send(.modelFailed(generation: generation)) }
         let epoch = self.epoch
         let spellingJob = spellingJobs[key].flatMap { jobs[$0] }
         let task = track { pipeline in
@@ -359,9 +358,9 @@ public actor CheckPipeline {
         return route
     }
 
-    private func detectLanguage(of paragraph: Paragraph) -> Language? {
-        let language = detector.detect(paragraph.text, previous: fieldLanguage)
-        if let language { fieldLanguage = language }
+    private func detectLanguage(of paragraph: Paragraph, in field: FieldID) -> Language? {
+        let language = detector.detect(paragraph.text, previous: fieldLanguages[field])
+        if let language { fieldLanguages[field] = language }
         return language
     }
 
@@ -379,5 +378,24 @@ public actor CheckPipeline {
         guard snapshot != lastPublished else { return }
         lastPublished = snapshot
         publisher.yield(snapshot)
+    }
+}
+
+/// Each field's last confident language, for the newest fields set; the oldest goes first.
+struct FieldLanguages {
+    static let capacity = 20
+
+    private var languages: [FieldID: Language] = [:]
+    private var order: [FieldID] = []
+
+    subscript(field: FieldID) -> Language? {
+        get { languages[field] }
+        set {
+            order.removeAll { $0 == field }
+            languages[field] = newValue
+            guard newValue != nil else { return }
+            order.append(field)
+            if order.count > Self.capacity { languages[order.removeFirst()] = nil }
+        }
     }
 }
