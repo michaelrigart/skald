@@ -54,6 +54,7 @@ private final class FieldSession {
     var loggedQuietWait = false
     var lastValueChange: ContinuousClock.Instant?
     var absorbFocusUntil: ContinuousClock.Instant?
+    var writtenIdentity: String?
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
         self.pid = pid
@@ -90,6 +91,7 @@ public final class Probe {
     private var pendingRecheck = RecheckKind.scrolled
     private var monitors: [Any] = []
     private var activation: NSObjectProtocol?
+    private var written = WrittenFields()
 
     public init() {}
 
@@ -238,6 +240,11 @@ public final class Probe {
         )
         current = session
         if session.observation.line.isSecure { return }
+        if let prior = written.prior(for: reading.identity) {
+            session.observation.adopt(prior)
+            session.writtenIdentity = reading.identity
+            PlatformLog.probe.notice("already written in this run: \(bundleID, privacy: .public): no second write, undo presses so far \(prior.undoPresses)")
+        }
         await retarget(pid: pid)
         guard session === current else { return }
         beginWindow(session, enabledPIDs.contains(pid) ? .idleForced : .idle)
@@ -245,10 +252,17 @@ public final class Probe {
 
     private func finish(_ session: FieldSession) {
         session.timer?.cancel()
+        rememberWrite(session)
         WebAreaLog.shared.endSession(pid: session.pid)
         let line = session.observation.finishedLine
         PlatformLog.probe.notice("\(line.render(), privacy: .public)")
         PlatformLog.probe.notice("frame readable: \(line.app, privacy: .public) \(line.role, privacy: .public) \(session.observation.hasFrame)")
+    }
+
+    /// Keeps the run's record of a written field current, so a later session continues its undo count.
+    private func rememberWrite(_ session: FieldSession) {
+        guard let identity = session.writtenIdentity, let prior = session.observation.priorWrite else { return }
+        written.record(prior, for: identity)
     }
 
     private func retarget(pid: pid_t) async {
@@ -411,6 +425,11 @@ public final class Probe {
         case .paste: attempt = await pasteWrite(session)
         }
         session.observation.endWrite()
+        if case let .started(start)? = attempt {
+            session.observation.recordWrite(start)
+            session.writtenIdentity = session.observation.identity
+            rememberWrite(session)
+        }
         guard session === current else { return }
         guard let attempt else {
             PlatformLog.probe.notice("write skipped: \(app, privacy: .public): the marker was gone when the write started")
@@ -422,8 +441,7 @@ public final class Probe {
             return
         }
         switch attempt {
-        case let .started(start):
-            session.observation.recordWrite(start)
+        case .started:
             await evaluate(session)
             guard session === current, !session.observation.line.canWrite else { return }
             let settleStart = clock.now

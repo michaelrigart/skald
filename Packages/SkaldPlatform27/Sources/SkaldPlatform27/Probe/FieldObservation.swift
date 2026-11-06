@@ -40,6 +40,8 @@ struct FieldObservation {
 
     var writeKind: FieldKind? { write?.kind }
 
+    var priorWrite: PriorWrite? { write.map { PriorWrite(start: $0, undoPresses: undoPresses) } }
+
     var awaitingWrite: Bool { !line.isSecure && write == nil && !writeAborted && !writeInFlight }
 
     /// How a value compares with the written and the original text, in lengths and booleans only.
@@ -62,6 +64,14 @@ struct FieldObservation {
         line.writeMethod = start.method
         undoPresses = 0
         typedSinceUndo = false
+    }
+
+    /// An earlier session wrote this field: never write it again, but keep judging undo presses against that write.
+    /// Whether the user typed in between is unknown, so a second undo is not taken as earlier history until a press resets it.
+    mutating func adopt(_ prior: PriorWrite) {
+        write = prior.start
+        undoPresses = prior.undoPresses
+        typedSinceUndo = true
     }
 
     mutating func beginWrite() {
