@@ -108,6 +108,11 @@ and no request failed.
 | Spelling | nl | 1.00 (7/7) | 0.50 (7/14) | 0/7 | 1 / 15 ms | pass |
 | Spelling | fr | 0.67 (2/3) | 0.12 (2/16) | 1/7 | 1 / 13 ms | fail: precision |
 
+Re-run for acceptance on 2026-11-06 on macOS 27.2, same guard, nothing tuned: every case scored as
+in the current grading (same precision, recall and clean-flagged figures, same verdicts), so the
+defaults below stand. Latencies (p50 / p90): model en 448 / 506 ms, nl 417 / 502 ms, fr 400 /
+440 ms; spelling 2 / 20–28 ms.
+
 Superseded: the first grading, also on 2026-11-02 on macOS 27.2. It was graded before review
 narrowed three over-broad rules; the second grading describes the shipped guard. Every case scored
 the same in both gradings; only the latencies differ.
