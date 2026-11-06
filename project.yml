@@ -23,14 +23,17 @@ targets:
       properties:
         LSUIElement: true
         CFBundleDisplayName: Skald
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "27.0"
     entitlements:
       path: Skald/Skald.entitlements
       properties: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.michaelrigart.skald
+        MARKETING_VERSION: dev
+        CURRENT_PROJECT_VERSION: "0"
         ARCHS: arm64
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Manual
