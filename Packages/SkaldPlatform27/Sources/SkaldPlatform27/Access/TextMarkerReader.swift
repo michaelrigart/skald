@@ -9,6 +9,8 @@ import struct SkaldCore.TextRange
 struct TextMarkerReader: FieldReader {
     let field: TextMarkerField
     private let unread = OnceFlag()
+    /// The whole text, read once per job however many ranges the job reads.
+    private let text = PerJob<String?>()
 
     init?(_ element: AXElement) {
         guard let field = TextMarkerField(element, readsToMeasure: false) else { return nil }
@@ -27,7 +29,7 @@ struct TextMarkerReader: FieldReader {
     func string(for range: TextRange) -> String? {
         guard range.location >= 0, range.length >= 0 else { return nil }
         let total = length()
-        guard let text = TextAccessRules.markerText(length: total, read: { field.text }) else {
+        guard let text = TextAccessRules.markerText(length: total, read: { self.text.value { field.text } }) else {
             if let kind = TextAccessRules.markerUnreadKind(length: total), unread.raise() {
                 PlatformLog.access.notice("text-marker field not read: \(kind, privacy: .public)")
             }
