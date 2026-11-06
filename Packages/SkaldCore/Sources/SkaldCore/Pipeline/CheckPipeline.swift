@@ -376,8 +376,9 @@ public actor CheckPipeline {
         return route
     }
 
-    /// A paragraph too short to detect inherits the field's last confident language; a field without one yet
-    /// (just focused, or Skald just relaunched) takes the language of the text read around the paragraph.
+    /// A paragraph the detector can't place (too short, or a low-confidence one of any length) inherits the
+    /// field's last confident language; a field without one yet (just focused, or Skald just relaunched) takes
+    /// the language of a confident detection of the text read around the paragraph, else stays unchecked.
     private func detectLanguage(of paragraph: Paragraph, in field: FieldID) -> Language? {
         let language = detector.detect(paragraph.text, previous: fieldLanguages[field])
             ?? latest.flatMap { $0.field == field ? language(around: paragraph, in: $0) : nil }

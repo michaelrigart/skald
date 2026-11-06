@@ -355,7 +355,7 @@ struct CheckPipelineTests {
     }
 
     /// After a relaunch no field has a language yet: a short paragraph typed beside longer text took none and went unchecked.
-    @Test func aShortParagraphInAFreshFieldTakesTheLanguageOfTheTextAroundIt() async {
+    @Test func aShortParagraphInAFreshFieldTakesTheLanguageOfTheParagraphAboveIt() async {
         let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
         let text = "Ik heb de nieuwe versie gedownloaded.\n\ntot morgn"
         await rig.focus(text, caret: text.utf16.count)
@@ -377,6 +377,28 @@ struct CheckPipelineTests {
         #expect(await rig.spelling.calls.map(\.text) == ["teh end"])
         #expect(await rig.spelling.calls.map(\.language) == [.en])
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .en)
+    }
+
+    @Test func theNearestParagraphAboveWinsOverAFartherOne() async {
+        let rig = Rig(makeSettings())
+        let text = "Ik heb de nieuwe versie gedownloaded.\n\nThanks for the review of the doc.\n\nteh end"
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.map(\.text) == ["teh end"])
+        #expect(await rig.spelling.calls.map(\.language) == [.en])
+    }
+
+    /// No single paragraph detects, but the whole read does: the last resort before a paragraph goes unchecked.
+    @Test func aParagraphNoNeighbourCanPlaceTakesTheLanguageOfTheWholeRead() async {
+        let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
+        let text = "Hi Jan,\n\nIk heb\n\ntot morgn"
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.map(\.text) == ["tot morgn"])
+        #expect(await rig.spelling.calls.map(\.language) == [.nl])
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
     }
 
     @Test func aShortFirstParagraphInAFreshFieldTakesTheLanguageOfTheParagraphBelowIt() async {
