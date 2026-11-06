@@ -98,7 +98,8 @@ running macOS 27.2, with a typical development workload running in the backgroun
      same-lemma test falls back to the near-homophone rule.
    - Language detection constrained to the three languages is reliable on a sentence, but its
      hypotheses for a word or two ("ok") are noise. Only the three languages are considered,
-     and short paragraphs inherit the field's last confident language.
+     and short paragraphs inherit the field's last confident language (fallbacks under
+     Languages).
    - The spell server is unreachable from inside an agent sandbox; these lookups run outside
      it.
 7. **Text access per app, and the model inside the signed app** (the plan's feasibility probe,
@@ -397,7 +398,9 @@ A fake implementation drives the core's tests.
 1. Skald follows the focused text field of the frontmost app, unless the app is excluded or the
    field is secure.
 2. After a pause in typing (builder's value, starting near 700 ms), the scheduler picks the
-   paragraph around the caret. Unchanged paragraphs are not checked again.
+   paragraph around the caret. A blank or whitespace-only line has no paragraph of its own: the
+   caret there picks the nearest paragraph above, else the first below. Unchanged paragraphs are
+   not checked again.
 3. **Spelling** comes first and immediately, from `NSSpellChecker` in the paragraph's language.
    Spelling flags go through the same edit guard as model edits. Once the model's result for the
    paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn.
@@ -494,8 +497,11 @@ finding 3.
 
 ### Languages
 
-- Detected per paragraph with Natural Language, constrained to English, Dutch and French. Very
-  short paragraphs inherit the field's last confident language.
+- Detected per paragraph with Natural Language, constrained to English, Dutch and French. A
+  paragraph the detector can't place (very short, or low-confidence) takes, in order: the
+  field's last confident language; for a field with none yet (just focused, or after a
+  relaunch), the language of the nearest paragraph above that detects, then below, then of the
+  whole text read. If none detects, the paragraph is left unchecked; a language is never assumed.
 - Belgian usage is correct: the instruction says so, and the evaluation set includes it.
 - English: British spelling is the default and American spelling is accepted too. A word counts
   as misspelled only if both dictionaries reject it.
