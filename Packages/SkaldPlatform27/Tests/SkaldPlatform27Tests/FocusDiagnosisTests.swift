@@ -17,3 +17,14 @@ import Testing
     #expect(AppAccessibilityMode.chromium.attributesSet == ["AXManualAccessibility"])
     #expect(AppAccessibilityMode.firefox.attributesSet == ["AXEnhancedUserInterface"])
 }
+
+@Test func theFocusRetriesRunUntilTenSeconds() {
+    #expect(FocusDiagnosis.retryOffsetsMs == [0, 1000, 3000, 6000, 10000])
+}
+
+@Test func aLateFocusStartsASessionOnlyWhileTheAppIsFrontmostWithTheSameFocus() {
+    #expect(FocusDiagnosis.startsSession(found: true, frontmost: true, generationUnchanged: true))
+    #expect(!FocusDiagnosis.startsSession(found: false, frontmost: true, generationUnchanged: true))
+    #expect(!FocusDiagnosis.startsSession(found: true, frontmost: false, generationUnchanged: true))
+    #expect(!FocusDiagnosis.startsSession(found: true, frontmost: true, generationUnchanged: false))
+}

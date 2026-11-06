@@ -213,15 +213,20 @@ public final class Probe {
                 if let old = current, old.pid != pid { finish(old); current = nil }
                 return
             }
-            if let session = current, session.pid == pid {
-                if session.observation.identity == reading.identity { return }
-                if let until = session.absorbFocusUntil, clock.now < until {
-                    session.observation.absorb(reading)
-                    return
-                }
-            }
-            await begin(pid: pid, reading: reading)
+            await adopt(pid: pid, reading: reading)
         }
+    }
+
+    /// The focused field's session: the current one when it is the same field, else a new one.
+    private func adopt(pid: pid_t, reading: FieldReading) async {
+        if let session = current, session.pid == pid {
+            if session.observation.identity == reading.identity { return }
+            if let until = session.absorbFocusUntil, clock.now < until {
+                session.observation.absorb(reading)
+                return
+            }
+        }
+        await begin(pid: pid, reading: reading)
     }
 
     private func begin(pid: pid_t, reading: FieldReading) async {
@@ -579,11 +584,12 @@ public final class Probe {
         PlatformLog.probe.notice("accessibility enabled: \(app, privacy: .public): \(results.map(\.summary).joined(separator: ", "), privacy: .public)")
     }
 
-    /// The probe may sleep: look at the focus query right after enabling, then again after 1 s and 3 s.
+    /// The app may be slow to answer: look at the focus query right after enabling, then again up to 10 s later,
+    /// and start the session as soon as a focused field appears.
     private func diagnoseMissingFocus(pid: pid_t, generation: Int, app: String) async {
         defer { diagnosingPIDs.remove(pid) }
         var waited = 0
-        for target in [0, 1000, 3000] {
+        for target in FocusDiagnosis.retryOffsetsMs {
             if target > waited {
                 try? await clock.sleep(for: .milliseconds(target - waited))
                 waited = target
@@ -592,6 +598,17 @@ public final class Probe {
             let diagnosis = await queue.run { FocusDiagnosis.take(pid: pid) }
             guard running, generation == focusGeneration else { return }
             PlatformLog.probe.notice("focus retry: \(app, privacy: .public): \(diagnosis.summary(afterMs: target), privacy: .public)")
+            let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            guard FocusDiagnosis.startsSession(
+                found: diagnosis.found, frontmost: frontmost, generationUnchanged: generation == focusGeneration
+            ) else { continue }
+            let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
+            guard running, generation == focusGeneration else { return }
+            guard let reading else { continue }
+            PlatformLog.probe.notice("session started from a late focus: \(app, privacy: .public): after \(target) ms")
+            diagnosedPIDs.insert(pid)
+            await adopt(pid: pid, reading: reading)
+            return
         }
         diagnosedPIDs.insert(pid)
     }
