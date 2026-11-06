@@ -30,27 +30,14 @@ enum StatusState: Equatable {
         }
     }
 
-    /// The system symbol for a state that has no glyph of its own; `.on` shows the app's menu bar glyph.
-    var symbolName: String? {
-        switch self {
-        case .on: nil
-        case .paused: "pause.circle"
-        case .spellingOnly: "textformat.abc"
-        case .noAccessibility: "exclamationmark.triangle"
-        }
-    }
-
     static let glyphName = "SkaldMenuBar"
 
+    /// The app's menu bar glyph in every state; a copy, so the state's title doesn't change the shared image.
     func image() -> NSImage? {
-        let title = title()
-        guard let symbolName else {
-            let glyph = NSImage(named: Self.glyphName)
-            glyph?.isTemplate = true
-            glyph?.accessibilityDescription = title
-            return glyph
-        }
-        return NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+        guard let glyph = NSImage(named: Self.glyphName)?.copy() as? NSImage else { return nil }
+        glyph.isTemplate = true
+        glyph.accessibilityDescription = title()
+        return glyph
     }
 }
 
@@ -70,7 +57,7 @@ extension UnavailableReason {
     }
 }
 
-/// The menu bar item: its symbol and tooltip follow the state, and its menu is rebuilt each time it opens.
+/// The menu bar item: its tooltip and description follow the state, and its menu is rebuilt each time it opens.
 final class StatusItemController: NSObject, NSMenuDelegate {
     struct Actions {
         let pauseForAnHour: () -> Void

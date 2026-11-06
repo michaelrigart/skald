@@ -58,21 +58,16 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
     #expect(hot == .spellingOnly(.thermalPause))
 }
 
-@Test func eachStateHasAnIconOfItsOwn() {
-    let others: [StatusState] = [.paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
-    let symbols = others.compactMap(\.symbolName)
-    #expect(symbols.count == others.count)
-    #expect(Set(symbols).count == others.count)
-    #expect(StatusState.on.symbolName == nil)
-    for state in others {
-        #expect(NSImage(systemSymbolName: state.symbolName ?? "", accessibilityDescription: nil) != nil)
+@Test func everyStateShowsTheMenuBarGlyphAsATemplateDescribedByItsTitle() throws {
+    let states: [StatusState] = [.on, .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
+    let shared = try #require(NSImage(named: StatusState.glyphName))
+    for state in states {
+        let image = try #require(state.image())
+        #expect(image.isTemplate)
+        #expect(image.accessibilityDescription == state.title())
     }
-}
-
-@Test func theOnStateShowsTheMenuBarGlyphAsATemplate() throws {
-    let image = try #require(StatusState.on.image())
-    #expect(image.isTemplate)
-    #expect(image.accessibilityDescription == "Skald is on")
+    #expect(Set(states.map { $0.title() }).count == states.count)
+    #expect(shared.accessibilityDescription == nil)
 }
 
 @Test func theTestHostBuildsNoCompositionRoot() throws {
