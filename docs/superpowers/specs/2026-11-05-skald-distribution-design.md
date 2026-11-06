@@ -121,7 +121,10 @@ The runner has no Accessibility grant and no Apple Intelligence. Tests that need
 Models are already gated on `SystemLanguageModel.default.isAvailable`; any other test that
 depends on the machine (the system spell server, CPU timing under load) is a defect to fix so it
 passes there, not a test to skip. The CPU sampling test that failed once under load on
-2026-11-05 is one to harden.
+2026-11-05 is one to harden. The one exception is the guard against real company names in
+`Eval/` and in file names: it reads a private list that never enters the repository or CI, so
+it runs on Michael's Mac and in the audit before every push, and skips in CI (Michael's
+decision, 2026-11-06).
 
 ### Changelog
 
@@ -169,13 +172,16 @@ build folder. If v1's app shell already does this, the plan reuses it.
   on the mark's own view box, for a template image, with a thin gap masked out of the bars
   around the check, which otherwise merges with the middle bar in one colour. The designer
   delivered no menu bar glyph, so this is derived. Michael chose this version, with the gap, from
-  the rendered previews (2026-11-06).
+  the rendered previews (2026-11-06). That file was lost before it was committed; the file in
+  `design/` was rebuilt from this description (the check stroked 8 units wide in the mask, a gap
+  of about 1 px at 18 px), and Michael approved the rebuilt version from its previews the same day.
 - `design/render` (Muninn's variant) regenerates `Skald/Assets.xcassets/AppIcon.appiconset` from
   `app-icon.svg` at every size in its `Contents.json`, and `SkaldMenuBar.imageset` (18 and 36 px,
   `template-rendering-intent: template`) from `menubar.svg`. It needs `rsvg-convert` (Homebrew
   `librsvg`) and says so when it is missing.
 - `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon`; the status item uses
-  `NSImage(named: "SkaldMenuBar")` instead of the system symbol.
+  `NSImage(named: "SkaldMenuBar")` instead of the system symbol, in every state; the state is in
+  its tooltip and menu (Michael's decision, 2026-11-06).
 
 ### Documentation
 
