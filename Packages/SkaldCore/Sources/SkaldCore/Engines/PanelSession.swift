@@ -55,7 +55,7 @@ public actor PanelSession {
 
     /// True until the user picks a language, when some paragraph's language can't be detected or inherited.
     public func needsLanguage() -> Bool {
-        languages(of: PanelText.paragraphs(text).map(\.text)) == nil
+        languages(of: PanelText.paragraphs(text)) == nil
     }
 
     /// The language the user picked for the paragraphs Skald can't detect.
@@ -88,7 +88,7 @@ public actor PanelSession {
     private func perform(_ action: EngineAction, on requested: EngineKind?) async -> PanelResult {
         guard Self.actions.contains(action) else { return .failed(.failed) }
         let parts = PanelText.paragraphs(text)
-        guard let languages = languages(of: parts.map(\.text)) else { return .needsLanguage }
+        guard let languages = languages(of: parts) else { return .needsLanguage }
         let kind: EngineKind
         switch await router.current.panel(requested: requested) {
         case .use(let engine): kind = engine
@@ -170,21 +170,26 @@ public actor PanelSession {
 
     // MARK: Languages
 
-    /// Each paragraph's language, or nil when one can't be detected or inherited. Short paragraphs inherit the
-    /// last confident language, starting from the captured lines, then the field's last confident language,
-    /// then the user's pick. Skald never assumes one.
-    /// Blank paragraphs, which are never sent, have none.
-    private func languages(of paragraphs: [String]) -> [Language?]? {
-        var previous = detector.detect(capture?.context.text ?? text, previous: nil) ?? fieldLanguage ?? chosenLanguage
+    /// Each paragraph's language as checking while typing resolves it (`LanguageDetecting.language(of:field:read:)`),
+    /// read around in the selection and, for the last resort, the captured lines; then the user's pick. Nil when some
+    /// paragraph has none: Skald never assumes one. Blank paragraphs, which are never sent, have none.
+    private func languages(of parts: [(text: String, separator: String)]) -> [Language?]? {
+        var offset = 0
+        let located: [Paragraph?] = parts.map { part in
+            defer { offset += part.text.utf16.count + part.separator.utf16.count }
+            guard !Self.isBlank(part.text) else { return nil }
+            return Paragraph(range: TextRange(location: offset, length: part.text.utf16.count), text: part.text)
+        }
+        let read = (paragraphs: located.compactMap { $0 }, text: capture?.context.text ?? text)
         var languages: [Language?] = []
-        for paragraph in paragraphs {
-            guard !Self.isBlank(paragraph) else {
+        for paragraph in located {
+            guard let paragraph else {
                 languages.append(nil)
                 continue
             }
-            previous = detector.detect(paragraph, previous: previous)
-            guard let previous else { return nil }
-            languages.append(previous)
+            let resolved = detector.language(of: paragraph, field: fieldLanguage, read: read)
+            guard let language = resolved ?? chosenLanguage else { return nil }
+            languages.append(language)
         }
         return languages
     }

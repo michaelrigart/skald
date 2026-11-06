@@ -155,3 +155,41 @@ private func longParagraph() -> String {
     #expect(breaks == [0x0A, 0x0D, 0x2028, 0x2029])
     #expect(PanelText.paragraphs("a\u{2028}b\rc").map(\.text) == ["a", "b", "c"])
 }
+
+// MARK: Language of a paragraph
+
+private let english = "Thanks for the review of the doc."
+private let dutch = "Ik heb de nieuwe versie gedownloaded."
+
+/// The language of the paragraph at `index` in `text`, read around in `text` unless `reading` is false.
+private func language(of index: Int, in text: String, field: Language? = nil, reading: Bool = true) -> Language? {
+    let paragraphs = Paragraphs.all(in: text, offset: 0)
+    return FakeLanguageDetector().language(
+        of: paragraphs[index], field: field, read: reading ? (paragraphs: paragraphs, text: text) : nil
+    )
+}
+
+@Test func aParagraphThatDetectsKeepsItsOwnLanguageOverTheFieldsAndItsNeighbours() {
+    #expect(language(of: 1, in: "\(english)\n\n\(dutch)\n\n\(english)", field: .en) == .nl)
+}
+
+@Test func aParagraphItCantPlaceTakesTheFieldsLanguageBeforeAnyNeighbours() {
+    #expect(language(of: 1, in: "\(english)\n\nhi\n\n\(dutch)", field: .nl) == .nl)
+}
+
+@Test func withoutAFieldLanguageTheNearestDetectingParagraphAboveWinsOverOneBelow() {
+    #expect(language(of: 2, in: "\(dutch)\n\n\(english)\n\nhi\n\n\(dutch)") == .en)
+}
+
+@Test func aParagraphWithNothingDetectingAboveTakesTheNearestBelow() {
+    #expect(language(of: 0, in: "hi\n\n\(english)\n\n\(dutch)") == .en)
+}
+
+@Test func whenNoParagraphDetectsTheWholeTextReadIsTheLastResort() {
+    #expect(language(of: 2, in: "Hi Jan,\n\nIk heb\n\ntot morgn") == .nl)
+}
+
+@Test func withNothingToDetectOrInheritTheLanguageIsNil() {
+    #expect(language(of: 1, in: "\(english)\n\nhi", reading: false) == nil)
+    #expect(language(of: 1, in: "Hi Jan,\n\nmorgen") == nil)
+}

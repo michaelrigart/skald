@@ -217,6 +217,32 @@ private func dutchRig(
     #expect(await rig.thisMac.requests.map(\.language) == [.nl])
 }
 
+/// The whole selection detects as Dutch (it holds "Ik heb"), but the short opening belongs to the field's English.
+@Test func aShortOpeningTakesTheFieldsLanguageNotTheWholeSelectionsDetection() async {
+    let rig = Rig(text: "Hi Jan,\n\n" + dutch, fieldLanguage: .en)
+    _ = await rig.session.run(.fix, on: nil)
+    #expect(await rig.thisMac.requests.map(\.language) == [.en, .nl])
+    #expect(await rig.thisMac.requests.map(\.text) == ["Hi Jan,", dutch])
+}
+
+/// With no field language, the nearest detectable paragraph below beats the whole text, which detects as Dutch.
+@Test func aShortOpeningWithNoFieldLanguageTakesTheParagraphBelowBeforeTheWholeSelection() async {
+    let thanks = "Thanks for the review of the doc."
+    let more = "Ik heb ook nog een vraag over de planning."
+    let rig = Rig(text: ["Hi Jan,", thanks, dutch, more].joined(separator: "\n\n"))
+    _ = await rig.session.run(.fix, on: nil)
+    #expect(await rig.thisMac.requests.map(\.language) == [.en, .en, .nl, .nl])
+}
+
+@Test func aSelectionWhereNothingDetectsAndTheFieldHasNoLanguageStillAsksForOne() async {
+    let rig = Rig(text: "Hi Jan,\n\nmorgen")
+    #expect(await rig.session.needsLanguage())
+    #expect(await rig.session.run(.fix, on: nil) == .needsLanguage)
+    #expect(await rig.thisMac.requests.isEmpty)
+    await rig.session.choose(.nl)
+    #expect(await !rig.session.needsLanguage())
+}
+
 // MARK: Rewrites
 
 @Test func aSameLanguageRewriteSendsTheWholeSelectionAsOneRequest() async {
