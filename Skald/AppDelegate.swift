@@ -1,10 +1,13 @@
 import AppKit
+import SkaldCore
 import SkaldPlatform27
 
-/// Builds the composition root on a normal launch. In a Debug build the `--probe` launch runs the feasibility
-/// probe instead, and a test host builds nothing, so unit tests never start text access or show onboarding.
+/// Builds the composition root on a normal launch from `/Applications`; from anywhere else it shows only the
+/// move notice. In a Debug build the `--probe` launch runs the feasibility probe instead, and a test host
+/// builds nothing, so unit tests never start text access or show onboarding.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var root: CompositionRoot?
+    private var wrongPlace: WrongPlace?
     #if DEBUG
     private var probe: Probe?
     private var probeItem: NSStatusItem?
@@ -23,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         if Self.isTestHost {
             Log.app.notice("Skald started as a test host")
+        } else if !InstallLocation.isSupported(bundlePath: Bundle.main.bundlePath) {
+            Log.app.notice("Skald is outside /Applications and checks nothing")
+            let wrongPlace = WrongPlace()
+            self.wrongPlace = wrongPlace
+            wrongPlace.showAlert()
         } else {
             NSApp.mainMenu = Self.editMenu()
             let root = CompositionRoot()
