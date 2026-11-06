@@ -114,7 +114,8 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     }
 
     public func setSelectedText(_ text: String) -> AXError {
-        AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
+        defer { AXQueue.textWritten() }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
     }
 
     static func axElement(_ raw: CFTypeRef) -> AXElement? {

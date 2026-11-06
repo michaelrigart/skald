@@ -23,3 +23,14 @@ private final class Reads: @unchecked Sendable { // reason: only touched inside 
     #expect(second == "text 2")
     #expect(await queue.run { reads.count } == 2)
 }
+
+@Test func aTextWriteInsideAJobMakesTheNextReadReadAgain() async {
+    let queue = AXQueue()
+    let reads = Reads()
+    let texts = await queue.run {
+        let before = reads.read()
+        AXQueue.textWritten()
+        return [before, reads.read(), reads.read()]
+    }
+    #expect(texts == ["text 1", "text 2", "text 2"])
+}

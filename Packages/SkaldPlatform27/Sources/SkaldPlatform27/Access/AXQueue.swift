@@ -2,16 +2,22 @@ import Dispatch
 import Synchronization
 
 public final class AXQueue: Sendable {
-    /// Jobs started on any `AXQueue`, so a reader can keep what it read for the rest of one job.
+    /// Jobs started on any `AXQueue`, and text writes inside them, so a reader can keep what it read until
+    /// the job ends or writes.
     private static let jobs = Atomic<Int>(0)
 
     private let queue = DispatchQueue(label: "com.michaelrigart.skald.accessibility")
 
     public init() {}
 
-    /// The job running now, read from inside one.
+    /// The job running now, read from inside one; a text write inside the job moves it on.
     static var currentJob: Int {
         jobs.load(ordering: .relaxed)
+    }
+
+    /// A field's text was written: what a reader kept earlier in this job is stale.
+    static func textWritten() {
+        jobs.wrappingAdd(1, ordering: .relaxed)
     }
 
     public func run<T: Sendable>(_ body: @Sendable @escaping () -> T) async -> T {
@@ -32,7 +38,9 @@ public final class AXQueue: Sendable {
     }
 }
 
-/// A value read at most once per `AXQueue` job; the next job reads it again. Used on `AXQueue` only.
+/// A value read at most once per `AXQueue` job; the next job reads it again. A read later in the same job
+/// returns the earlier text, so a write through Accessibility calls `AXQueue.textWritten()` (as
+/// `AXElement.setSelectedText` does) before anything reads back. Used on `AXQueue` only.
 final class PerJob<Value>: @unchecked Sendable { // reason: only touched inside AXQueue jobs, which run one at a time
     private var cached: (job: Int, value: Value)?
 
