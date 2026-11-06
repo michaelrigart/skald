@@ -1,21 +1,27 @@
 import AppKit
 import SkaldPlatform27
 
-/// Builds the composition root on a normal launch. The `--probe` launch runs the feasibility probe instead,
-/// and a test host builds nothing, so unit tests never start text access or show onboarding.
+/// Builds the composition root on a normal launch. In a Debug build the `--probe` launch runs the feasibility
+/// probe instead, and a test host builds nothing, so unit tests never start text access or show onboarding.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var root: CompositionRoot?
+    #if DEBUG
     private var probe: Probe?
     private var probeItem: NSStatusItem?
+    #endif
 
     static var isTestHost: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
         if CommandLine.arguments.contains("--probe") {
             startProbe()
-        } else if Self.isTestHost {
+            return
+        }
+        #endif
+        if Self.isTestHost {
             Log.app.notice("Skald started as a test host")
         } else {
             NSApp.mainMenu = Self.editMenu()
@@ -26,7 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        #if DEBUG
         probe?.stop()
+        #endif
         root?.stop()
     }
 
@@ -48,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return main
     }
 
+    #if DEBUG
     private func startProbe() {
         Log.app.notice("Skald started in probe mode")
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -63,4 +72,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
         }
     }
+    #endif
 }
