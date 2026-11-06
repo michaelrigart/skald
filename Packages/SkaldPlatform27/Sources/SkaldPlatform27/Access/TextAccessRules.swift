@@ -127,12 +127,17 @@ enum TextAccessRules {
 
     /// The selection with the whole lines it touches as context, so the context is bounded by line breaks or
     /// the window's ends; an empty selection becomes the caret's paragraph (`Paragraphs.around`), and where the
-    /// window holds no paragraph, stays the empty selection.
+    /// window holds no paragraph (a blank or whitespace-only line has none of its own), stays the empty selection
+    /// at the caret.
     static func normalizedCapture(field: FieldID, selection: TextRange, text: String, offset: Int) -> SelectionCapture? {
         let units = Array(text.utf16)
         let local = TextRange(location: selection.location - offset, length: selection.length)
         guard local.location >= 0, local.end <= units.count else { return nil }
-        if selection.length == 0, let paragraph = Paragraphs.around(caret: selection.location, in: text, offset: offset) {
+        if selection.length == 0 {
+            guard let paragraph = Paragraphs.around(caret: selection.location, in: text, offset: offset) else {
+                let caret = ExpectedText(range: selection, text: "")
+                return SelectionCapture(field: field, selection: selection, selectedText: "", context: caret)
+            }
             let context = ExpectedText(range: paragraph.range, text: paragraph.text)
             return SelectionCapture(field: field, selection: context.range, selectedText: context.text, context: context)
         }
@@ -142,9 +147,6 @@ enum TextAccessRules {
         while end < units.count, !Paragraphs.isLineBreak(units[end]) { end += 1 }
         let line = TextRange(location: start, length: end - start)
         let context = ExpectedText(range: TextRange(location: start + offset, length: line.length), text: substring(of: text, at: line))
-        if selection.length == 0 {
-            return SelectionCapture(field: field, selection: context.range, selectedText: context.text, context: context)
-        }
         return SelectionCapture(field: field, selection: selection, selectedText: substring(of: text, at: local), context: context)
     }
 

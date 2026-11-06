@@ -329,6 +329,14 @@ private func captureAt(_ caret: Int, in text: String) -> (capture: SelectionCapt
     #expect(capture?.selectedText == "")
 }
 
+/// A whitespace-only line is no paragraph of its own, so it is never captured as one.
+@Test func aCaretInAWhitespaceOnlyLineOfAFieldWithoutAnyParagraphCapturesTheEmptySelection() {
+    let capture = captureAt(1, in: "  \n\n").capture
+    #expect(capture?.selection == TextRange(location: 1, length: 0))
+    #expect(capture?.selectedText == "")
+    #expect(capture?.context == ExpectedText(range: TextRange(location: 1, length: 0), text: ""))
+}
+
 @Test func theCaptureWindowCoversALongSelectionInALongField() {
     let window = TextAccessRules.captureWindow(selection: TextRange(location: 20_000, length: 15_000), totalLength: 60_000)
     #expect(window == TextRange(location: 15_000, length: 25_000))
