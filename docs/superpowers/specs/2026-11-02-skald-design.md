@@ -502,6 +502,9 @@ finding 3.
   field's last confident language; for a field with none yet (just focused, or after a
   relaunch), the language of the nearest paragraph above that detects, then below, then of the
   whole text read. If none detects, the paragraph is left unchecked; a language is never assumed.
+  The same order, in the same code, applies to typing checks and to each paragraph of a panel
+  selection (read within the selection, the whole text being the captured lines); when none
+  detects there, the panel asks the user to pick a language.
 - Belgian usage is correct: the instruction says so, and the evaluation set includes it.
 - English: British spelling is the default and American spelling is accepted too. A word counts
   as misspelled only if both dictionaries reject it.
