@@ -1,0 +1,152 @@
+import Foundation
+import Observation
+import SkaldCore
+
+/// What a card does once Accept has an outcome.
+enum CardOutcome: Equatable {
+    case close
+    /// The card stays with one line of reason, and Copy fix when the clipboard doesn't already hold it.
+    case keepOpen(reason: String, offersCopy: Bool)
+
+    init(_ outcome: ReplaceOutcome) {
+        switch outcome {
+        case .replaced: self = .close
+        case .unsupported: self = .keepOpen(reason: "Skald can't write in this field. Copy the fix instead.", offersCopy: true)
+        case .failed: self = .keepOpen(reason: "The change didn't go through.", offersCopy: true)
+        case .refusedChanged: self = .keepOpen(reason: "The text changed since Skald checked it.", offersCopy: true)
+        case .refusedOtherField: self = .keepOpen(reason: "The field isn't focused any more.", offersCopy: true)
+        case .unconfirmed:
+            self = .keepOpen(reason: "The app didn't show the change. The clipboard now holds the fix.", offersCopy: false)
+        }
+    }
+}
+
+/// The flagged words and their surroundings, cut by UTF-16 units and widened to whole characters.
+struct CardContent: Equatable {
+    let before: String
+    let original: String
+    let replacement: String
+    let after: String
+
+    init(before: String, original: String, replacement: String, after: String) {
+        self.before = before
+        self.original = original
+        self.replacement = replacement
+        self.after = after
+    }
+
+    init(issue: Issue, context: Int = 30) {
+        let text = issue.chunk.text as NSString
+        let edit = issue.edit.range
+        let start = max(0, edit.location - context)
+        let end = min(text.length, edit.end + context)
+        let beforeRange = text.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: edit.location - start))
+        let afterRange = text.rangeOfComposedCharacterSequences(for: NSRange(location: edit.end, length: end - edit.end))
+        self.init(
+            before: (beforeRange.location > 0 ? "…" : "") + text.substring(with: beforeRange),
+            original: issue.edit.original,
+            replacement: issue.edit.replacement,
+            after: text.substring(with: afterRange) + (NSMaxRange(afterRange) < text.length ? "…" : "")
+        )
+    }
+}
+
+/// One card: its issue's fix, kept here because `accept` drops the issue whatever the outcome, and where the
+/// card is between Accept and its outcome. It writes the clipboard only when Copy fix is pressed.
+@Observable final class IssueCardModel: Identifiable {
+    struct Actions {
+        let accept: (UUID) async -> ReplaceOutcome
+        let ignore: (UUID) -> Void
+        let neverFlag: (UUID) -> Void
+    }
+
+    enum Phase: Equatable {
+        case ready
+        case working
+        case finished(reason: String, offersCopy: Bool)
+        case closed
+    }
+
+    let id: UUID
+    let field: FieldID
+    let content: CardContent
+    /// False in a read-only app, where Copy fix takes Accept's place.
+    let writes: Bool
+    private(set) var phase: Phase = .ready
+    private(set) var copied = false
+    @ObservationIgnored var onClose: (() -> Void)?
+
+    @ObservationIgnored private let fix: String
+    @ObservationIgnored private let clipboard: any Clipboard
+    @ObservationIgnored private let actions: Actions
+
+    init(issue: Issue, writes: Bool, clipboard: any Clipboard, actions: Actions) {
+        id = issue.id
+        field = issue.key.field
+        content = CardContent(issue: issue)
+        fix = issue.edit.replacement
+        self.writes = writes
+        self.clipboard = clipboard
+        self.actions = actions
+    }
+
+    var offersAccept: Bool { phase == .ready && writes }
+
+    var offersCopy: Bool {
+        guard !fix.isEmpty else { return false }
+        switch phase {
+        case .ready: return !writes
+        case .finished(_, let offersCopy): return offersCopy
+        case .working, .closed: return false
+        }
+    }
+
+    /// The word Never flag adds, or nil for an insertion, which has none.
+    var neverFlagWord: String? {
+        phase == .ready && !content.original.isEmpty ? content.original : nil
+    }
+
+    func accept() async {
+        guard offersAccept else { return }
+        phase = .working
+        let outcome = await actions.accept(id)
+        switch CardOutcome(outcome) {
+        case .close: close()
+        case .keepOpen(let reason, let offersCopy): phase = .finished(reason: reason, offersCopy: offersCopy)
+        }
+    }
+
+    func copyFix() {
+        guard offersCopy else { return }
+        clipboard.write(fix)
+        copied = true
+    }
+
+    func ignore() {
+        guard phase == .ready else { return }
+        actions.ignore(id)
+        close()
+    }
+
+    func neverFlag() {
+        guard neverFlagWord != nil else { return }
+        actions.neverFlag(id)
+        close()
+    }
+
+    func close() {
+        guard phase != .closed else { return }
+        phase = .closed
+        onClose?()
+    }
+
+    /// A ready card lasts while its issue is visible in its field. Once Accept runs, the pipeline has dropped
+    /// the issue, so a working or finished card stays until it closes.
+    func survives(visible: Set<UUID>, in field: FieldID?) -> Bool {
+        switch phase {
+        case .ready: field == self.field && visible.contains(id)
+        case .working, .finished: true
+        case .closed: false
+        }
+    }
+}

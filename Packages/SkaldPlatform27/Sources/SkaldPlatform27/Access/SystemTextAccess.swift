@@ -8,6 +8,9 @@ import struct SkaldCore.TextRange
 /// `AXQueue`; pasteboard work runs on the main actor.
 public final class SystemTextAccess: TextAccess {
     public let events: AsyncStream<FieldEvent>
+    /// The focused field may have moved on screen: one of its app's windows moved or changed size, or the
+    /// caret moved, which can scroll the field. It holds at most one pending signal, so a burst coalesces.
+    public let geometryChanges: AsyncStream<Void>
 
     private let queue = AXQueue()
     private let isAppEnabled: @Sendable (String) -> Bool
@@ -17,14 +20,16 @@ public final class SystemTextAccess: TextAccess {
 
     public init(isAppEnabled: @escaping @Sendable (String) -> Bool, clock: any Clock<Duration>) {
         let (events, continuation) = AsyncStream.makeStream(of: FieldEvent.self)
+        let (geometryChanges, geometry) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         let waits = FocusWaits(clock: clock)
         let changes = ValueChanges()
         let writer = PasteWriter(clock: PasteClock(clock), changes: changes)
         self.events = events
+        self.geometryChanges = geometryChanges
         self.isAppEnabled = isAppEnabled
         self.waits = waits
         self.writer = writer
-        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled) { event in
+        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled, moved: { geometry.yield() }) { event in
             continuation.yield(event)
             switch event {
             case .focused(let field?):
@@ -33,7 +38,9 @@ public final class SystemTextAccess: TextAccess {
             case .edited(let field):
                 changes.changed(field)
                 Task { @MainActor in await writer.fieldChanged(field) }
-            case .focused(nil), .caretMoved:
+            case .caretMoved:
+                geometry.yield()
+            case .focused(nil):
                 break
             }
         }

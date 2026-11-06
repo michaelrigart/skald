@@ -59,7 +59,27 @@ private func deliver(_ observer: AXObserver, _ element: AXUIElement, _ notificat
     context.observer?.received(notification as String, pid: context.pid)
 }
 
-/// One AXObserver on the frontmost app: focus changes on the app, value and selection changes on its focused field.
+/// What a notification from the observed app means.
+enum ObservedNotification: Equatable {
+    case focus, value, selection
+    /// One of the app's windows moved or changed size, so the field may have moved on screen.
+    case windowGeometry
+
+    init?(_ name: String) {
+        switch name {
+        case kAXFocusedUIElementChangedNotification: self = .focus
+        case kAXValueChangedNotification: self = .value
+        case kAXSelectedTextChangedNotification: self = .selection
+        case kAXWindowMovedNotification, kAXWindowResizedNotification: self = .windowGeometry
+        default: return nil
+        }
+    }
+
+    static let windowNotifications = [kAXWindowMovedNotification, kAXWindowResizedNotification]
+}
+
+/// One AXObserver on the frontmost app: focus changes and window moves and resizes on the app, value and
+/// selection changes on its focused field.
 private final class ObserverSession {
     private static let fieldNotifications = [kAXValueChangedNotification, kAXSelectedTextChangedNotification]
 
@@ -83,6 +103,8 @@ private final class ObserverSession {
         observer = created
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
         registerFocus()
+        let app = AXElement.application(pid: pid)
+        ObservedNotification.windowNotifications.forEach { _ = add($0, to: app) }
     }
 
     func registerFocus() {
@@ -101,7 +123,10 @@ private final class ObserverSession {
 
     func detach() {
         watch(nil)
-        AXObserverRemoveNotification(observer, AXElement.application(pid: pid).element, kAXFocusedUIElementChangedNotification as CFString)
+        let app = AXElement.application(pid: pid).element
+        ([kAXFocusedUIElementChangedNotification] + ObservedNotification.windowNotifications).forEach {
+            AXObserverRemoveNotification(observer, app, $0 as CFString)
+        }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
@@ -116,7 +141,7 @@ private final class ObserverSession {
 }
 
 /// The Accessibility side of the frontmost app's focus: the focus machine decides, this makes the calls.
-/// It turns notifications into `FieldEvent`s without reading any text.
+/// It turns notifications into `FieldEvent`s, and window moves and resizes into `moved`, without reading any text.
 final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is touched only inside AXQueue closures, the token only in init and deinit
     typealias Registry = FieldRegistry<AXElement, any FieldReader>
 
@@ -124,6 +149,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     private let driver: FocusDriver
     private let isAppEnabled: @Sendable (String) -> Bool
     private let send: @Sendable (FieldEvent) -> Void
+    private let moved: @Sendable () -> Void
 
     private var activation: NSObjectProtocol?
     private var registry = Registry(isSame: { $0.isSame(as: $1) })
@@ -134,11 +160,12 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     init(
         queue: AXQueue, clock: any Clock<Duration>, isAppEnabled: @escaping @Sendable (String) -> Bool,
-        emit: @escaping @Sendable (FieldEvent) -> Void
+        moved: @escaping @Sendable () -> Void, emit: @escaping @Sendable (FieldEvent) -> Void
     ) {
         self.queue = queue
         driver = FocusDriver(ownPID: ProcessInfo.processInfo.processIdentifier, clock: clock) { body in await queue.run(body) }
         self.isAppEnabled = isAppEnabled
+        self.moved = moved
         send = emit
         driver.port = self
     }
@@ -163,11 +190,12 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     func received(_ notification: String, pid: pid_t) {
         queue.enqueue { [self] in
-            switch notification {
-            case kAXFocusedUIElementChangedNotification: driver.focusChanged(pid: pid)
-            case kAXValueChangedNotification: driver.fieldChanged(pid: pid, value: true)
-            case kAXSelectedTextChangedNotification: driver.fieldChanged(pid: pid, value: false)
-            default: break
+            switch ObservedNotification(notification) {
+            case .focus: driver.focusChanged(pid: pid)
+            case .value: driver.fieldChanged(pid: pid, value: true)
+            case .selection: driver.fieldChanged(pid: pid, value: false)
+            case .windowGeometry: moved()
+            case nil: break
             }
         }
     }

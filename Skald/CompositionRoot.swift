@@ -23,6 +23,7 @@ final class CompositionRoot {
     private var statusItem: StatusItemController?
     private var onboarding: Onboarding?
     private var settingsWindow: SettingsWindowController?
+    private var overlay: OverlayController?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var pauseEnd: Task<Void, Never>?
     private var frontApp: NSRunningApplication?
@@ -98,6 +99,11 @@ final class CompositionRoot {
         observe(NotificationCenter.default, ProcessInfo.thermalStateDidChangeNotification) { root, _ in
             root.applyRouting()
         }
+        let overlay = OverlayController(
+            pipeline: pipeline, access: textAccess, settings: model, clipboard: SystemClipboard(), clock: ContinuousClock()
+        )
+        overlay.start()
+        self.overlay = overlay
         syncLoginItem(launchAtLogin: model.settings.launchAtLogin, changed: false)
         applyPause()
         applyRouting()
@@ -108,6 +114,8 @@ final class CompositionRoot {
     func stop() {
         for (center, token) in observers { center.removeObserver(token) }
         observers = []
+        overlay?.stop()
+        overlay = nil
         pauseEnd?.cancel()
         commands.finish()
     }
