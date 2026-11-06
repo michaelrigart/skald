@@ -167,7 +167,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     private var session: ObserverSession?
     /// Contexts live as long as the observer, so a callback already running never sees a freed one.
     private var contexts: [pid_t: ObserverContext] = [:]
-    private var enabledPIDs: Set<pid_t> = []
+    private var enablement = AccessibilityEnablement()
     private var unresponsive = UnresponsiveApps()
 
     init(
@@ -277,8 +277,10 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
         session = nil
         guard let pid, let app else { return }
         let mode = CapabilityTable.access(for: app).mode
-        if mode != .native, enabledPIDs.insert(pid).inserted {
-            let results = mode.enable(on: AXElement.application(pid: pid).element)
+        let enableAttribute = { (attribute: String) in
+            AXUIElementSetAttributeValue(AXElement.application(pid: pid).element, attribute as CFString, kCFBooleanTrue)
+        }
+        if let results = enablement.enable(pid: pid, mode: mode, using: enableAttribute) {
             PlatformLog.access.notice("accessibility enabled: \(app, privacy: .public): \(results.map(\.summary).joined(separator: ", "), privacy: .public)")
         }
         session = ObserverSession(pid: pid, app: app, refcon: Unmanaged.passUnretained(context(for: pid)).toOpaque())
