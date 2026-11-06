@@ -318,16 +318,18 @@ Names are left to the builder.
     of that interval, and no change notification arrived in between), so the paste gets an
     undo step of its own in apps that merge edits made close together (Slack).
     Notifications can arrive late, so the comparison, not the absence of a notification, is
-    the proof. It doesn't paste when the clipboard holds content it can't put back
+    the proof; in a field longer than the read limit Skald can't compare the whole field, so
+    it offers Copy instead of pasting. It doesn't paste when the clipboard holds content it can't put back
     faithfully (concealed or promised data), or when the clipboard changed since Skald saved
     it; the suggestion then offers Copy.
   - **The clipboard after a paste.** An abort before ⌘V is posted restores the clipboard at
     once: nothing can paste. Once ⌘V is posted, the clipboard goes back to what it held only
     once the field shows the replacement, which proves the app consumed the paste, and only
     while the clipboard still holds Skald's replacement: if the user or another app copied
-    something meanwhile, that newer content stays. When the field shows anything else after
-    ⌘V, or nothing within 3 s, the accept is reported as unconfirmed and the card says the
-    clipboard now holds the fix. Skald keeps watching that field and puts the old content back if the replacement
+    something meanwhile, that newer content stays. While the field still shows the original
+    paragraph, Skald keeps waiting; when it shows a paragraph that is neither the original
+    nor the expected one, or still the original after 3 s, the accept is reported as
+    unconfirmed and the card says the clipboard now holds the fix. Skald keeps watching that field and puts the old content back if the replacement
     appears; otherwise the old content is not restored, neither after a deadline nor when
     Skald quits, so a paste the app handles late inserts the fix, never the old clipboard
     (which may hold a password).
