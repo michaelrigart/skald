@@ -108,6 +108,14 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     }
 }
 
+@Test func anAppTurnedOffBeforeThePasteIsUnsupportedAndRestoresAStagedClipboard() {
+    #expect(steps(Script(quiet: .turnedOff)) == [.snapshot, .watchQuiet, .finish(.unsupported)])
+    #expect(steps(Script(selection: .refused(.turnedOff))) == [.snapshot, .watchQuiet, .select, .finish(.unsupported)])
+    let taken = steps(Script(recheck: .mismatch(.turnedOff)))
+    #expect(Array(taken.suffix(4)) == [.recheckAndPost, .restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.unsupported)])
+    #expect(!taken.contains(where: isPoll))
+}
+
 @Test func aSelectionThatNeverCoversTheRangeAbortsAfterHalfASecond() {
     let taken = steps(Script(covered: [false]))
     #expect(taken.filter { if case .checkSelection = $0 { true } else { false } }.count == 21)
@@ -813,5 +821,132 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     let next = FakeTarget()
     #expect(await value(of: Task { await paste.write("is", in: FieldID(app: "md.obsidian", token: "3"), target: next) }) == .clipboardBusy)
     #expect(next.calls.isEmpty)
+    #expect(held(pasteboard) == "are")
+}
+
+// MARK: The app's switch during a paste write
+
+/// An app's switch in Settings, flipped by the test.
+private final class FakeSwitch: @unchecked Sendable { // reason: the value is only touched under the lock
+    private let lock = NSLock()
+    private var on = true
+
+    var isOn: Bool {
+        get { lock.withLock { on } }
+        set { lock.withLock { on = newValue } }
+    }
+}
+
+/// A paste write's Accessibility jobs, scripted, as `QueuedPasteTarget` runs them on `AXQueue`.
+private final class FakeJobs: PasteJobs, @unchecked Sendable { // reason: state is only touched under the lock
+    private let lock = NSLock()
+    private var _calls: [String] = []
+    private var _onCovers: @Sendable () -> Void = {}
+    private var _onPost: @Sendable () -> Void = {}
+
+    let changesText = true
+    var calls: [String] { lock.withLock { _calls } }
+
+    /// Runs inside the `covers` job, the last one before staging.
+    var onCovers: @Sendable () -> Void {
+        get { lock.withLock { _onCovers } }
+        set { lock.withLock { _onCovers = newValue } }
+    }
+
+    /// Runs inside the job that posts ⌘V, right after the post.
+    var onPost: @Sendable () -> Void {
+        get { lock.withLock { _onPost } }
+        set { lock.withLock { _onPost = newValue } }
+    }
+
+    private func record(_ call: String) {
+        lock.withLock { _calls.append(call) }
+    }
+
+    func state() -> QuietPeriod.Read {
+        record("state")
+        return fieldState("They is ready.")
+    }
+
+    func select() -> (start: PastePlan.SelectionStart, user: TextRange?) {
+        record("select")
+        return (.requested, TextRange(location: 30, length: 0))
+    }
+
+    func covers() -> Bool {
+        record("covers")
+        onCovers()
+        return true
+    }
+
+    func recheckAndPost(keyCode: CGKeyCode) -> PastePlan.RecheckPost {
+        record("post")
+        onPost()
+        return .posted(true)
+    }
+
+    func read() -> PastePlan.Read {
+        record("read")
+        return .expected
+    }
+
+    func restoreCaret(_ end: WriteEnd, user: TextRange?) {
+        record("caret")
+    }
+}
+
+@MainActor
+private func switchedWrite(_ clock: TestClock, _ pasteboard: NSPasteboard, _ jobs: FakeJobs, _ appSwitch: FakeSwitch) -> Task<ReplaceOutcome, Never> {
+    let target = QueuedPasteTarget(queue: AXQueue(), jobs: jobs) { appSwitch.isOn }
+    let paste = writer(clock, pasteboard)
+    return Task { await paste.write("are", in: slack, target: target) }
+}
+
+@MainActor @Test func anAppTurnedOffDuringTheQuietWatchIsNotReadAgainAndNothingIsPasted() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let jobs = FakeJobs()
+    let appSwitch = FakeSwitch()
+    let write = switchedWrite(clock, pasteboard, jobs, appSwitch)
+    try #require(await sleeps(clock, 1))
+    appSwitch.isOn = false
+    clock.advance(by: .milliseconds(1500))
+    #expect(await value(of: write) == .unsupported)
+    #expect(jobs.calls == ["state"])
+    #expect(held(pasteboard) == "old content")
+}
+
+@MainActor @Test func anAppTurnedOffAfterTheStageAbortsBeforeThePasteAndRestoresTheClipboard() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let jobs = FakeJobs()
+    let appSwitch = FakeSwitch()
+    jobs.onCovers = { appSwitch.isOn = false }
+    let write = switchedWrite(clock, pasteboard, jobs, appSwitch)
+    try #require(await sleeps(clock, 1))
+    clock.advance(by: .milliseconds(1500))
+    #expect(await value(of: write) == .unsupported)
+    #expect(jobs.calls == ["state", "state", "select", "covers"])
+    #expect(held(pasteboard) == "old content")
+}
+
+@MainActor @Test func anAppTurnedOffAfterThePasteIsNotReadAndKeepsTheFixOnTheClipboard() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let jobs = FakeJobs()
+    let appSwitch = FakeSwitch()
+    jobs.onPost = { appSwitch.isOn = false }
+    let write = switchedWrite(clock, pasteboard, jobs, appSwitch)
+    try #require(await sleeps(clock, 1))
+    clock.advance(by: .milliseconds(1500))
+    for call in 2 ... 121 {
+        guard await sleeps(clock, call) else { break }
+        clock.advance(by: .milliseconds(25))
+    }
+    #expect(await value(of: write) == .unconfirmed)
+    #expect(jobs.calls == ["state", "state", "select", "covers", "post"])
     #expect(held(pasteboard) == "are")
 }

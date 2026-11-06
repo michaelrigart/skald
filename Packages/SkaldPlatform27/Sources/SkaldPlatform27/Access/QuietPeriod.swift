@@ -19,11 +19,13 @@ enum QuietPeriod {
         /// Longer than 20,000 units: the field can't be compared whole.
         case tooLong
         case unreadable
+        /// The app's switch was off: nothing was read.
+        case turnedOff
     }
 
     enum Outcome: Sendable, Equatable {
         case quiet(restarts: Int)
-        case tooLong, unreadable, cancelled
+        case tooLong, unreadable, cancelled, turnedOff
         /// No quiet interval within 10 s of changes.
         case keptChanging
     }
@@ -142,7 +144,11 @@ struct QuietWatch: Sendable {
     }
 
     private static func outcome(_ read: QuietPeriod.Read) -> QuietPeriod.Outcome {
-        read == .tooLong ? .tooLong : .unreadable
+        switch read {
+        case .tooLong: .tooLong
+        case .turnedOff: .turnedOff
+        case .unreadable, .state: .unreadable
+        }
     }
 
     /// Whichever comes first: the end of the interval or a value change for the field.

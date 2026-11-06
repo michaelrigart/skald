@@ -13,6 +13,16 @@ struct PastePlan {
         case otherField = "the focused element changed"
         case paragraphChanged = "the paragraph changed"
         case selectionMoved = "the selection left the range"
+        case turnedOff = "the app was turned off"
+
+        /// What the write reports when it stops for this reason before ⌘V.
+        var outcome: ReplaceOutcome {
+            switch self {
+            case .paragraphChanged: .refusedChanged
+            case .turnedOff: .unsupported
+            case .notFrontmost, .otherField, .selectionMoved: .failed
+            }
+        }
     }
 
     enum SelectionStart: Sendable, Equatable {
@@ -114,6 +124,8 @@ struct PastePlan {
             return abort(.failed, "the field could not be read")
         case .quiet(.keptChanging):
             return abort(.failed, "the field kept changing")
+        case .quiet(.turnedOff):
+            return abort(Mismatch.turnedOff.outcome, Mismatch.turnedOff.rawValue)
         case .quiet(.cancelled), .cancelled:
             return abort(.failed, "cancelled")
         case .selection(.requested):
@@ -125,7 +137,7 @@ struct PastePlan {
         case .selection(.unreachable):
             return abort(.unsupported, "the range is beyond the text markers' reach")
         case .selection(.refused(let mismatch)):
-            return abort(mismatch == .paragraphChanged ? .refusedChanged : .failed, mismatch.rawValue)
+            return abort(mismatch.outcome, mismatch.rawValue)
         case .covered(true, _):
             stageRequested = true
             return [.stage]
@@ -146,7 +158,7 @@ struct PastePlan {
             guard recheckRequested, !postRequested else { return [] }
             switch result {
             case .mismatch(let mismatch):
-                return abort(.failed, mismatch.rawValue)
+                return abort(mismatch.outcome, mismatch.rawValue)
             case .posted(false):
                 return abort(.failed, "the key events could not be created")
             case .posted(true):
@@ -196,6 +208,55 @@ protocol PasteTarget: Sendable {
     func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost
     func read() async -> PastePlan.Read
     func restoreCaret(_ end: WriteEnd, user: TextRange?) async
+}
+
+/// A paste write's Accessibility calls on its field, each run as one `AXQueue` job by `QueuedPasteTarget`.
+protocol PasteJobs: Sendable {
+    var changesText: Bool { get }
+    func state() -> QuietPeriod.Read
+    func select() -> (start: PastePlan.SelectionStart, user: TextRange?)
+    func covers() -> Bool
+    func recheckAndPost(keyCode: CGKeyCode) -> PastePlan.RecheckPost
+    func read() -> PastePlan.Read
+    func restoreCaret(_ end: WriteEnd, user: TextRange?)
+}
+
+/// Runs each of a paste write's jobs on `AXQueue` while the app's switch is on, asked again inside every job: an
+/// app turned off mid-write is neither read nor written again. Before ⌘V the write aborts and the clipboard goes
+/// back; after it the fix stays on the clipboard, since the paste may still land.
+struct QueuedPasteTarget<Jobs: PasteJobs>: PasteTarget {
+    let queue: AXQueue
+    let jobs: Jobs
+    let isOn: @Sendable () -> Bool
+
+    var changesText: Bool { jobs.changesText }
+
+    func state() async -> QuietPeriod.Read {
+        await queue.run { [jobs, isOn] in isOn() ? jobs.state() : .turnedOff }
+    }
+
+    func select() async -> (start: PastePlan.SelectionStart, user: TextRange?) {
+        await queue.run { [jobs, isOn] in isOn() ? jobs.select() : (.refused(.turnedOff), nil) }
+    }
+
+    func covers() async -> Bool {
+        await queue.run { [jobs, isOn] in isOn() && jobs.covers() }
+    }
+
+    /// One `AXQueue` job, so no queued callback or read runs between the last check and ⌘V.
+    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
+        await queue.run { [jobs, isOn] in isOn() ? jobs.recheckAndPost(keyCode: keyCode) : .mismatch(.turnedOff) }
+    }
+
+    func read() async -> PastePlan.Read {
+        await queue.run { [jobs, isOn] in isOn() ? jobs.read() : .unreadable }
+    }
+
+    func restoreCaret(_ end: WriteEnd, user: TextRange?) async {
+        await queue.run { [jobs, isOn] in
+            if isOn() { jobs.restoreCaret(end, user: user) }
+        }
+    }
 }
 
 /// An unconfirmed paste's clipboard: it goes back only when its field reads the expected paragraph, and only
