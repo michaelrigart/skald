@@ -52,11 +52,16 @@ final class OverlayController {
                 for await snapshot in issues { self?.received(snapshot) }
             },
             Task { [weak self] in
-                for await _ in geometry { self?.moved() }
+                for await change in geometry {
+                    switch change {
+                    case .window: self?.moved(.window)
+                    case .caret: self?.moved(.caret)
+                    }
+                }
             },
         ]
         monitor(.mouseMoved) { $0.pointerMoved() }
-        monitor(.scrollWheel) { $0.moved() }
+        monitor(.scrollWheel) { $0.moved(.scroll) }
         monitor([.leftMouseDown, .rightMouseDown, .otherMouseDown]) { $0.clickedElsewhere() }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -96,20 +101,22 @@ final class OverlayController {
         requestRedraw()
     }
 
-    /// A window moved, the caret moved or something scrolled: the words are elsewhere now, so a card that is
-    /// only offering its choices closes, and the marks are read again.
-    private func moved() {
-        cards.retain { $0.phase != .ready }
-        resetHover()
+    /// The words may be elsewhere now: the marks are read again, and a window move or a scroll closes a card
+    /// that is only offering its choices.
+    private func moved(_ change: LayoutChange) {
+        if change != .caret {
+            cards.retain { $0.survives(change) }
+            resetHover()
+        }
         requestRedraw()
     }
 
     private func pointerMoved() {
         let point = NSEvent.mouseLocation
-        if let cardAnchor, !cards.isBusy, !cardAnchor.union(cards.frame).contains(point) {
+        if let cardAnchor, !cards.isBusy, !HoverTracker.keepsCard(at: point, anchor: cardAnchor, card: cards.frame) {
             cards.close()
         }
-        switch hover.pointer(at: point, over: targets) {
+        switch hover.pointer(at: point, over: targets, covered: cards.isOpen ? cards.frame : nil) {
         case .unchanged: break
         case .entered(let id): wait(for: id)
         case .left: dwell?.cancel()
@@ -207,12 +214,12 @@ final class OverlayController {
 
         if capabilities.contains(.rangeBounds) {
             let frame = await access.frame(of: field)
+            let issues = snapshot.issues.sorted { $0.source == .model && $1.source != .model }
+            let allBounds = await access.bounds(issues.map(OverlayGeometry.underlineRange), in: field)
             var marks: [UnderlineView.Mark] = []
             var targets: [HoverTracker.Target] = []
-            for issue in snapshot.issues.sorted(by: { $0.source == .model && $1.source != .model }) {
-                guard let bounds = await access.bounds(OverlayGeometry.underlineRange(for: issue), in: field),
-                      OverlayGeometry.isVisible(bounds, in: frame)
-                else { continue }
+            for (issue, bounds) in zip(issues, allBounds) {
+                guard let bounds, OverlayGeometry.isVisible(bounds, in: frame) else { continue }
                 marks.append(.init(rect: OverlayGeometry.underline(for: bounds, primaryHeight: primaryHeight), source: issue.source))
                 targets.append(.init(id: issue.id, rect: OverlayGeometry.appKit(bounds, primaryHeight: primaryHeight)))
             }

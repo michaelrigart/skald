@@ -15,7 +15,7 @@ final class OverlayPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
+        collectionBehavior = [.ignoresCycle, .fullScreenAuxiliary]
     }
 
     /// Above the underline windows, which sit at `.floating`.

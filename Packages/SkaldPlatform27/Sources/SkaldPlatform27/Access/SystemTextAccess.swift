@@ -3,14 +3,19 @@ import Foundation
 import SkaldCore
 import struct SkaldCore.TextRange
 
+/// Why the focused field may have moved on screen.
+public enum GeometryChange: Sendable, Equatable {
+    case window, caret
+}
+
 /// Text access on macOS 27 through Accessibility: fields read through character ranges or text markers, written
 /// through Accessibility or by paste where finding 7 measured that as clean. Every Accessibility call runs on
 /// `AXQueue`; pasteboard work runs on the main actor.
 public final class SystemTextAccess: TextAccess {
     public let events: AsyncStream<FieldEvent>
     /// The focused field may have moved on screen: one of its app's windows moved or changed size, or the
-    /// caret moved, which can scroll the field. It holds at most one pending signal, so a burst coalesces.
-    public let geometryChanges: AsyncStream<Void>
+    /// caret moved, which can scroll the field.
+    public let geometryChanges: AsyncStream<GeometryChange>
 
     private let queue = AXQueue()
     private let isAppEnabled: @Sendable (String) -> Bool
@@ -20,7 +25,7 @@ public final class SystemTextAccess: TextAccess {
 
     public init(isAppEnabled: @escaping @Sendable (String) -> Bool, clock: any Clock<Duration>) {
         let (events, continuation) = AsyncStream.makeStream(of: FieldEvent.self)
-        let (geometryChanges, geometry) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        let (geometryChanges, geometry) = AsyncStream.makeStream(of: GeometryChange.self)
         let waits = FocusWaits(clock: clock)
         let changes = ValueChanges()
         let writer = PasteWriter(clock: PasteClock(clock), changes: changes)
@@ -29,8 +34,9 @@ public final class SystemTextAccess: TextAccess {
         self.isAppEnabled = isAppEnabled
         self.waits = waits
         self.writer = writer
-        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled, moved: { geometry.yield() }) { event in
+        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled, moved: { geometry.yield(.window) }) { event in
             continuation.yield(event)
+            if let change = TextAccessRules.geometryChange(for: event) { geometry.yield(change) }
             switch event {
             case .focused(let field?):
                 waits.focused(field)
@@ -38,9 +44,7 @@ public final class SystemTextAccess: TextAccess {
             case .edited(let field):
                 changes.changed(field)
                 Task { @MainActor in await writer.fieldChanged(field) }
-            case .caretMoved:
-                geometry.yield()
-            case .focused(nil):
+            case .focused(nil), .caretMoved:
                 break
             }
         }
@@ -126,6 +130,15 @@ public final class SystemTextAccess: TextAccess {
     /// Screen bounds of a character range, top-left origin, for the underlines.
     public func bounds(_ r: TextRange, in field: FieldID) async -> CGRect? {
         await queue.run { [observer] in observer.entry(field)?.source.bounds(for: r) }
+    }
+
+    /// Screen bounds of each range in one `AXQueue` job, nil where there are none; after the app first fails to
+    /// answer in time, the rest are nil without being asked for.
+    public func bounds(_ ranges: [TextRange], in field: FieldID) async -> [CGRect?] {
+        await queue.run { [observer] in
+            guard let reader = observer.entry(field)?.source else { return ranges.map { _ in nil } }
+            return TextAccessRules.bounds(of: ranges) { reader.boundsRead(for: $0) }
+        }
     }
 
     /// The field's frame on screen, top-left origin, for the badge.

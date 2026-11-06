@@ -8,17 +8,25 @@ enum CardOutcome: Equatable {
     /// The card stays with one line of reason, and Copy fix when the clipboard doesn't already hold it.
     case keepOpen(reason: String, offersCopy: Bool)
 
-    init(_ outcome: ReplaceOutcome) {
+    /// `canCopy` is false for a fix with no text to copy (a deletion), so neither the button nor the reason offers one.
+    init(_ outcome: ReplaceOutcome, canCopy: Bool) {
         switch outcome {
         case .replaced: self = .close
-        case .unsupported: self = .keepOpen(reason: "Skald can't write in this field. Copy the fix instead.", offersCopy: true)
-        case .failed: self = .keepOpen(reason: "The change didn't go through.", offersCopy: true)
-        case .refusedChanged: self = .keepOpen(reason: "The text changed since Skald checked it.", offersCopy: true)
-        case .refusedOtherField: self = .keepOpen(reason: "The field isn't focused any more.", offersCopy: true)
+        case .unsupported:
+            self = .keepOpen(reason: "Skald can't write in this field." + (canCopy ? " Copy the fix instead." : ""), offersCopy: canCopy)
+        case .failed: self = .keepOpen(reason: "The change didn't go through.", offersCopy: canCopy)
+        case .refusedChanged: self = .keepOpen(reason: "The text changed since Skald checked it.", offersCopy: canCopy)
+        case .refusedOtherField: self = .keepOpen(reason: "The field isn't focused any more.", offersCopy: canCopy)
         case .unconfirmed:
             self = .keepOpen(reason: "The app didn't show the change. The clipboard now holds the fix.", offersCopy: false)
         }
     }
+}
+
+/// Why the words may have moved on screen. A window move or a scroll moves them from under a ready card; a
+/// caret move only redraws, since typing and clicking end a ready card by themselves.
+enum LayoutChange: Equatable {
+    case window, caret, scroll
 }
 
 /// The flagged words and their surroundings, cut by UTF-16 units and widened to whole characters.
@@ -93,9 +101,8 @@ struct CardContent: Equatable {
     var offersAccept: Bool { phase == .ready && writes }
 
     var offersCopy: Bool {
-        guard !fix.isEmpty else { return false }
         switch phase {
-        case .ready: return !writes
+        case .ready: return !writes && !fix.isEmpty
         case .finished(_, let offersCopy): return offersCopy
         case .working, .closed: return false
         }
@@ -110,7 +117,7 @@ struct CardContent: Equatable {
         guard offersAccept else { return }
         phase = .working
         let outcome = await actions.accept(id)
-        switch CardOutcome(outcome) {
+        switch CardOutcome(outcome, canCopy: !fix.isEmpty) {
         case .close: close()
         case .keepOpen(let reason, let offersCopy): phase = .finished(reason: reason, offersCopy: offersCopy)
         }
@@ -141,12 +148,19 @@ struct CardContent: Equatable {
     }
 
     /// A ready card lasts while its issue is visible in its field. Once Accept runs, the pipeline has dropped
-    /// the issue, so a working or finished card stays until it closes.
+    /// the issue: a working card stays until its outcome, and a finished one while its field keeps focus, so
+    /// it doesn't follow the user to another app.
     func survives(visible: Set<UUID>, in field: FieldID?) -> Bool {
         switch phase {
         case .ready: field == self.field && visible.contains(id)
-        case .working, .finished: true
+        case .working: true
+        case .finished: field == self.field
         case .closed: false
         }
+    }
+
+    /// A ready card is anchored to words that a window move or a scroll has moved; any other card stays.
+    func survives(_ change: LayoutChange) -> Bool {
+        phase != .ready || change == .caret
     }
 }

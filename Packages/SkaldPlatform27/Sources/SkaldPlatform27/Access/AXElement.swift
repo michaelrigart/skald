@@ -81,7 +81,18 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
     }
 
     public func bounds(for range: CFRange) -> CGRect? {
-        parameterized(kAXBoundsForRangeParameterizedAttribute, range).flatMap { Self.rect($0) }
+        boundsRead(for: range).rect
+    }
+
+    /// The bounds with the call's error, so a caller can tell an app that didn't answer from a range without bounds.
+    func boundsRead(for range: CFRange) -> (rect: CGRect?, error: AXError) {
+        var range = range
+        guard let parameter = AXValueCreate(.cfRange, &range) else { return (nil, .illegalArgument) }
+        var result: CFTypeRef?
+        let error = AXUIElementCopyParameterizedAttributeValue(
+            element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &result
+        )
+        return (error == .success ? result.flatMap { Self.rect($0) } : nil, error)
     }
 
     /// A rect worth drawing at: finite, with a positive width and height.

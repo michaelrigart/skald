@@ -293,6 +293,26 @@ enum TextAccessRules {
         return nil
     }
 
+    /// The bounds of each range, read in order. After the first read the app doesn't answer in time, the rest
+    /// are not asked for, so a hung app holds `AXQueue` for one timeout, not one per range.
+    static func bounds(of ranges: [TextRange], read: (TextRange) -> BoundsRead) -> [CGRect?] {
+        var result: [CGRect?] = []
+        for range in ranges {
+            switch read(range) {
+            case .found(let rect): result.append(rect)
+            case .missing: result.append(nil)
+            case .timedOut: return result + Array(repeating: nil, count: ranges.count - result.count)
+            }
+        }
+        return result
+    }
+
+    /// The geometry change a field event means: a caret move can scroll the field.
+    static func geometryChange(for event: FieldEvent) -> GeometryChange? {
+        if case .caretMoved = event { return .caret }
+        return nil
+    }
+
     // MARK: Helpers
 
     /// The units `Paragraphs` splits at.

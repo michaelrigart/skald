@@ -109,9 +109,63 @@ import Testing
 
         let finished = card(answer: .failed)
         await finished.accept()
-        #expect(finished.survives(visible: [], in: nil))
+        #expect(finished.survives(visible: [], in: flagged.key.field))
         finished.copyFix()
         #expect(spy.writes == ["are"])
+    }
+
+    /// Catches a finished card following the user to another app or Space.
+    @Test func aFinishedCardClosesWhenItsFieldLosesFocus() async {
+        let finished = card(answer: .unconfirmed)
+        await finished.accept()
+        #expect(!finished.survives(visible: [], in: nil))
+        #expect(!finished.survives(visible: [], in: FieldID(app: "com.example.other", token: "2")))
+    }
+
+    @Test func aWorkingCardStaysUntilItsOutcomeWhereverFocusGoes() async {
+        let (answers, answer) = AsyncStream.makeStream(of: ReplaceOutcome.self)
+        let card = IssueCardModel(
+            issue: flagged, writes: true, clipboard: spy,
+            actions: .init(
+                accept: { _ in
+                    for await answer in answers { return answer }
+                    return .failed
+                },
+                ignore: { _ in }, neverFlag: { _ in }
+            )
+        )
+        let accepting = Task { await card.accept() }
+        while card.phase != .working { await Task.yield() }
+        #expect(card.survives(visible: [], in: nil))
+        answer.yield(.replaced)
+        await accepting.value
+    }
+
+    /// A deletion has no text to copy, so the reason mustn't tell the user to copy it.
+    @Test func aRefusedDeletionOffersNoCopyAndItsReasonSaysNoneIsOffered() async {
+        let deletion = IssueCardModel(
+            issue: issue(in: "It is is ready", revised: "It is ready"), writes: true, clipboard: spy,
+            actions: .init(accept: { _ in .unsupported }, ignore: { _ in }, neverFlag: { _ in })
+        )
+        await deletion.accept()
+        #expect(deletion.phase == .finished(reason: "Skald can't write in this field.", offersCopy: false))
+        #expect(!deletion.offersCopy)
+        deletion.copyFix()
+        #expect(spy.writes.isEmpty)
+    }
+
+    /// Catches a caret move (typing, arrow keys, Skald's own selection) closing a card the user is reading.
+    @Test func aCaretMoveKeepsAReadyCardAndAWindowMoveOrScrollClosesIt() {
+        let ready = card()
+        #expect(ready.survives(.caret))
+        #expect(!ready.survives(.window))
+        #expect(!ready.survives(.scroll))
+    }
+
+    @Test func aFinishedCardOutlivesWindowMovesAndScrolls() async {
+        let finished = card(answer: .failed)
+        await finished.accept()
+        #expect(finished.survives(.window) && finished.survives(.scroll) && finished.survives(.caret))
     }
 
     @Test func theCardShowsTheWordInItsContext() {

@@ -74,8 +74,20 @@ enum ObservedNotification: Equatable {
         default: return nil
         }
     }
+}
 
-    static let windowNotifications = [kAXWindowMovedNotification, kAXWindowResizedNotification]
+/// The notifications a session registers on the application element, and which of them it has. A failed
+/// registration is tried again whenever the session is asked to make sure it observes the app.
+struct ApplicationRegistrations {
+    static let all = [kAXFocusedUIElementChangedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification]
+
+    private(set) var registered: Set<String> = []
+
+    var missing: [String] { Self.all.filter { !registered.contains($0) } }
+
+    mutating func register(_ add: (String) -> Bool) {
+        for name in missing where add(name) { registered.insert(name) }
+    }
 }
 
 /// One AXObserver on the frontmost app: focus changes and window moves and resizes on the app, value and
@@ -88,7 +100,7 @@ private final class ObserverSession {
     private let observer: AXObserver
     private let refcon: UnsafeMutableRawPointer
     private var field: AXElement?
-    private(set) var focusRegistered = false
+    private var registrations = ApplicationRegistrations()
 
     init?(pid: pid_t, app: String, refcon: UnsafeMutableRawPointer) {
         var created: AXObserver?
@@ -102,14 +114,13 @@ private final class ObserverSession {
         self.refcon = refcon
         observer = created
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
-        registerFocus()
-        let app = AXElement.application(pid: pid)
-        ObservedNotification.windowNotifications.forEach { _ = add($0, to: app) }
+        registerOnApplication()
     }
 
-    func registerFocus() {
-        guard !focusRegistered else { return }
-        focusRegistered = add(kAXFocusedUIElementChangedNotification, to: AXElement.application(pid: pid))
+    /// Registers what is still missing: focus changes, and moves and resizes of the app's windows.
+    func registerOnApplication() {
+        let app = AXElement.application(pid: pid)
+        registrations.register { add($0, to: app) }
     }
 
     func watch(_ element: AXElement?) {
@@ -124,9 +135,7 @@ private final class ObserverSession {
     func detach() {
         watch(nil)
         let app = AXElement.application(pid: pid).element
-        ([kAXFocusedUIElementChangedNotification] + ObservedNotification.windowNotifications).forEach {
-            AXObserverRemoveNotification(observer, app, $0 as CFString)
-        }
+        ApplicationRegistrations.all.forEach { AXObserverRemoveNotification(observer, app, $0 as CFString) }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
@@ -253,7 +262,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     func ensureObserved(pid: pid_t, app: String) {
         guard let session, session.pid == pid else { return observe(pid: pid, app: app) }
-        session.registerFocus()
+        session.registerOnApplication()
     }
 
     func queryFocus(pid: pid_t, app: String) -> FocusMachine.QueryResult {

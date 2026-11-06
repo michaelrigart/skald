@@ -9,6 +9,8 @@ protocol FieldReader: Sendable {
     /// The exact text of `range`, or nil when it can't be read.
     func string(for range: TextRange) -> String?
     func bounds(for range: TextRange) -> CGRect?
+    /// Like `bounds`, but tells an app that didn't answer in time from a range without bounds.
+    func boundsRead(for range: TextRange) -> BoundsRead
     /// Asks the app to select `range`; true when it accepted the call.
     func select(_ range: TextRange) -> Bool
     /// Like `select`, but tells a range the reader can't reach from one the app rejected.
@@ -23,7 +25,15 @@ enum SelectAttempt: Sendable, Equatable {
     case unreachable
 }
 
+enum BoundsRead: Sendable, Equatable {
+    case found(CGRect), missing, timedOut
+}
+
 extension FieldReader {
+    func boundsRead(for range: TextRange) -> BoundsRead {
+        bounds(for: range).map { .found($0) } ?? .missing
+    }
+
     func attemptSelect(_ range: TextRange) -> SelectAttempt {
         select(range) ? .accepted : .rejected
     }
@@ -76,6 +86,12 @@ struct RangeReader: FieldReader {
 
     func bounds(for range: TextRange) -> CGRect? {
         element.bounds(for: CFRange(range)).flatMap { AXElement.usable($0) }
+    }
+
+    func boundsRead(for range: TextRange) -> BoundsRead {
+        let (rect, error) = element.boundsRead(for: CFRange(range))
+        if error == .cannotComplete { return .timedOut }
+        return rect.flatMap { AXElement.usable($0) }.map { .found($0) } ?? .missing
     }
 
     func select(_ range: TextRange) -> Bool {
