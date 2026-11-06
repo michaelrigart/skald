@@ -454,6 +454,9 @@ of thumb and a row disagree, the row wins.
 | spelling flag on "Sidekiq-jobs" | "de Sidekiq-jobs lopen weer" | drop |
 | spelling flag on "mergé" | "J'ai mergé le correctif" | drop |
 | spelling flag on "Talos", "Pieter" | names | drop |
+| "colour" → "color", "behaviour" → "behavior" | correct British spelling | drop |
+| "color" → "colour" | correct American spelling | drop |
+| spelling flag on "behavour" | a misspelling | keep, proposing "behaviour" (British first) |
 | any edit touching a never-touch word, a number, a URL or code | — | drop |
 
 **Whole results.** A result whose language differs from the input's, or that changes more than a
