@@ -87,7 +87,11 @@ struct CardContent: Equatable {
     let writes: Bool
     private(set) var phase: Phase = .ready
     private(set) var copied = false
+    /// The write's outcome, once Accept has one.
+    private(set) var outcome: ReplaceOutcome?
     @ObservationIgnored var onClose: (() -> Void)?
+    /// Called once Accept's outcome left the card open with its reason.
+    @ObservationIgnored var onFinish: (() -> Void)?
 
     @ObservationIgnored private let fix: String
     @ObservationIgnored private let clipboard: any Clipboard
@@ -122,9 +126,12 @@ struct CardContent: Equatable {
         guard offersAccept else { return }
         phase = .working
         let outcome = await actions.accept(id)
+        self.outcome = outcome
         switch CardOutcome(outcome, canCopy: !fix.isEmpty) {
         case .close: close()
-        case .keepOpen(let reason, let offersCopy): phase = .finished(reason: reason, offersCopy: offersCopy)
+        case .keepOpen(let reason, let offersCopy):
+            phase = .finished(reason: reason, offersCopy: offersCopy)
+            onFinish?()
         }
     }
 
@@ -167,5 +174,56 @@ struct CardContent: Equatable {
     /// A ready card is anchored to words that a window move or a scroll has moved; any other card stays.
     func survives(_ change: LayoutChange) -> Bool {
         phase != .ready || change == .caret
+    }
+}
+
+/// A field's issues as a parked card compares them: where each is and what it changes, not its id, which a
+/// re-check renews.
+struct IssueMark: Hashable {
+    let key: ParagraphKey
+    let edit: Edit
+
+    static func marks(of issues: [Issue], except id: UUID? = nil) -> Set<IssueMark> {
+        Set(issues.filter { $0.id != id }.map { IssueMark(key: $0.key, edit: $0.edit) })
+    }
+}
+
+/// Ruling R121: a card whose write finishes after focus moved to another field doesn't stay over the other app.
+/// An unconfirmed one is hidden and shown again when its field is focused again, so Skald still says the clipboard
+/// holds the fix; it is dropped when another card opens or when its field's issues changed. Any other outcome closes.
+struct CardParking {
+    enum AfterFinish: Equatable {
+        case stays, hides, closes
+    }
+
+    struct Parked {
+        let card: IssueCardModel
+        let anchor: CGRect
+        let screen: CGRect
+        /// The field's other issues when Accept ran.
+        let issues: Set<IssueMark>
+    }
+
+    private(set) var parked: Parked?
+
+    /// Where `card` goes now that its write finished, `focused` being the field focused now.
+    mutating func finished(
+        _ card: IssueCardModel, focused: FieldID?, anchor: CGRect, screen: CGRect, issues: Set<IssueMark>
+    ) -> AfterFinish {
+        guard case .finished = card.phase, focused != card.field else { return .stays }
+        guard card.outcome == .unconfirmed else { return .closes }
+        parked = Parked(card: card, anchor: anchor, screen: screen, issues: issues)
+        return .hides
+    }
+
+    /// The parked card to show again, once, when a snapshot for its field shows the issues it was parked with.
+    mutating func received(_ snapshot: IssueSnapshot) -> Parked? {
+        guard let parked, snapshot.field == parked.card.field else { return nil }
+        self.parked = nil
+        return IssueMark.marks(of: snapshot.issues) == parked.issues ? parked : nil
+    }
+
+    mutating func otherCardOpened() {
+        parked = nil
     }
 }

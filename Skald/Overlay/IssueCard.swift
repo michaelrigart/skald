@@ -48,8 +48,8 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
 final class CardPanel {
     private let stack = CardStack()
     private let panel = OverlayPanel(size: CGSize(width: CardPanel.width, height: 100))
-    private var anchor: CGRect = .zero
-    private var screen: CGRect = .zero
+    private(set) var anchor: CGRect = .zero
+    private(set) var screen: CGRect = .zero
     static let width: CGFloat = 320
 
     var onEmpty: (() -> Void)?

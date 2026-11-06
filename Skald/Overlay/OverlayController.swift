@@ -22,6 +22,9 @@ final class OverlayController {
     private var windows: [UnderlineWindow] = []
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
+    private var parking = CardParking()
+    /// The field's other issues when each card's Accept ran, for `parking`.
+    private var issuesAtAccept: [UUID: Set<IssueMark>] = [:]
     /// The word a hover card belongs to, or nil while the badge's list or nothing is open.
     private var cardAnchor: CGRect?
     private var hover = HoverTracker()
@@ -83,6 +86,7 @@ final class OverlayController {
         dwell?.cancel()
         redraw?.cancel()
         hideMarks()
+        parking.otherCardOpened()
         cards.close()
         windows.forEach { $0.close() }
         windows = []
@@ -97,6 +101,10 @@ final class OverlayController {
         snapshot = new
         let visible = Set(new.issues.map(\.id))
         cards.retain { $0.survives(visible: visible, in: new.field) }
+        if let parked = parking.received(new), !cards.isOpen {
+            cards.show([parked.card], anchor: parked.anchor, screen: parked.screen)
+            cardAnchor = nil
+        }
         if fieldChanged || new.issues.isEmpty { hideMarks() }
         requestRedraw()
     }
@@ -156,6 +164,7 @@ final class OverlayController {
     }
 
     private func open(_ models: [IssueCardModel], anchor: CGRect, hoverAnchor: CGRect?) {
+        parking.otherCardOpened()
         let screen = NSScreen.screens.first { $0.frame.intersects(anchor) } ?? NSScreen.main
         cards.show(models, anchor: anchor, screen: screen?.visibleFrame ?? anchor)
         cardAnchor = hoverAnchor
@@ -163,14 +172,38 @@ final class OverlayController {
 
     private func card(_ issue: Issue) -> IssueCardModel {
         let writes = capabilities.map { $0.field == issue.key.field && $0.value.contains(.cleanWrite) } ?? false
-        return IssueCardModel(
+        let model = IssueCardModel(
             issue: issue, writes: writes, clipboard: clipboard,
             actions: .init(
-                accept: { [pipeline] id in await pipeline.accept(id) },
+                accept: { [weak self, pipeline] id in
+                    self?.accepting(id)
+                    return await pipeline.accept(id)
+                },
                 ignore: { [pipeline] id in Task { await pipeline.ignore(id) } },
                 neverFlag: { [weak self] id in self?.neverFlag(id) }
             )
         )
+        model.onFinish = { [weak self, weak model] in
+            guard let self, let model else { return }
+            self.finished(model)
+        }
+        return model
+    }
+
+    private func accepting(_ id: UUID) {
+        let open = Set(cards.cards.map(\.id))
+        issuesAtAccept = issuesAtAccept.filter { open.contains($0.key) }
+        issuesAtAccept[id] = IssueMark.marks(of: snapshot.issues, except: id)
+    }
+
+    /// Ruling R121: a write that finished after focus moved hides its card, and parks it when unconfirmed.
+    private func finished(_ card: IssueCardModel) {
+        let issues = issuesAtAccept.removeValue(forKey: card.id) ?? []
+        switch parking.finished(card, focused: snapshot.field, anchor: cards.anchor, screen: cards.screen, issues: issues) {
+        case .stays: break
+        case .hides: cards.retain { $0 !== card }
+        case .closes: card.close()
+        }
     }
 
     /// The pipeline drops every issue on the word; the settings model saves it and hands the new list on.
