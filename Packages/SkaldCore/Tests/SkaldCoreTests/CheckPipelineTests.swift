@@ -700,6 +700,28 @@ struct CheckPipelineTests {
         #expect(await rig.modelIssues().map(\.word) == ["teh"])
     }
 
+    @Test func aDiscardedAnswerForAVanishedParagraphIsNotRememberedAsChecked() async {
+        let engine = FakeEngine(gated: true) { _, _ in .success("Something else entirely with none of the original words left") }
+        let rig = Rig(makeSettings(), engine: engine)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        await rig.focus(flew)
+        rig.pass()
+        await rig.engine.waitForRequests(1)
+
+        await rig.access.set("", caret: 0, in: fieldA)
+        await rig.pipeline.receive(.caretMoved(fieldA))
+        rig.pass()
+        _ = await next(&published) { $0.field == fieldA && $0.issues.isEmpty }
+        await rig.engine.release(0)
+        await rig.pipeline.drain()
+
+        await rig.engine.open()
+        await rig.access.set(flew, caret: 0, in: fieldA)
+        await rig.recheckAtCaret()
+        #expect(await rig.engine.texts == [flew, flew])
+        #expect(await rig.visible().map(\.word) == ["teh"])
+    }
+
     @Test func anUpdateDuringAModelCheckCancelsItAndChecksTheFieldAgainAfterThePause() async {
         let settings = makeSettings()
         let rig = Rig(settings, engine: FakeEngine(gated: true) { request, index in

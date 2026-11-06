@@ -324,10 +324,11 @@ public actor CheckPipeline {
         ) { [weak self] language in
             await self?.mayConfirm(language, epoch: epoch, generation: generation) ?? false
         }
-        guard case .kept(let kept) = answer else { return .checked }
+        let kept: [Edit]? = if case .kept(let edits) = answer { edits } else { nil }
         guard isCurrent(epoch, generation), await route(language) == .model, isCurrent(epoch, generation),
-              let issues = anchored(kept, key: key, source: .model, language: language)
+              let issues = anchored(kept ?? [], key: key, source: .model, language: language)
         else { return .dropped }
+        guard kept != nil else { return .checked }
         tracker.setModel(issues, for: key)
         publish()
         return .checked
