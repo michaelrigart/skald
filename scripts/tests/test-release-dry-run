@@ -303,7 +303,7 @@ refs_before="$(refs)"
 
 git -C "$clone" checkout --quiet -b elsewhere
 run_release
-expect_refused "b1: a new release off main" "main"
+expect_refused "b1: a new release off main" "a new release must be cut from main"
 
 git -C "$clone" checkout --quiet -B main
 echo dirty >>"$clone/AGENTS.md"
@@ -316,6 +316,20 @@ run_release
 expect_refused "b3: main ahead of origin/main" "origin/main"
 git -C "$clone" push --quiet --force origin HEAD:main
 refs_before="$(refs)"
+
+other="$dir/other"
+git clone --quiet "$bare" "$other"
+git -C "$other" config user.name "Release Test"
+git -C "$other" config user.email "release-test@example.invalid"
+git -C "$other" config commit.gpgsign false
+git -C "$other" config core.hooksPath /dev/null
+git -C "$other" checkout --quiet -B main origin/main
+git -C "$other" commit --quiet --allow-empty -m "Pushed from elsewhere"
+git -C "$other" push --quiet origin main
+refs_before="$(refs)"
+run_release
+expect_refused "b3b: main behind origin/main" "main is not level with origin/main"
+git -C "$clone" pull --quiet --ff-only origin main
 
 (cd "$clone" && scripts/changelog.py release "$v" --repo "$repo") && git -C "$clone" commit --quiet -am "Release $v"
 git -C "$clone" push --quiet --force origin HEAD:main
