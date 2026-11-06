@@ -60,6 +60,8 @@ struct PanelView: View {
         (.fix, "Fix"), (.clearer, "Clearer"), (.shorter, "Shorter"), (.moreFormal, "More formal"), (.friendlier, "Friendlier"),
     ]
 
+    private static let languages: [(Language, String)] = [(.en, "English"), (.nl, "Dutch"), (.fr, "French")]
+
     @Bindable var controller: PanelController
 
     var body: some View {
@@ -67,7 +69,7 @@ struct PanelView: View {
             HStack(spacing: 6) {
                 ForEach(Self.actions, id: \.0) { action, title in
                     Button(title) { controller.run(action) }
-                        .disabled(!controller.canRun || controller.phase == .running(action))
+                        .disabled(!controller.canRun)
                 }
                 Spacer(minLength: 8)
                 Picker("Engine", selection: $controller.engine) {
@@ -108,20 +110,29 @@ struct PanelView: View {
         if case .finished(.revised(_, let edits, _)) = controller.phase {
             return DiffText.attributed(original: controller.original, edits: edits)
         }
-        if controller.phase == .empty {
-            return AttributedString("Select some text, or copy some, then press the hotkey again.")
+        if case .blocked(let notice) = controller.phase {
+            return AttributedString(notice)
         }
         return AttributedString(controller.original)
     }
 
     @ViewBuilder private var status: some View {
         switch controller.phase {
-        case .empty, .ready:
+        case .blocked, .ready:
             EmptyView()
-        case .running(let action):
+        case .choosingLanguage:
+            VStack(alignment: .leading, spacing: 6) {
+                note("Skald can't tell which language this is. Pick one:")
+                HStack(spacing: 6) {
+                    ForEach(Self.languages, id: \.0) { language, name in
+                        Button(name) { Task { await controller.choose(language) } }
+                    }
+                }
+            }
+        case let .running(action, engine):
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("\(Self.title(action)) on \(controller.engine.displayName)…").foregroundStyle(.secondary)
+                Text("\(Self.title(action)) on \(engine.displayName)…").foregroundStyle(.secondary)
             }
         case .finished(.revised(let text, let edits, let engine)):
             note(controller.reason ?? (edits.isEmpty || text == controller.original
@@ -140,6 +151,8 @@ struct PanelView: View {
             }
         case .finished(.failed(let failure)):
             note(Self.explanation(failure))
+        case .finished(.needsLanguage):
+            EmptyView()
         }
     }
 

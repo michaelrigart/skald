@@ -68,7 +68,8 @@ private struct Rig {
         detector: FakeLanguageDetector = FakeLanguageDetector(),
         oracle: any WordOracle = misspelled(["en": ["teh"]]),
         confirmer: (any EditConfirming)? = nil,
-        router live: LiveRouter? = nil
+        router live: LiveRouter? = nil,
+        fieldLanguage: Language? = nil
     ) {
         self.thisMac = thisMac
         self.studio = studio
@@ -84,7 +85,8 @@ private struct Rig {
             confirmer: confirmer,
             engines: [.thisMac: thisMac, .macStudio: studio, .claude: claude],
             router: router,
-            access: access
+            access: access,
+            fieldLanguage: fieldLanguage
         )
     }
 }
@@ -130,9 +132,10 @@ private func backUp() -> (text: String, answer: String) {
     return (c.text, swap(c.ref, "om", "voor"))
 }
 
-private func dutchRig(dutchModel: Bool = true, text: String, confirmer: ApprovingConfirmer, router: LiveRouter? = nil) throws -> Rig {
-    let answer = backUp().answer
-    return Rig(
+private func dutchRig(
+    dutchModel: Bool = true, text: String, answer: String = backUp().answer, confirmer: ApprovingConfirmer, router: LiveRouter? = nil
+) throws -> Rig {
+    Rig(
         text: text,
         settings: makeSettings(dutchModel: dutchModel),
         thisMac: FakeEngine { _, _ in .success(answer) },
@@ -162,18 +165,45 @@ private func dutchRig(dutchModel: Bool = true, text: String, confirmer: Approvin
     #expect(result == .revised(text: fixed, edits: TextDiff.edits(from: text, to: fixed), engine: .thisMac))
 }
 
-@Test func theGateIsReadLiveSoASpellingOnlyRouterSetBetweenTwoConfirmationsStopsTheSecond() async throws {
+/// Both undecided edits are in one paragraph, so one chunk: a gate read once per chunk would ask about both.
+@Test func theGateIsReadOnEveryConfirmationSoASpellingOnlyRouterSetBetweenTwoStopsTheSecond() async throws {
     let (paragraph, answer) = backUp()
-    let text = paragraph + "\n" + paragraph
+    let text = paragraph + " " + paragraph
     let live = LiveRouter(makeRouter(makeSettings()))
     let spellingOnly = makeRouter(makeSettings(dutchModel: false))
     let confirmer = ApprovingConfirmer { await live.set(spellingOnly) }
-    let rig = try dutchRig(text: text, confirmer: confirmer, router: live)
+    let rig = try dutchRig(text: text, answer: answer + " " + answer, confirmer: confirmer, router: live)
     let result = await rig.session.run(.fix, on: nil)
 
+    #expect(await rig.thisMac.requests.count == 1)
     #expect(await confirmer.asked == ["om"])
-    let revised = answer + "\n" + spike["nl1"]!.ref
+    let revised = answer + " " + spike["nl1"]!.ref
     #expect(result == .revised(text: revised, edits: TextDiff.edits(from: text, to: revised), engine: .thisMac))
+}
+
+// MARK: Languages
+
+@Test func aSelectionWithNoLanguageToDetectOrInheritAsksForOneAndCallsNoEngine() async {
+    let rig = Rig(text: "morgen")
+    #expect(await rig.session.needsLanguage())
+    #expect(await rig.session.run(.fix, on: nil) == .needsLanguage)
+    #expect(await rig.session.run(.shorter, on: nil) == .needsLanguage)
+    #expect(await rig.thisMac.requests.isEmpty)
+}
+
+@Test func theUsersPickIsTheLanguageOfAnUndetectableSelection() async {
+    let rig = Rig(text: "morgen")
+    await rig.session.choose(.nl)
+    #expect(await !rig.session.needsLanguage())
+    _ = await rig.session.run(.shorter, on: nil)
+    #expect(await rig.thisMac.requests.map(\.language) == [.nl])
+}
+
+@Test func aShortSelectionInheritsTheFieldsLastConfidentLanguage() async {
+    let rig = Rig(text: "morgen", fieldLanguage: .nl)
+    #expect(await !rig.session.needsLanguage())
+    _ = await rig.session.run(.fix, on: nil)
+    #expect(await rig.thisMac.requests.map(\.language) == [.nl])
 }
 
 // MARK: Rewrites
@@ -284,14 +314,6 @@ private let context = ExpectedText(range: TextRange(location: 10, length: paragr
     let rig = Rig(text: "teh", capture: capture)
     #expect(await rig.session.replace(with: "the") == .replaced)
     #expect(await rig.access.replacements == [.init(range: capture.selection, expected: context, text: "the", field: field)])
-}
-
-@Test func aCaptureWithoutASelectionReplacesTheWholeCaretParagraph() async {
-    let capture = SelectionCapture(field: field, selection: context.range, selectedText: paragraphText, context: context)
-    let rig = Rig(text: paragraphText, capture: capture)
-    let revised = "We flew to the office in Paris yesterday and back."
-    #expect(await rig.session.replace(with: revised) == .replaced)
-    #expect(await rig.access.replacements == [.init(range: context.range, expected: context, text: revised, field: field)])
 }
 
 @Test(arguments: [ReplaceOutcome.refusedChanged, .refusedOtherField, .unconfirmed])

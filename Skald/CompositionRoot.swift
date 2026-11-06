@@ -230,21 +230,27 @@ final class CompositionRoot {
     }
 
     /// Captures the focused field before the panel shows: the selection, or the caret's paragraph. With no
-    /// field, the panel works on the clipboard's text and offers only Copy. A second press closes the panel.
+    /// focused field, the panel works on the clipboard's text and offers only Copy. A press while Skald is
+    /// active closes the panel; one during a Replace does nothing, so the Replace's outcome is still shown.
     private func panelHotkeyPressed() {
-        guard let panel else { return }
-        if panel.isOpen { return panel.close() }
+        guard let panel, !panel.isReplacing else { return }
+        if panel.isOpen, NSApp.isActive { return panel.close() }
         let source = Self.otherApp(NSWorkspace.shared.frontmostApplication)
         let settings = model.settings
         let engines = makeEngines()
-        Task { [textAccess, liveRouter, apple] in
-            var capture: SelectionCapture?
-            if source != nil, let field = await textAccess.focusedField() {
-                capture = await textAccess.capture(of: field)
+        Task { [textAccess, liveRouter, pipeline, apple] in
+            let focused = source == nil ? nil : await textAccess.focusedField()
+            let captured = if let focused { await textAccess.capture(of: focused) } else { nil as SelectionCapture? }
+            let content = PanelContent.resolve(focused: focused, capture: captured) { SystemClipboard.text() }
+            let capture: SelectionCapture? = if case .field(let capture) = content { capture } else { nil }
+            let text = switch content {
+            case .field(let capture): capture.selectedText
+            case .clipboard(let text): text
+            case .unreadable: ""
             }
             let writes = if let capture { await textAccess.capabilities(for: capture.field.app).contains(.cleanWrite) } else { false }
+            let fieldLanguage = if let focused { await pipeline.lastConfidentLanguage(for: focused) } else { nil as Language? }
             let picker = await liveRouter.current.pickerEngines
-            let text = capture?.selectedText ?? SystemClipboard.text() ?? ""
             let session = PanelSession(
                 capture: capture,
                 text: text,
@@ -254,7 +260,8 @@ final class CompositionRoot {
                 confirmer: AppleConfirmer(engine: apple),
                 engines: engines,
                 router: liveRouter,
-                access: capture == nil ? nil : textAccess
+                access: capture == nil ? nil : textAccess,
+                fieldLanguage: fieldLanguage
             )
             let target = capture.map { capture in
                 PanelOpening.Target(writes: writes) {
@@ -265,10 +272,11 @@ final class CompositionRoot {
                     return await textAccess.waitForFocus(on: capture.field, timeout: .seconds(1))
                 }
             }
-            Log.ui.notice("panel opened: field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
-            panel.open(PanelOpening(
-                session: session, text: text, target: target, engines: picker, engine: settings.panelDefaultEngine
-            ))
+            var opening = PanelOpening(session: session, text: text, target: target, engines: picker, engine: settings.panelDefaultEngine)
+            opening.needsLanguage = await session.needsLanguage()
+            if content == .unreadable { opening.notice = PanelController.unreadableNotice }
+            let opened = panel.open(opening)
+            Log.ui.notice("panel opened: \(opened, privacy: .public), field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
         }
     }
 

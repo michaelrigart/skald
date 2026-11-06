@@ -6,6 +6,7 @@ import SkaldCore
 nonisolated protocol PanelSessioning: Sendable {
     func run(_ a: EngineAction, on e: EngineKind?) async -> PanelResult
     func replace(with revised: String) async -> ReplaceOutcome
+    func choose(_ language: Language) async
 }
 
 extension PanelSession: PanelSessioning {}
@@ -14,6 +15,21 @@ extension PanelSession: PanelSessioning {}
 protocol PanelPresenting: AnyObject {
     func show()
     func hide()
+}
+
+/// What a hotkey press found to work on.
+enum PanelContent: Equatable {
+    case field(SelectionCapture)
+    /// No field is focused: the clipboard's text, and only Copy.
+    case clipboard(String)
+    /// A field is focused but Skald can't read it here, so there is nothing to run.
+    case unreadable
+
+    /// The clipboard is read only when no field is focused, never in place of a field that can't be read.
+    static func resolve(focused: FieldID?, capture: SelectionCapture?, clipboard: () -> String?) -> PanelContent {
+        guard focused != nil else { return .clipboard(clipboard() ?? "") }
+        return capture.map { .field($0) } ?? .unreadable
+    }
 }
 
 /// One hotkey press: the text the panel works on, and the field it came from when one was captured.
@@ -31,6 +47,10 @@ struct PanelOpening {
     let target: Target?
     let engines: [EngineKind]
     let engine: EngineKind
+    /// Some paragraph's language can't be detected or inherited: the user picks one before any run.
+    var needsLanguage = false
+    /// Why there is nothing to run, when there isn't.
+    var notice: String?
 }
 
 /// The panel's state: the actions on the picked engine, the result, and Replace or Copy. Replace hides the
@@ -38,27 +58,35 @@ struct PanelOpening {
 /// with the result, one line of reason and Copy. The clipboard is written only when Copy is pressed.
 @Observable final class PanelController {
     enum Phase: Equatable {
-        case empty
+        /// Nothing to run, and why.
+        case blocked(String)
+        /// Waiting for the user to pick English, Dutch or French.
+        case choosingLanguage
         case ready
-        case running(EngineAction)
+        case running(EngineAction, on: EngineKind)
         case finished(PanelResult)
     }
+
+    static let noTextNotice = "Select some text, or copy some, then press the hotkey again."
+    static let unreadableNotice = "Skald can't read this field here."
 
     private(set) var original = ""
     private(set) var engines: [EngineKind] = []
     var engine: EngineKind = .thisMac
-    private(set) var phase = Phase.empty
+    private(set) var phase = Phase.blocked(PanelController.noTextNotice)
     /// Why Replace didn't go through, after it was tried.
     private(set) var reason: String?
     private(set) var copied = false
     private(set) var isOpen = false
+    /// From Replace until its outcome; a new opening waits for it rather than dropping the outcome.
+    private(set) var isReplacing = false
 
     @ObservationIgnored private let window: any PanelPresenting
     @ObservationIgnored private let clipboard: any Clipboard
     @ObservationIgnored private var opening: PanelOpening?
     @ObservationIgnored private var lastAction: EngineAction?
     @ObservationIgnored private var running: Task<Void, Never>?
-    /// Bumped by every opening and run, so a late answer for an older one is dropped.
+    /// Bumped by every opening, close and run, so a late answer for an older one is dropped.
     @ObservationIgnored private var generation = 0
     /// Set once a paste went out unconfirmed: the clipboard already holds the result.
     @ObservationIgnored private var clipboardHoldsResult = false
@@ -74,7 +102,8 @@ struct PanelOpening {
     }
 
     var offersReplace: Bool {
-        revised != nil && reason == nil && opening?.target?.writes == true
+        guard let revised else { return false }
+        return revised != original && reason == nil && opening?.target?.writes == true
     }
 
     var offersCopy: Bool {
@@ -82,23 +111,37 @@ struct PanelOpening {
     }
 
     var canRun: Bool {
-        phase != .empty
+        switch phase {
+        case .blocked, .choosingLanguage: false
+        case .ready, .running, .finished: true
+        }
     }
 
-    func open(_ opening: PanelOpening) {
+    /// Refused while a Replace is in flight, so its outcome is still shown.
+    @discardableResult
+    func open(_ opening: PanelOpening) -> Bool {
+        guard !isReplacing else { return false }
         running?.cancel()
         generation += 1
         self.opening = opening
         original = opening.text
         engines = opening.engines.contains(opening.engine) ? opening.engines : opening.engines + [opening.engine]
         engine = opening.engine
-        phase = opening.text.allSatisfy(\.isWhitespace) ? .empty : .ready
+        if let notice = opening.notice {
+            phase = .blocked(notice)
+        } else if opening.text.allSatisfy(\.isWhitespace) {
+            phase = .blocked(Self.noTextNotice)
+        } else {
+            phase = opening.needsLanguage ? .choosingLanguage : .ready
+        }
         lastAction = nil
         resetOutcome()
         show()
+        return true
     }
 
     func close() {
+        guard !isReplacing else { return }
         running?.cancel()
         running = nil
         generation += 1
@@ -118,31 +161,40 @@ struct PanelOpening {
         if let lastAction { run(lastAction) }
     }
 
+    /// The language for the paragraphs Skald can't detect; the last action runs again when one was asked for.
+    func choose(_ language: Language) async {
+        guard phase == .choosingLanguage, let session = opening?.session else { return }
+        let mine = generation
+        await session.choose(language)
+        guard mine == generation else { return }
+        phase = .ready
+        if let lastAction { await perform(lastAction) }
+    }
+
     func perform(_ action: EngineAction) async {
         guard canRun, let session = opening?.session else { return }
         generation += 1
         let mine = generation
+        let engine = self.engine
         lastAction = action
         resetOutcome()
-        phase = .running(action)
+        phase = .running(action, on: engine)
         let result = await session.run(action, on: engine)
-        guard mine == generation, result != .failed(.cancelled) else { return }
-        phase = .finished(result)
+        guard mine == generation else { return }
+        phase = result == .needsLanguage ? .choosingLanguage : .finished(result)
     }
 
     func replace() async {
         guard offersReplace, let revised, let opening, let target = opening.target else { return }
-        let mine = generation
+        isReplacing = true
         isOpen = false
         window.hide()
-        let focused = await target.returnFocus()
-        guard mine == generation else { return }
-        guard focused else { return reopen(Self.reason(for: .refusedOtherField)) }
-        let outcome = await opening.session.replace(with: revised)
-        guard mine == generation else { return }
+        let outcome: ReplaceOutcome = await target.returnFocus() ? await opening.session.replace(with: revised) : .refusedOtherField
+        isReplacing = false
         if outcome == .replaced { return close() }
         if outcome == .unconfirmed { clipboardHoldsResult = true }
-        reopen(Self.reason(for: outcome))
+        reason = Self.reason(for: outcome)
+        show()
     }
 
     func copy() {
@@ -160,11 +212,6 @@ struct PanelOpening {
         case .refusedOtherField: "The field isn't focused any more."
         case .unconfirmed: "The app didn't show the change. The clipboard now holds the result."
         }
-    }
-
-    private func reopen(_ reason: String) {
-        self.reason = reason
-        show()
     }
 
     private func show() {

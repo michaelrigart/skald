@@ -141,6 +141,12 @@ public actor CheckPipeline {
         publish()
     }
 
+    /// The field's last confident language while it is the focused field, else nil; the panel's paragraphs
+    /// too short to detect inherit it.
+    public func lastConfidentLanguage(for field: FieldID) -> Language? {
+        field == currentField ? fieldLanguage : nil
+    }
+
     public func accept(_ id: UUID) async -> ReplaceOutcome {
         guard let issue = tracker.issue(id) else { return .failed }
         let splice = issue.edit.spliceRange

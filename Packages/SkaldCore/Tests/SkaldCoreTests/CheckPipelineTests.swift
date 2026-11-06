@@ -266,6 +266,17 @@ struct CheckPipelineTests {
         #expect(await rig.visible().isEmpty)
     }
 
+    @Test func theLastConfidentLanguageBelongsToTheFocusedField() async {
+        let rig = Rig(makeSettings(), misspellings: ["gedownloaded": "gedownload"])
+        await rig.focus("Ik heb de nieuwe versie gedownloaded")
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == nil)
+        await rig.check()
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldB) == nil)
+        await rig.pipeline.receive(.focused(fieldB))
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == nil)
+    }
+
     @Test func anUnavailableAppleRouterCancelsTheSuspendedModelCheck() async {
         let settings = makeSettings()
         let rig = Rig(settings, engine: .correcting(["teh": "the", "paris": "Paris"], gated: true))

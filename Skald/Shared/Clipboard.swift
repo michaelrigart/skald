@@ -13,8 +13,7 @@ final class SystemClipboard: Clipboard {
 
     /// The clipboard's text for the panel when no field was captured, or nil when there is none or another
     /// app marked it concealed or transient, as password managers do.
-    static func text() -> String? {
-        let pasteboard = NSPasteboard.general
+    static func text(from pasteboard: NSPasteboard = .general) -> String? {
         guard !(pasteboard.types ?? []).contains(where: privateTypes.contains) else { return nil }
         return pasteboard.string(forType: .string)
     }

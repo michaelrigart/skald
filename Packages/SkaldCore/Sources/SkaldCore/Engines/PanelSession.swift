@@ -4,6 +4,8 @@ public enum PanelResult: Equatable, Sendable {
     case revised(text: String, edits: [Edit], engine: EngineKind)
     case unavailable(EngineKind, UnavailableReason, alternatives: [EngineKind])
     case failed(EngineFailure)
+    /// No paragraph's language could be detected or inherited: the user picks one with `choose`, then runs again.
+    case needsLanguage
 }
 
 /// One opening of the panel: the captured text, Fix and the rewrites on the routed engine, and Replace.
@@ -21,7 +23,9 @@ public actor PanelSession {
     private let engines: [EngineKind: any Engine]
     private let router: LiveRouter
     private let access: (any TextAccess)?
+    private let fieldLanguage: Language?
 
+    private var chosenLanguage: Language?
     private var running: Task<PanelResult, Never>?
     private var generation = 0
 
@@ -34,7 +38,8 @@ public actor PanelSession {
         confirmer: (any EditConfirming)?,
         engines: [EngineKind: any Engine],
         router: LiveRouter,
-        access: (any TextAccess)?
+        access: (any TextAccess)?,
+        fieldLanguage: Language? = nil
     ) {
         self.capture = capture
         self.text = text
@@ -45,6 +50,17 @@ public actor PanelSession {
         self.engines = engines
         self.router = router
         self.access = access
+        self.fieldLanguage = fieldLanguage
+    }
+
+    /// True until the user picks a language, when some paragraph's language can't be detected or inherited.
+    public func needsLanguage() -> Bool {
+        languages(of: PanelText.paragraphs(text).map(\.text)) == nil
+    }
+
+    /// The language the user picked for the paragraphs Skald can't detect.
+    public func choose(_ language: Language) {
+        chosenLanguage = language
     }
 
     public func run(_ a: EngineAction, on e: EngineKind?) async -> PanelResult {
@@ -69,6 +85,8 @@ public actor PanelSession {
 
     private func perform(_ action: EngineAction, on requested: EngineKind?) async -> PanelResult {
         guard Self.actions.contains(action) else { return .failed(.failed) }
+        let parts = PanelText.paragraphs(text)
+        guard let languages = languages(of: parts.map(\.text)) else { return .needsLanguage }
         let kind: EngineKind
         switch await router.current.panel(requested: requested) {
         case .use(let engine): kind = engine
@@ -76,7 +94,9 @@ public actor PanelSession {
         }
         guard let engine = engines[kind] else { return .failed(.failed) }
         do {
-            let revised = action == .fix ? try await fix(with: engine) : try await rewrite(action, with: engine)
+            let revised = action == .fix
+                ? try await fix(parts, languages, with: engine)
+                : try await rewrite(parts, languages, action, with: engine)
             guard !Task.isCancelled else { return .failed(.cancelled) }
             return .revised(text: revised, edits: TextDiff.edits(from: text, to: revised), engine: kind)
         } catch .unavailable(let reason) {
@@ -86,15 +106,17 @@ public actor PanelSession {
         }
     }
 
-    private func fix(with engine: any Engine) async throws(EngineFailure) -> String {
-        var parts = PanelText.paragraphs(text)
-        let languages = languages(of: parts.map(\.text))
-        for index in parts.indices where !Self.isBlank(parts[index].text) {
+    private func fix(
+        _ parts: [(text: String, separator: String)], _ languages: [Language?], with engine: any Engine
+    ) async throws(EngineFailure) -> String {
+        var parts = parts
+        for (index, language) in languages.enumerated() {
+            guard let language else { continue }
             let paragraph = parts[index].text
             let whole = Paragraph(range: TextRange(location: 0, length: paragraph.utf16.count), text: paragraph)
             var fixed = ""
             for chunk in Paragraphs.chunks(whole) {
-                fixed += try await fix(chunk.text, language: languages[index], with: engine)
+                fixed += try await fix(chunk.text, language: language, with: engine)
             }
             parts[index].text = fixed
         }
@@ -125,18 +147,19 @@ public actor PanelSession {
     }
 
     /// One request for a selection in one language, else one per paragraph in its own language.
-    private func rewrite(_ action: EngineAction, with engine: any Engine) async throws(EngineFailure) -> String {
-        var parts = PanelText.paragraphs(text)
-        let languages = languages(of: parts.map(\.text))
-        let written = parts.indices.filter { !Self.isBlank(parts[$0].text) }
-        if Set(written.map { languages[$0] }).count <= 1 {
+    private func rewrite(
+        _ parts: [(text: String, separator: String)], _ languages: [Language?], _ action: EngineAction, with engine: any Engine
+    ) async throws(EngineFailure) -> String {
+        var parts = parts
+        let written = languages.enumerated().compactMap { index, language in language.map { (index, $0) } }
+        guard let first = written.first else { return text }
+        if written.allSatisfy({ $0.1 == first.1 }) {
             let (lead, body, trail) = Self.trimmed(text)
-            guard !body.isEmpty else { return text }
-            return lead + (try await rewrite(body, action, language: languages[written[0]], with: engine)) + trail
+            return lead + (try await rewrite(body, action, language: first.1, with: engine)) + trail
         }
-        for index in written {
+        for (index, language) in written {
             let (lead, body, trail) = Self.trimmed(parts[index].text)
-            parts[index].text = lead + (try await rewrite(body, action, language: languages[index], with: engine)) + trail
+            parts[index].text = lead + (try await rewrite(body, action, language: language, with: engine)) + trail
         }
         return PanelText.reassemble(parts)
     }
@@ -152,21 +175,23 @@ public actor PanelSession {
 
     // MARK: Languages
 
-    /// Each paragraph's language. Short paragraphs inherit the last confident one, starting from the
-    /// captured context; leading ones with none take the next paragraph's, and English is the last resort.
-    private func languages(of paragraphs: [String]) -> [Language] {
-        var previous = detector.detect(capture?.context.text ?? text, previous: nil)
-        let detected = paragraphs.map { paragraph -> Language? in
-            guard !Self.isBlank(paragraph) else { return previous }
+    /// Each paragraph's language, or nil when one can't be detected or inherited. Short paragraphs inherit the
+    /// last confident language, starting from the captured lines, then the field's last confident language,
+    /// then the user's pick. Skald never assumes one.
+    /// Blank paragraphs, which are never sent, have none.
+    private func languages(of paragraphs: [String]) -> [Language?]? {
+        var previous = detector.detect(capture?.context.text ?? text, previous: nil) ?? fieldLanguage ?? chosenLanguage
+        var languages: [Language?] = []
+        for paragraph in paragraphs {
+            guard !Self.isBlank(paragraph) else {
+                languages.append(nil)
+                continue
+            }
             previous = detector.detect(paragraph, previous: previous)
-            return previous
+            guard let previous else { return nil }
+            languages.append(previous)
         }
-        let fallback = detected.compactMap { $0 }.first ?? .en
-        var next = fallback
-        return detected.reversed().map { language in
-            if let language { next = language }
-            return next
-        }.reversed()
+        return languages
     }
 
     // MARK: Text
