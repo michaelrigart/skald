@@ -16,6 +16,27 @@ public enum OutputCleaner {
         }
     }
 
+    /// The output with the input's leading and trailing whitespace, which `clean` trims away: a chunk's
+    /// trailing space separates it from the next chunk, and the model never answers for it.
+    public static func keepingEdges(of input: String, _ cleaned: String) -> String {
+        let (lead, _, trail) = edges(of: input)
+        return lead + cleaned + trail
+    }
+
+    /// The text without its leading and trailing whitespace, and that whitespace.
+    public static func edges(of text: String) -> (lead: String, body: String, trail: String) {
+        let scalars = Array(text.unicodeScalars)
+        guard let first = scalars.firstIndex(where: { !$0.properties.isWhitespace }),
+              let last = scalars.lastIndex(where: { !$0.properties.isWhitespace })
+        else { return (text, "", "") }
+        func string(_ slice: ArraySlice<Unicode.Scalar>) -> String {
+            var view = String.UnicodeScalarView()
+            view.append(contentsOf: slice)
+            return String(view)
+        }
+        return (string(scalars[..<first]), string(scalars[first...last]), string(scalars[(last + 1)...]))
+    }
+
     private static func trimmed(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }

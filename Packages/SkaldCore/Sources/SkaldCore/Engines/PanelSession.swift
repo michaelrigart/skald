@@ -149,11 +149,11 @@ public actor PanelSession {
         let written = languages.enumerated().compactMap { index, language in language.map { (index, $0) } }
         guard let first = written.first else { return text }
         if written.allSatisfy({ $0.1 == first.1 }) {
-            let (lead, body, trail) = Self.trimmed(text)
+            let (lead, body, trail) = OutputCleaner.edges(of: text)
             return lead + (try await rewrite(body, action, language: first.1, with: engine)) + trail
         }
         for (index, language) in written {
-            let (lead, body, trail) = Self.trimmed(parts[index].text)
+            let (lead, body, trail) = OutputCleaner.edges(of: parts[index].text)
             parts[index].text = lead + (try await rewrite(body, action, language: language, with: engine)) + trail
         }
         return PanelText.reassemble(parts)
@@ -201,19 +201,5 @@ public actor PanelSession {
 
     private static func isBlank(_ text: String) -> Bool {
         text.unicodeScalars.allSatisfy(\.properties.isWhitespace)
-    }
-
-    /// The text without its leading and trailing whitespace, and that whitespace, so a rewrite keeps it.
-    private static func trimmed(_ text: String) -> (lead: String, body: String, trail: String) {
-        let scalars = Array(text.unicodeScalars)
-        guard let first = scalars.firstIndex(where: { !$0.properties.isWhitespace }),
-              let last = scalars.lastIndex(where: { !$0.properties.isWhitespace })
-        else { return (text, "", "") }
-        func string(_ slice: ArraySlice<Unicode.Scalar>) -> String {
-            var view = String.UnicodeScalarView()
-            view.append(contentsOf: slice)
-            return String(view)
-        }
-        return (string(scalars[..<first]), string(scalars[first...last]), string(scalars[(last + 1)...]))
     }
 }

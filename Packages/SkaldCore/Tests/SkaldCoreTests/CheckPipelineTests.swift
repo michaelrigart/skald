@@ -570,6 +570,24 @@ struct CheckPipelineTests {
         #expect(result == String(text.dropLast(replaced == "!!" ? 1 : 4)))
     }
 
+    @Test func acceptingAFinalPunctuationFixAtAChunkBoundaryKeepsTheSpaceBeforeTheNextChunk() async throws {
+        let first = "The first part needs an " + String(repeating: "more plain words here and ", count: 38) + "update!!"
+        let second = sentence("beta")
+        let text = first + " " + second
+        #expect(chunkTexts(text) == [first + " ", second])
+        let rig = Rig(makeSettings(), engine: .trimmingAndFixingDoubleBang, misspellings: [:])
+        await rig.focus(text)
+        await rig.check()
+        let issue = try #require(await rig.modelIssues().first)
+
+        #expect(await rig.pipeline.accept(issue.id) == .replaced)
+        let replacement = try #require(await rig.access.replacements.first)
+        let written = (text as NSString).replacingCharacters(
+            in: NSRange(location: replacement.range.location, length: replacement.range.length), with: replacement.text
+        )
+        #expect(written == String(first.dropLast()) + " " + second)
+    }
+
     @Test func aRefusedAcceptAlsoDropsTheIssue() async throws {
         let rig = Rig(makeSettings(model: false))
         await rig.access.answerReplacements(with: .refusedChanged)

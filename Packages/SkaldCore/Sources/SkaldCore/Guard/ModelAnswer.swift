@@ -15,7 +15,7 @@ public enum ModelAnswer: Equatable, Sendable {
         confirmer: (any EditConfirming)?,
         mayConfirm: @escaping @Sendable (Language) async -> Bool
     ) async -> ModelAnswer {
-        let revised = OutputCleaner.clean(output, input: chunk)
+        let revised = OutputCleaner.keepingEdges(of: chunk, OutputCleaner.clean(output, input: chunk))
         let whole = editGuard.judgeWhole(
             original: chunk, revised: revised, language: language, revisedLanguage: detector.detect(revised, previous: nil)
         )

@@ -21,6 +21,14 @@ actor FakeEngine: Engine {
         FakeEngine(gated: gated) { request, _ in .success(replacingWords(in: request.text, corrections)) }
     }
 
+    /// Answers like a model at a chunk boundary: "update!!" becomes "update!" and the chunk's surrounding
+    /// whitespace is gone.
+    static var trimmingAndFixingDoubleBang: FakeEngine {
+        FakeEngine { request, _ in
+            .success(request.text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "update!!", with: "update!"))
+        }
+    }
+
     func run(_ r: EngineRequest) async throws(EngineFailure) -> String {
         requests.append(r)
         let index = gate.arrive()

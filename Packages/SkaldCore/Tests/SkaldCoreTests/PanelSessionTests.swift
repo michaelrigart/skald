@@ -120,6 +120,17 @@ private struct Rig {
     #expect(revised == paragraph.replacingOccurrences(of: "teh", with: "the"))
 }
 
+@Test func aFinalPunctuationFixAtAChunkBoundaryKeepsTheSpaceBeforeTheNextChunk() async {
+    let first = "The first part needs an " + String(repeating: "more plain words here and ", count: 38) + "update!!"
+    let paragraph = first + " " + "The second part follows " + String(repeating: "with plain words here and ", count: 38) + "done."
+    let rig = Rig(text: paragraph, thisMac: .trimmingAndFixingDoubleBang, oracle: misspelled([:]))
+    let result = await rig.session.run(.fix, on: nil)
+
+    #expect(await rig.thisMac.texts.count == 2)
+    guard case .revised(let revised, _, _) = result else { Testing.Issue.record("not revised: \(result)"); return }
+    #expect(revised == paragraph.replacingOccurrences(of: "update!!", with: "update!"))
+}
+
 @Test func fixDropsAWholeAnswerThatChangesTooMuch() async {
     let engine = FakeEngine { _, _ in .success("Our team travelled by plane to the Paris office the day before") }
     let rig = Rig(text: flew, thisMac: engine)
