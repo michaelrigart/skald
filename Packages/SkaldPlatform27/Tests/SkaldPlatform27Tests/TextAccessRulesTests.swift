@@ -286,10 +286,46 @@ private func decide(
     #expect(capture?.context == ExpectedText(range: TextRange(location: 0, length: 20), text: "One two.\nThree four."))
 }
 
-@Test func aCaretOnAnEmptyLineCapturesNothingToReplace() {
-    let field = FakeField("One.\n\nTwo.", selected: TextRange(location: 5, length: 0))
+/// The capture the caret at `caret` gives in `text`, and whether writing to it would pass the replace checks.
+private func captureAt(_ caret: Int, in text: String) -> (capture: SelectionCapture?, writes: Bool) {
+    let field = FakeField(text, selected: TextRange(location: caret, length: 0))
     let capture = TextAccessRules.capture(of: notes, reader: field)
-    #expect(capture?.selection == TextRange(location: 5, length: 0))
+    guard let capture else { return (nil, false) }
+    let step = TextAccessRules.replaceStep(
+        capture.selection, expected: capture.context, isFocusedField: true, read: field.string(for:), length: field.length,
+        access: CapabilityTable.access(for: "com.apple.Notes")
+    )
+    return (capture, step == .write(.accessibility))
+}
+
+@Test func aCaretOnABlankLineBelowAParagraphCapturesThatParagraph() {
+    let (capture, writes) = captureAt("👍🏽 One.\n".utf16.count, in: "👍🏽 One.\n\nTwo.")
+    let paragraph = TextRange(location: 0, length: "👍🏽 One.".utf16.count)
+    #expect(capture?.selection == paragraph)
+    #expect(capture?.selectedText == "👍🏽 One.")
+    #expect(capture?.context == ExpectedText(range: paragraph, text: "👍🏽 One."))
+    #expect(writes)
+}
+
+@Test func aCaretInAWhitespaceOnlyLineCapturesTheParagraphAbove() {
+    let (capture, writes) = captureAt(7, in: "One.\n  \t\nTwo.")
+    #expect(capture?.selection == TextRange(location: 0, length: 4))
+    #expect(capture?.selectedText == "One.")
+    #expect(writes)
+}
+
+@Test func aCaretOnABlankLineBeforeAnyTextCapturesTheFirstParagraphBelow() {
+    let (capture, writes) = captureAt(1, in: "\n\n👍🏽 One.\nTwo.")
+    let paragraph = TextRange(location: 2, length: "👍🏽 One.".utf16.count)
+    #expect(capture?.selection == paragraph)
+    #expect(capture?.selectedText == "👍🏽 One.")
+    #expect(capture?.context == ExpectedText(range: paragraph, text: "👍🏽 One."))
+    #expect(writes)
+}
+
+@Test func aCaretInAFieldWithoutAnyParagraphCapturesTheEmptySelection() {
+    let capture = captureAt(3, in: "  \n\n").capture
+    #expect(capture?.selection == TextRange(location: 3, length: 0))
     #expect(capture?.selectedText == "")
 }
 

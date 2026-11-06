@@ -126,11 +126,16 @@ enum TextAccessRules {
     }
 
     /// The selection with the whole lines it touches as context, so the context is bounded by line breaks or
-    /// the window's ends; an empty selection becomes the caret's paragraph.
+    /// the window's ends; an empty selection becomes the caret's paragraph (`Paragraphs.around`), and where the
+    /// window holds no paragraph, stays the empty selection.
     static func normalizedCapture(field: FieldID, selection: TextRange, text: String, offset: Int) -> SelectionCapture? {
         let units = Array(text.utf16)
         let local = TextRange(location: selection.location - offset, length: selection.length)
         guard local.location >= 0, local.end <= units.count else { return nil }
+        if selection.length == 0, let paragraph = Paragraphs.around(caret: selection.location, in: text, offset: offset) {
+            let context = ExpectedText(range: paragraph.range, text: paragraph.text)
+            return SelectionCapture(field: field, selection: context.range, selectedText: context.text, context: context)
+        }
         var start = local.location
         while start > 0, !Paragraphs.isLineBreak(units[start - 1]) { start -= 1 }
         var end = local.end
