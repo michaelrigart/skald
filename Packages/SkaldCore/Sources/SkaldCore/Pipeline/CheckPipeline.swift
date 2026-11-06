@@ -320,23 +320,12 @@ public actor CheckPipeline {
         }
         guard isCurrent(epoch, generation) else { return .dropped }
 
-        let revised = OutputCleaner.clean(output, input: chunk.text)
-        let editGuard = self.editGuard
-        let whole = editGuard.judgeWhole(
-            original: chunk.text,
-            revised: revised,
-            language: language,
-            revisedLanguage: detector.detect(revised, previous: nil)
-        )
-        guard whole == .accepted else { return .checked }
-
-        let gated = confirmer.map { inner in
-            GatedConfirmer(inner: inner) { [weak self] language in
-                await self?.mayConfirm(language, epoch: epoch, generation: generation) ?? false
-            }
+        let answer = await ModelAnswer.judge(
+            output, for: chunk.text, language: language, editGuard: editGuard, detector: detector, oracle: oracle, confirmer: confirmer
+        ) { [weak self] language in
+            await self?.mayConfirm(language, epoch: epoch, generation: generation) ?? false
         }
-        let edits = TextDiff.edits(from: chunk.text, to: revised)
-        let kept = await editGuard.resolve(edits, in: chunk.text, language: language, source: .model, oracle: oracle, confirmer: gated)
+        guard case .kept(let kept) = answer else { return .checked }
         guard isCurrent(epoch, generation), await route(language) == .model, isCurrent(epoch, generation),
               let issues = anchored(kept, key: key, source: .model, language: language)
         else { return .dropped }

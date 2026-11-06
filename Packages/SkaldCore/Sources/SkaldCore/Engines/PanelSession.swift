@@ -130,21 +130,14 @@ public actor PanelSession {
         guard !Task.isCancelled else { throw .cancelled }
         let output = try await engine.run(EngineRequest(action: .fix, language: language, text: chunk))
         guard !Task.isCancelled else { throw .cancelled }
-        let revised = OutputCleaner.clean(output, input: chunk)
-        let whole = editGuard.judgeWhole(
-            original: chunk, revised: revised, language: language, revisedLanguage: detector.detect(revised, previous: nil)
-        )
-        guard whole == .accepted else { return chunk }
         let router = self.router
-        let gated = confirmer.map { inner in
-            GatedConfirmer(inner: inner) { language in
-                guard !Task.isCancelled else { return false }
-                return await router.modelAllowed(language)
-            }
+        let answer = await ModelAnswer.judge(
+            output, for: chunk, language: language, editGuard: editGuard, detector: detector, oracle: oracle, confirmer: confirmer
+        ) { language in
+            guard !Task.isCancelled else { return false }
+            return await router.modelAllowed(language)
         }
-        let edits = TextDiff.edits(from: chunk, to: revised)
-        let kept = await editGuard.resolve(edits, in: chunk, language: language, source: .model, oracle: oracle, confirmer: gated)
-            .filter { !editGuard.touchesNeverTouch($0, in: chunk) }
+        guard case .kept(let kept) = answer else { return chunk }
         return Self.applying(kept, to: chunk)
     }
 

@@ -157,13 +157,13 @@ public struct EvalRunner: Sendable {
             return CaseResult(error: String(describing: error))
         }
         guard guardOn else { return CaseResult(output: revised) }
-        let revisedLanguage = detector.detect(revised, previous: nil)
-        if case .discarded(let reason) = editGuard.judgeWhole(original: text, revised: revised, language: language, revisedLanguage: revisedLanguage) {
-            return CaseResult(output: text, discarded: reason)
+        let answer = await ModelAnswer.judge(
+            revised, for: text, language: language, editGuard: editGuard, detector: detector, oracle: oracle, confirmer: confirmer
+        ) { _ in true }
+        switch answer {
+        case .discarded(let reason): return CaseResult(output: text, discarded: reason)
+        case .kept(let kept): return CaseResult(output: Self.apply(kept, to: text))
         }
-        let edits = TextDiff.edits(from: text, to: revised)
-        let kept = await editGuard.resolve(edits, in: text, language: language, source: .model, oracle: oracle, confirmer: confirmer)
-        return CaseResult(output: Self.apply(kept, to: text))
     }
 
     private func checkSpelling(_ text: String, _ language: Language) async -> CaseResult {
