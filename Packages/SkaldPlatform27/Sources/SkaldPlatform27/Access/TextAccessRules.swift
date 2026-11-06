@@ -70,6 +70,13 @@ enum TextAccessRules {
         return markersAnswer() ? .textMarkers : nil
     }
 
+    /// Why a text-marker field gives no text, as a fixed kind: the app doesn't answer marker lengths (Skald never
+    /// reads the field to measure it), or the field is over the read limit. nil when its length allows a read.
+    static func markerUnreadKind(length: Int?) -> String? {
+        guard let length else { return "the app gives no marker lengths" }
+        return length > wholeValueLimit ? "over the read limit" : nil
+    }
+
     /// A text-marker field's whole text, only when it is at most 20,000 units and agrees with its marker length.
     static func markerText(length: Int?, read: () -> String?) -> String? {
         guard let length, length <= wholeValueLimit, let text = read(), text.utf16.count == length else { return nil }
@@ -251,23 +258,27 @@ enum TextAccessRules {
         return current > target ? .previous : .refused
     }
 
-    /// The marker `target` units from the field's start, stepping from `start`; nil when the step rule refuses.
+    /// The marker `target` units from the field's start, stepping from `start` (at `origin`) and summing the length
+    /// of each single step, so no step measures from the field's start; nil when the step rule refuses.
     static func walk<Marker>(
-        from start: Marker, to target: Int, offset: (Marker) -> Int?, next: (Marker) -> Marker?, previous: (Marker) -> Marker?
+        from start: Marker, at origin: Int, to target: Int, next: (Marker) -> Marker?, previous: (Marker) -> Marker?,
+        length: (Marker, Marker) -> Int?
     ) -> Marker? {
-        guard let origin = offset(start) else { return nil }
         var current = start
+        var offset = origin
         var steps = 0
         while true {
-            switch markerStep(origin: origin, current: steps == 0 ? origin : offset(current), target: target, steps: steps) {
+            switch markerStep(origin: origin, current: offset, target: target, steps: steps) {
             case .reached: return current
             case .refused: return nil
             case .next:
-                guard let following = next(current) else { return nil }
+                guard let following = next(current), let units = length(current, following) else { return nil }
                 current = following
+                offset += units
             case .previous:
-                guard let preceding = previous(current) else { return nil }
+                guard let preceding = previous(current), let units = length(preceding, current) else { return nil }
                 current = preceding
+                offset -= units
             }
             steps += 1
         }

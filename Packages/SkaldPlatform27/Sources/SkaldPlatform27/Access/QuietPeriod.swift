@@ -4,6 +4,8 @@ import struct SkaldCore.TextRange
 
 enum QuietPeriod {
     static let required: Duration = .milliseconds(1500)
+    /// A field that keeps changing this long without a quiet interval is given up on.
+    static let changingLimit: Duration = .seconds(10)
 
     static func remaining(
         now: ContinuousClock.Instant, lastKeystroke: ContinuousClock.Instant?, lastValueChange: ContinuousClock.Instant?
@@ -30,6 +32,8 @@ enum QuietPeriod {
     enum Outcome: Sendable, Equatable {
         case quiet(restarts: Int)
         case tooLong, unreadable, cancelled
+        /// No quiet interval within 10 s of changes.
+        case keptChanging
     }
 
     /// The field's state, read whole; a field over 20,000 units is never read.
@@ -104,7 +108,8 @@ final class ValueChanges: @unchecked Sendable { // reason: counts and waiters ar
 }
 
 /// Watches the whole field until it stays the same for 1.5 s on the injected clock. A value change restarts the
-/// interval the moment it arrives; a change seen only in the state at the end restarts it from that read.
+/// interval the moment it arrives; a change seen only in the state at the end restarts it from that read. A restart
+/// 10 s or more after the watch began gives up.
 struct QuietWatch: Sendable {
     private enum Wake {
         case elapsed, notified, cancelled
@@ -116,6 +121,7 @@ struct QuietWatch: Sendable {
 
     func run(read: @Sendable () async -> QuietPeriod.Read) async -> QuietPeriod.Outcome {
         var restarts = 0
+        let began = clock.now()
         var seen = changes.count(field)
         let first = await read()
         guard case .state(var start) = first else { return Self.outcome(first) }
@@ -125,6 +131,7 @@ struct QuietWatch: Sendable {
                 return .cancelled
             case .notified:
                 restarts += 1
+                if clock.now() - began >= QuietPeriod.changingLimit { return .keptChanging }
                 seen = changes.count(field)
                 let restarted = await read()
                 guard case .state(let state) = restarted else { return Self.outcome(restarted) }
@@ -135,6 +142,7 @@ struct QuietWatch: Sendable {
                 guard case .state(let end) = last else { return Self.outcome(last) }
                 if QuietPeriod.holds(start: start, end: end, notified: changes.count(field) != seen) { return .quiet(restarts: restarts) }
                 restarts += 1
+                if clock.now() - began >= QuietPeriod.changingLimit { return .keptChanging }
                 seen = beforeEnd
                 start = end
             }

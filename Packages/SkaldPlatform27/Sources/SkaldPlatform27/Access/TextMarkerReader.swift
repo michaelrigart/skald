@@ -4,14 +4,14 @@ import SkaldCore
 import struct SkaldCore.TextRange
 
 /// A field read through text markers (Mail's compose area): its whole text up to 20,000 units, the selection as
-/// marker-range lengths from the field's start, and ranges addressed by stepping markers from the selection.
-/// Called on `AXQueue` only.
+/// marker-range lengths from the field's start, and a range selected for a write by stepping markers from the
+/// selection. It reports no range bounds, so these fields get the badge (finding 7). Called on `AXQueue` only.
 struct TextMarkerReader: FieldReader {
     let field: TextMarkerField
-    private let overLimit = OnceFlag()
+    private let unread = OnceFlag()
 
     init?(_ element: AXElement) {
-        guard let field = TextMarkerField(element) else { return nil }
+        guard let field = TextMarkerField(element, readsToMeasure: false) else { return nil }
         self.field = field
     }
 
@@ -28,8 +28,8 @@ struct TextMarkerReader: FieldReader {
         guard range.location >= 0, range.length >= 0 else { return nil }
         let total = length()
         guard let text = TextAccessRules.markerText(length: total, read: { field.text }) else {
-            if let total, total > TextAccessRules.wholeValueLimit, overLimit.raise() {
-                PlatformLog.access.notice("text-marker field over the read limit: not read")
+            if let kind = TextAccessRules.markerUnreadKind(length: total), unread.raise() {
+                PlatformLog.access.notice("text-marker field not read: \(kind, privacy: .public)")
             }
             return nil
         }
@@ -38,7 +38,7 @@ struct TextMarkerReader: FieldReader {
     }
 
     func bounds(for range: TextRange) -> CGRect? {
-        markerRange(for: range).flatMap { field.bounds(of: $0) }.flatMap { AXElement.usable($0) }
+        nil
     }
 
     func select(_ range: TextRange) -> Bool {
@@ -56,14 +56,17 @@ struct TextMarkerReader: FieldReader {
 
     /// `range` as markers: its start stepped to from the selection's start, its end from its start.
     private func markerRange(for range: TextRange) -> AXTextMarkerRange? {
-        guard let anchor = field.selectionStartMarker, let start = walk(from: anchor, to: range.location) else { return nil }
-        guard let end = range.length == 0 ? start : walk(from: start, to: range.end) else { return nil }
+        guard let anchor = field.selectionStartMarker, let origin = field.offset(of: anchor),
+              let start = walk(from: anchor, at: origin, to: range.location)
+        else { return nil }
+        guard let end = range.length == 0 ? start : walk(from: start, at: range.location, to: range.end) else { return nil }
         return AXTextMarkerRangeCreate(nil, start, end)
     }
 
-    private func walk(from marker: AXTextMarker, to target: Int) -> AXTextMarker? {
+    private func walk(from marker: AXTextMarker, at origin: Int, to target: Int) -> AXTextMarker? {
         TextAccessRules.walk(
-            from: marker, to: target, offset: { field.offset(of: $0) }, next: { field.next($0) }, previous: { field.previous($0) }
+            from: marker, at: origin, to: target, next: { field.next($0) }, previous: { field.previous($0) },
+            length: { field.length(from: $0, to: $1) }
         )
     }
 }

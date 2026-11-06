@@ -33,11 +33,22 @@ struct TextMarkerField {
     private static let selectedAttribute = "AXSelectedTextMarkerRange"
 
     let element: AXElement
+    /// The probe may measure by reading a range's whole string where the app doesn't answer marker lengths;
+    /// Skald itself never does, so it never reads a field to find out how long it is.
+    let readsToMeasure: Bool
 
-    init?(_ element: AXElement) {
+    init?(_ element: AXElement, readsToMeasure: Bool) {
         self.element = element
+        self.readsToMeasure = readsToMeasure
         guard let range = elementRange, selectedRange != nil else { return nil }
         if let length = length(of: range), length > Self.maxTextLength { return nil }
+    }
+
+    /// A marker range's length: the app's answer, or, only where reading to measure is allowed, its string's length.
+    static func measuredLength(answered: Int?, readsToMeasure: Bool, read: () -> String?) -> Int? {
+        if let answered { return answered }
+        guard readsToMeasure else { return nil }
+        return read().map { ($0 as NSString).length }
     }
 
     static func checkedCaret(offset: Int?, length: Int?, textLength: Int) -> CFRange? {
@@ -128,18 +139,17 @@ struct TextMarkerField {
         return length(of: AXTextMarkerRangeCreate(nil, AXTextMarkerRangeCopyStartMarker(whole), marker))
     }
 
+    /// The units between two markers, `start` first.
+    func length(from start: AXTextMarker, to end: AXTextMarker) -> Int? {
+        length(of: AXTextMarkerRangeCreate(nil, start, end))
+    }
+
     func next(_ marker: AXTextMarker) -> AXTextMarker? {
         Self.marker(element.parameterized("AXNextTextMarkerForTextMarker", marker))
     }
 
     func previous(_ marker: AXTextMarker) -> AXTextMarker? {
         Self.marker(element.parameterized("AXPreviousTextMarkerForTextMarker", marker))
-    }
-
-    func bounds(of range: AXTextMarkerRange) -> CGRect? {
-        guard let raw = element.parameterized("AXBoundsForTextMarkerRange", range), CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
-        var rect = CGRect.zero
-        return AXValueGetValue(raw as! AXValue, .cgRect, &rect) ? rect : nil
     }
 
     /// The start marker of any element's selected marker range, without requiring the element to be a field.
@@ -152,8 +162,8 @@ struct TextMarkerField {
     }
 
     private func length(of range: AXTextMarkerRange) -> Int? {
-        if let length = (element.parameterized("AXLengthForTextMarkerRange", range) as? NSNumber)?.intValue { return length }
-        return string(of: range).map { ($0 as NSString).length }
+        let answered = (element.parameterized("AXLengthForTextMarkerRange", range) as? NSNumber)?.intValue
+        return Self.measuredLength(answered: answered, readsToMeasure: readsToMeasure) { string(of: range) }
     }
 
     private static func markerRange(_ raw: CFTypeRef?) -> AXTextMarkerRange? {

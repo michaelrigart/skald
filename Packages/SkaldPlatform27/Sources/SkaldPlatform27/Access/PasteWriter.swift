@@ -34,15 +34,22 @@ struct PastePlan {
         case unreadable
     }
 
+    /// The checks right before ⌘V and the post, made in one `AXQueue` job so nothing runs between them.
+    enum RecheckPost: Sendable, Equatable {
+        case mismatch(Mismatch)
+        /// Every check passed; false when the key events could not be created.
+        case posted(Bool)
+    }
+
     enum Input: Sendable, Equatable {
         case clipboard(restorable: Bool)
         case quiet(QuietPeriod.Outcome)
         case selection(SelectionStart)
         case covered(Bool, waited: Duration)
         case staged(PasteboardSwap.Staging)
-        /// nil: every check passed.
-        case rechecked(Mismatch?)
-        case posted(Bool)
+        /// Main actor, right before the recheck: the clipboard no longer holds the stage (the user copied).
+        case clipboardChangedBeforePaste
+        case rechecked(RecheckPost)
         case read(Read, elapsed: Duration)
         case cancelled
     }
@@ -56,9 +63,9 @@ struct PastePlan {
         case checkSelection(after: Duration)
         /// Main actor: put the replacement on the clipboard.
         case stage
-        /// `AXQueue`, right before ⌘V: the app is frontmost, the focused element is the field, the range is selected.
-        case recheck
-        case post
+        /// Main actor: cancelled, or the clipboard no longer holds the stage? Then one `AXQueue` job: the app is
+        /// frontmost, the focused element is the field, the range is selected, then ⌘V.
+        case recheckAndPost
         case poll(after: Duration)
         case restoreClipboard
         case restoreCaret(WriteEnd)
@@ -73,13 +80,21 @@ struct PastePlan {
 
     /// Why the write stopped before ⌘V, as a fixed kind.
     private(set) var abortReason: String?
+    private let changesText: Bool
     private var selected = false
     private var stageRequested = false
+    private var recheckRequested = false
     private var postRequested = false
     private var finished = false
 
-    func start() -> [Step] {
-        [.snapshot]
+    /// `changesText` is false when the replacement equals the text at the range: the field would show the expected
+    /// paragraph before the paste lands, so it could never prove the paste.
+    init(changesText: Bool = true) {
+        self.changesText = changesText
+    }
+
+    mutating func start() -> [Step] {
+        changesText ? [.snapshot] : abort(.failed, "the replacement equals the text at the range")
     }
 
     mutating func next(_ input: Input) -> [Step] {
@@ -93,6 +108,8 @@ struct PastePlan {
             return abort(.unsupported, "the field is longer than 20,000 units")
         case .quiet(.unreadable):
             return abort(.failed, "the field could not be read")
+        case .quiet(.keptChanging):
+            return abort(.failed, "the field kept changing")
         case .quiet(.cancelled), .cancelled:
             return abort(.failed, "cancelled")
         case .selection(.requested):
@@ -112,21 +129,26 @@ struct PastePlan {
             return waited < Self.selectionWait
                 ? [.checkSelection(after: Self.pollInterval)] : abort(.failed, "the selection did not cover the range")
         case .staged(.staged):
-            return [.recheck]
+            guard !recheckRequested else { return [] }
+            recheckRequested = true
+            return [.recheckAndPost]
         case .staged(.changedSinceSnapshot):
             return abort(.failed, "the clipboard changed since the snapshot")
         case .staged(.unrestorable):
             return abort(.unsupported, "the clipboard holds concealed or promised content")
-        case .rechecked(let mismatch):
-            guard !postRequested else { return [] }
-            if let mismatch { return abort(.failed, mismatch.rawValue) }
-            postRequested = true
-            return [.post]
-        case .posted(true):
-            return [.poll(after: .zero)]
-        case .posted(false):
-            postRequested = false
-            return abort(.failed, "the key events could not be created")
+        case .clipboardChangedBeforePaste:
+            return abort(.failed, "the clipboard changed before the paste", restoreClipboard: false)
+        case .rechecked(let result):
+            guard recheckRequested, !postRequested else { return [] }
+            switch result {
+            case .mismatch(let mismatch):
+                return abort(.failed, mismatch.rawValue)
+            case .posted(false):
+                return abort(.failed, "the key events could not be created")
+            case .posted(true):
+                postRequested = true
+                return [.poll(after: .zero)]
+            }
         case .read(.expected, _):
             guard postRequested else { return [] }
             finished = true
@@ -141,12 +163,13 @@ struct PastePlan {
 
     /// Nothing has pasted yet, so the clipboard goes back at once and a moved selection is put back. Once ⌘V
     /// is posted there is no abort: only the expected paragraph restores the clipboard.
-    private mutating func abort(_ outcome: ReplaceOutcome, _ reason: String) -> [Step] {
+    /// A clipboard that changed since the stage holds the user's new copy and is left alone.
+    private mutating func abort(_ outcome: ReplaceOutcome, _ reason: String, restoreClipboard: Bool = true) -> [Step] {
         guard !postRequested else { return unconfirmed() }
         finished = true
         abortReason = reason
         var steps: [Step] = []
-        if stageRequested { steps.append(.restoreClipboard) }
+        if stageRequested, restoreClipboard { steps.append(.restoreClipboard) }
         if selected { steps.append(.restoreCaret(.abortedAfterSelecting)) }
         return steps + [.finish(outcome)]
     }
@@ -160,11 +183,13 @@ struct PastePlan {
 /// The Accessibility side of one paste write; each call hops to `AXQueue`.
 protocol PasteTarget: Sendable {
     func state() async -> QuietPeriod.Read
+    /// False when the replacement equals the text at the range.
+    var changesText: Bool { get }
     /// Task 13's checks, then the user's selection and a request to select the range.
     func select() async -> (start: PastePlan.SelectionStart, user: TextRange?)
     func covers() async -> Bool
-    func recheck() async -> PastePlan.Mismatch?
-    func post(keyCode: CGKeyCode) async -> Bool
+    /// The checks right before ⌘V and the post, in one `AXQueue` job with nothing queued between them.
+    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost
     func read() async -> PastePlan.Read
     func restoreCaret(_ end: WriteEnd, user: TextRange?) async
 }
@@ -213,7 +238,7 @@ final class PasteWriter {
         }
         defer { writing.remove(field.app) }
 
-        var plan = PastePlan()
+        var plan = PastePlan(changesText: target.changesText)
         var steps = plan.start()
         var report = Report()
         var swap: PasteboardSwap?
@@ -250,11 +275,15 @@ final class PasteWriter {
             case .stage:
                 keyCode = CommandV.keyCode()
                 input = swap.map { .staged($0.stage(replacement)) } ?? .cancelled
-            case .recheck:
-                input = .rechecked(await target.recheck())
-            case .post:
-                postedAt = clock.now()
-                input = .posted(await target.post(keyCode: keyCode))
+            case .recheckAndPost:
+                if Task.isCancelled {
+                    input = .cancelled
+                } else if swap?.holdsStage != true {
+                    input = .clipboardChangedBeforePaste
+                } else {
+                    postedAt = clock.now()
+                    input = .rechecked(await target.recheckAndPost(keyCode: keyCode))
+                }
             case .poll(let delay):
                 guard await pause(delay) else {
                     input = .cancelled

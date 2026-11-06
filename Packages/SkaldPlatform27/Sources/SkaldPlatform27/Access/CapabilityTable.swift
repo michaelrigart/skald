@@ -35,7 +35,7 @@ enum CapabilityTable {
         "com.tinyspeck.slackmacgap": AppAccess(badge, write: .paste, mode: .chromium),
         "org.whispersystems.signal-desktop": AppAccess(badge, write: .paste, mode: .chromium),
         "md.obsidian": AppAccess(badge, write: .paste, mode: .chromium),
-        "com.apple.mail": AppAccess(badge, probed: .rangeBounds, write: .paste, mode: .native),
+        "com.apple.mail": AppAccess(badge, write: .paste, mode: .native),
         "ch.protonmail.desktop": AppAccess(badge, write: nil, mode: .chromium),
     ]
 

@@ -15,8 +15,7 @@ private struct Script {
     var selection: PastePlan.SelectionStart = .requested
     var covered: [Bool] = [true]
     var staging: PasteboardSwap.Staging = .staged
-    var recheck: PastePlan.Mismatch?
-    var posted = true
+    var recheck: PastePlan.RecheckPost = .posted(true)
     /// One per poll, 25 ms apart from the ⌘V on.
     var reads: [PastePlan.Read] = [.expected]
 }
@@ -40,8 +39,7 @@ private func steps(_ script: Script) -> [PastePlan.Step] {
             input = .covered(script.covered[min(checks, script.covered.count - 1)], waited: .milliseconds(25 * checks))
             checks += 1
         case .stage: input = .staged(script.staging)
-        case .recheck: input = .rechecked(script.recheck)
-        case .post: input = .posted(script.posted)
+        case .recheckAndPost: input = .rechecked(script.recheck)
         case .poll:
             input = .read(script.reads[min(polls, script.reads.count - 1)], elapsed: .milliseconds(25 * polls))
             polls += 1
@@ -63,13 +61,13 @@ private func isPoll(_ step: PastePlan.Step) -> Bool {
 
 /// The steps taken once ⌘V was posted.
 private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
-    guard let post = steps.firstIndex(of: .post) else { return [] }
+    guard let post = steps.firstIndex(of: .recheckAndPost) else { return [] }
     return Array(steps[(post + 1)...])
 }
 
 @Test func aConfirmedPasteStagesPostsAndRestoresExactlyOnceInOrder() {
     #expect(steps(Script()) == [
-        .snapshot, .watchQuiet, .select, .checkSelection(after: .zero), .stage, .recheck, .post, .poll(after: .zero),
+        .snapshot, .watchQuiet, .select, .checkSelection(after: .zero), .stage, .recheckAndPost, .poll(after: .zero),
         .restoreClipboard, .restoreCaret(.confirmed), .finish(.replaced),
     ])
 }
@@ -85,7 +83,7 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
 @Test func aClipboardChangedSinceTheSnapshotAbortsWithTheClipboardRestoredAndTheSelectionPutBack() {
     let taken = steps(Script(staging: .changedSinceSnapshot))
     #expect(Array(taken.suffix(3)) == [.restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
-    #expect(count(.post, in: taken) == 0)
+    #expect(count(.recheckAndPost, in: taken) == 0)
 }
 
 @Test func theChecksBeforeSelectingRefuseWithoutStagingOrMovingTheSelection() {
@@ -98,9 +96,9 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
 
 @Test func eachRecheckBeforeThePasteAbortsWithTheClipboardRestoredAndTheCaretRule() {
     for mismatch in [PastePlan.Mismatch.notFrontmost, .otherField, .selectionMoved] {
-        let taken = steps(Script(recheck: mismatch))
-        #expect(Array(taken.suffix(4)) == [.recheck, .restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
-        #expect(count(.post, in: taken) == 0)
+        let taken = steps(Script(recheck: .mismatch(mismatch)))
+        #expect(Array(taken.suffix(4)) == [.recheckAndPost, .restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
+        #expect(!taken.contains(where: isPoll))
         #expect(count(.restoreClipboard, in: taken) == 1)
     }
 }
@@ -154,7 +152,7 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
 }
 
 @Test func keyEventsThatCannotBeCreatedAbortBeforeAnythingPastes() {
-    let taken = steps(Script(posted: false))
+    let taken = steps(Script(recheck: .posted(false)))
     #expect(Array(taken.suffix(3)) == [.restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
 }
 
@@ -167,22 +165,50 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     var late = PastePlan()
     for input: PastePlan.Input in [
         .clipboard(restorable: true), .quiet(.quiet(restarts: 0)), .selection(.requested), .covered(true, waited: .zero),
-        .staged(.staged), .rechecked(nil), .posted(true),
+        .staged(.staged), .rechecked(.posted(true)),
     ] { _ = late.next(input) }
     #expect(late.next(.cancelled) == [.awaitProof, .finish(.unconfirmed)])
+}
+
+@Test func aWriteCancelledBetweenStagingAndThePasteRestoresTheClipboardAtOnce() {
+    var plan = PastePlan()
+    for input: PastePlan.Input in [
+        .clipboard(restorable: true), .quiet(.quiet(restarts: 0)), .selection(.requested), .covered(true, waited: .zero), .staged(.staged),
+    ] { _ = plan.next(input) }
+    #expect(plan.next(.cancelled) == [.restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
+}
+
+@Test func aClipboardCopiedOverRightBeforeThePasteAbortsAndIsLeftAlone() {
+    var plan = PastePlan()
+    for input: PastePlan.Input in [
+        .clipboard(restorable: true), .quiet(.quiet(restarts: 0)), .selection(.requested), .covered(true, waited: .zero), .staged(.staged),
+    ] { _ = plan.next(input) }
+    #expect(plan.next(.clipboardChangedBeforePaste) == [.restoreCaret(.abortedAfterSelecting), .finish(.failed)])
+    #expect(plan.abortReason == "the clipboard changed before the paste")
+}
+
+@Test func aReplacementThatEqualsTheTextAtTheRangeFailsBeforeTheSnapshot() {
+    var plan = PastePlan(changesText: false)
+    #expect(plan.start() == [.finish(.failed)])
+    #expect(plan.next(.clipboard(restorable: true)) == [])
+}
+
+@Test func aFieldThatKeepsChangingFails() {
+    #expect(steps(Script(quiet: .keptChanging)) == [.snapshot, .watchQuiet, .finish(.failed)])
 }
 
 @Test func nothingPastesTwiceAndAFinishedPlanTakesNoMoreSteps() {
     var plan = PastePlan()
     for input: PastePlan.Input in [
-        .clipboard(restorable: true), .quiet(.quiet(restarts: 0)), .selection(.requested), .covered(true, waited: .zero), .staged(.staged),
+        .clipboard(restorable: true), .quiet(.quiet(restarts: 0)), .selection(.requested), .covered(true, waited: .zero),
     ] { _ = plan.next(input) }
-    #expect(plan.next(.rechecked(nil)) == [.post])
-    #expect(plan.next(.rechecked(nil)) == [])
-    _ = plan.next(.posted(true))
+    #expect(plan.next(.staged(.staged)) == [.recheckAndPost])
+    #expect(plan.next(.staged(.staged)) == [])
+    #expect(plan.next(.rechecked(.posted(true))) == [.poll(after: .zero)])
+    #expect(plan.next(.rechecked(.posted(true))) == [])
     #expect(plan.next(.read(.expected, elapsed: .zero)).last == .finish(.replaced))
     #expect(plan.next(.read(.expected, elapsed: .zero)) == [])
-    #expect(plan.next(.rechecked(nil)) == [])
+    #expect(plan.next(.rechecked(.posted(true))) == [])
 }
 
 @Test func anAbortNamesAFixedKind() {
@@ -394,6 +420,21 @@ private func watch(
     #expect(reads.values == [.zero, .milliseconds(800), .milliseconds(2300)])
 }
 
+@Test func aNotificationEverySecondForTenSecondsGivesUp() async throws {
+    let clock = TestClock()
+    let changes = ValueChanges()
+    let reads = Recorder<Duration>()
+    let task = watch(clock, changes, reads: reads) { _ in fieldState("They is ready.") }
+    for call in 1 ... 10 {
+        try #require(await sleeps(clock, call))
+        clock.advance(by: .seconds(1))
+        changes.changed(slack)
+    }
+    #expect(await value(of: task) == .keptChanging)
+    #expect(reads.values.last == .seconds(9))
+    #expect(clock.wokenDeadlines.isEmpty)
+}
+
 @Test func aFieldOver20000UnitsCannotBeWatchedAndIsNeverWaitedOn() async {
     let clock = TestClock()
     let watcher = QuietWatch(field: slack, changes: ValueChanges(), clock: PasteClock(clock))
@@ -434,6 +475,8 @@ private final class FakeTarget: PasteTarget, @unchecked Sendable { // reason: st
     private var _state: QuietPeriod.Read = fieldState("They is ready.")
     private var _read: @Sendable () -> PastePlan.Read = { .expected }
     private var _recheck: PastePlan.Mismatch?
+    private var _changesText = true
+    private var _onCovers: @Sendable () -> Void = {}
     private var _calls: [String] = []
     private var _posts = 0
     private var _carets: [WriteEnd] = []
@@ -451,6 +494,17 @@ private final class FakeTarget: PasteTarget, @unchecked Sendable { // reason: st
     var recheckAnswer: PastePlan.Mismatch? {
         get { lock.withLock { _recheck } }
         set { lock.withLock { _recheck = newValue } }
+    }
+
+    var changesText: Bool {
+        get { lock.withLock { _changesText } }
+        set { lock.withLock { _changesText = newValue } }
+    }
+
+    /// Runs while the writer waits for `covers`, the last await before staging.
+    var onCovers: @Sendable () -> Void {
+        get { lock.withLock { _onCovers } }
+        set { lock.withLock { _onCovers = newValue } }
     }
 
     var calls: [String] { lock.withLock { _calls } }
@@ -473,18 +527,15 @@ private final class FakeTarget: PasteTarget, @unchecked Sendable { // reason: st
 
     func covers() async -> Bool {
         record("covers")
+        onCovers()
         return true
     }
 
-    func recheck() async -> PastePlan.Mismatch? {
-        record("recheck")
-        return recheckAnswer
-    }
-
-    func post(keyCode: CGKeyCode) async -> Bool {
-        record("post")
+    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
+        record("recheckAndPost")
+        if let mismatch = recheckAnswer { return .mismatch(mismatch) }
         lock.withLock { _posts += 1 }
-        return true
+        return .posted(true)
     }
 
     func read() async -> PastePlan.Read {
@@ -532,6 +583,7 @@ private func held(_ pasteboard: NSPasteboard) -> String? {
     #expect(held(pasteboard) == "old content")
     #expect(target.posts == 1)
     #expect(target.carets == [.confirmed])
+    #expect(target.calls == ["state", "state", "select", "covers", "recheckAndPost", "read", "caret"])
 }
 
 @MainActor @Test func thePasteIsConfirmedWhenTheExpectedParagraphAppearsHalfASecondAfterTheOriginal() async throws {
@@ -641,7 +693,7 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     defer { pasteboard.releaseGlobally() }
     let before = pasteboard.changeCount
     let target = FakeTarget()
-    #expect(await writer(TestClock(), pasteboard).write("are", in: slack, target: target) == .unsupported)
+    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("are", in: slack, target: target) }) == .unsupported)
     #expect(target.calls.isEmpty)
     #expect(pasteboard.changeCount == before)
 }
@@ -652,7 +704,7 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
     let before = pasteboard.changeCount
     let target = FakeTarget()
     target.stateAnswer = .tooLong
-    #expect(await writer(TestClock(), pasteboard).write("are", in: slack, target: target) == .unsupported)
+    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("are", in: slack, target: target) }) == .unsupported)
     #expect(target.calls == ["state"])
     #expect(pasteboard.changeCount == before)
 }
@@ -674,4 +726,69 @@ private func unconfirmedWrite(_ clock: TestClock, _ paste: PasteWriter, _ target
 
 @MainActor @Test func theCommandVKeyCodeIsAKeyOnTheKeyboard() {
     #expect(CommandV.keyCode() < 128)
+}
+
+@MainActor @Test func aWriteCancelledAfterStagingRestoresTheClipboardAndNeverPastes() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let target = FakeTarget()
+    let paste = writer(clock, pasteboard)
+    let write = Task { await paste.write("are", in: slack, target: target) }
+    try #require(await sleeps(clock, 1))
+    target.onCovers = { write.cancel() }
+    clock.advance(by: .milliseconds(1500))
+    #expect(await value(of: write) == .failed)
+    #expect(held(pasteboard) == "old content")
+    #expect(!target.calls.contains("recheckAndPost"))
+    #expect(target.carets == [.abortedAfterSelecting])
+}
+
+@MainActor @Test func aReplacementThatChangesNothingFailsWithNothingTouched() async {
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let before = pasteboard.changeCount
+    let target = FakeTarget()
+    target.changesText = false
+    #expect(await value(of: Task { await writer(TestClock(), pasteboard).write("is", in: slack, target: target) }) == .failed)
+    #expect(target.calls.isEmpty)
+    #expect(pasteboard.changeCount == before)
+}
+
+@MainActor @Test func aFieldThatKeepsChangingForTenSecondsFailsAndFreesTheApp() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let paste = writer(clock, pasteboard)
+    let busy = FakeTarget()
+    busy.stateAnswer = fieldState("They is ready.")
+    let changing = Task { await paste.write("are", in: slack, target: busy) }
+    for call in 1 ... 7 {
+        try #require(await sleeps(clock, call))
+        busy.stateAnswer = fieldState("They is ready." + String(repeating: "!", count: call))
+        clock.advance(by: .milliseconds(1500))
+    }
+    #expect(await value(of: changing) == .failed)
+    #expect(clock.now.offset == .milliseconds(10_500))
+    #expect(!busy.calls.contains("select"))
+    #expect(held(pasteboard) == "old content")
+
+    let next = Task { await paste.write("are", in: slack, target: FakeTarget()) }
+    try #require(await sleeps(clock, 8))
+    clock.advance(by: .milliseconds(1500))
+    #expect(await value(of: next) == .replaced)
+}
+
+@MainActor @Test func anUnconfirmedPasteMakesTheNextPasteWriteUnsupported() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let target = FakeTarget()
+    target.readAnswer = { .other }
+    let paste = writer(clock, pasteboard)
+    #expect(try await unconfirmedWrite(clock, paste, target) == .unconfirmed)
+    let next = FakeTarget()
+    #expect(await value(of: Task { await paste.write("is", in: FieldID(app: "md.obsidian", token: "3"), target: next) }) == .unsupported)
+    #expect(next.calls.isEmpty)
+    #expect(held(pasteboard) == "are")
 }

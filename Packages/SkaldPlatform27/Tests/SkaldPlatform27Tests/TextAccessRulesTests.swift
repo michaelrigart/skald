@@ -99,14 +99,12 @@ private let notes = FieldID(app: "com.apple.Notes", token: "1")
     }
 }
 
-@Test func mailWritesByPasteAndProbesRangeBoundsAtRunTime() {
+@Test func mailWritesByPasteWithTheBadgeAndProbesNothing() {
     let mail = CapabilityTable.access(for: "com.apple.mail")
     #expect(mail.capabilities == [.read, .fieldFrame, .cleanWrite])
-    #expect(mail.probed == .rangeBounds)
+    #expect(mail.probed.isEmpty)
     #expect(mail.write == .paste)
     #expect(mail.mode == .native)
-    #expect(CapabilityTable.capabilities(mail, measured: [.rangeBounds]) == [.read, .rangeBounds, .fieldFrame, .cleanWrite])
-    #expect(CapabilityTable.capabilities(mail, measured: []) == [.read, .fieldFrame, .cleanWrite])
 }
 
 @Test func protonMailIsReadOnly() {

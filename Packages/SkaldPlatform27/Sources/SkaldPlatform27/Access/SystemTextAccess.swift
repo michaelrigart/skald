@@ -141,6 +141,10 @@ struct AXPasteTarget: PasteTarget {
         TextAccessRules.applying(replacement, at: range, to: original)
     }
 
+    var changesText: Bool {
+        TextAccessRules.text(of: original, at: range) != replacement
+    }
+
     func state() async -> QuietPeriod.Read {
         await queue.run { [observer, field] in
             guard let reader = observer.entry(field)?.source else { return .unreadable }
@@ -170,19 +174,14 @@ struct AXPasteTarget: PasteTarget {
         await queue.run { [observer, field] in observer.entry(field).map { covers($0.source) } ?? false }
     }
 
-    func recheck() async -> PastePlan.Mismatch? {
+    /// One `AXQueue` job, so no queued callback or read runs between the last check and ⌘V.
+    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
         await queue.run { [observer, field] in
-            guard let entry = observer.entry(field), let pid = entry.element.pid else { return .otherField }
-            guard AXElement.focusedApplicationPID() == pid else { return .notFrontmost }
-            guard observer.isFocusedElement(entry, pid: pid) else { return .otherField }
-            return covers(entry.source) ? nil : .selectionMoved
-        }
-    }
-
-    func post(keyCode: CGKeyCode) async -> Bool {
-        await queue.run { [observer, field] in
-            guard let pid = observer.entry(field)?.element.pid else { return false }
-            return CommandV.post(to: pid, keyCode: keyCode)
+            guard let entry = observer.entry(field), let pid = entry.element.pid else { return .mismatch(.otherField) }
+            guard AXElement.focusedApplicationPID() == pid else { return .mismatch(.notFrontmost) }
+            guard observer.isFocusedElement(entry, pid: pid) else { return .mismatch(.otherField) }
+            guard covers(entry.source) else { return .mismatch(.selectionMoved) }
+            return .posted(CommandV.post(to: pid, keyCode: keyCode))
         }
     }
 

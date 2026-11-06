@@ -248,7 +248,7 @@ enum FieldProbe {
         if forced == .ranges { return ranges }
         let rangesPlace = value.map { ProbeMarker.range(in: $0, caret: selection) != nil } ?? false
         if forced == nil, rangesPlace { return ranges }
-        guard let markers = TextMarkerField(field) else { return ranges }
+        guard let markers = TextMarkerField(field, readsToMeasure: true) else { return ranges }
         let text = markers.text
         let textLength = text.map { ($0 as NSString).length }
         let caret = textLength.flatMap { markers.caret(textLength: $0) }
@@ -266,7 +266,7 @@ enum FieldProbe {
     }
 
     static func editableAncestorDiagnosis(pid: pid_t) -> String {
-        TextMarkerField.describeEditableAncestor(focusedField(pid).flatMap { TextMarkerField($0)?.selectionStartHasEditableAncestor })
+        TextMarkerField.describeEditableAncestor(focusedField(pid).flatMap { TextMarkerField($0, readsToMeasure: true)?.selectionStartHasEditableAncestor })
     }
 
     /// Diagnostic only, numbers, booleans and roles: each step of a measurement, taken again right after an evaluation that logged no field kind.
@@ -285,14 +285,14 @@ enum FieldProbe {
     }
 
     private static func markerState(of element: AXElement?) -> MarkerFieldState {
-        guard let element, let markers = TextMarkerField(element) else { return .unavailable }
+        guard let element, let markers = TextMarkerField(element, readsToMeasure: true) else { return .unavailable }
         let length = markers.text.map { ($0 as NSString).length }
         let caret = length.flatMap { markers.caret(textLength: $0) }
         return MarkerFieldState(initialises: true, textLength: length, caretLocation: caret?.location, caretLength: caret?.length)
     }
 
     static func text(of field: AXElement, kind: FieldKind) -> String? {
-        kind == .textMarkers ? TextMarkerField(field)?.text : field.value
+        kind == .textMarkers ? TextMarkerField(field, readsToMeasure: true)?.text : field.value
     }
 
     static func measure(pid: pid_t, formatting: (location: Int, length: Int)?, forcing forced: FieldKind? = nil) -> FieldReading? {
@@ -360,7 +360,7 @@ enum FieldProbe {
             }
             prepared.selectionWaitedMs = waited
         case .textMarkers:
-            guard let markers = TextMarkerField(field) else { return .aborted(reason: "the text markers are no longer available") }
+            guard let markers = TextMarkerField(field, readsToMeasure: true) else { return .aborted(reason: "the text markers are no longer available") }
             prepared.originalMarkerSelection = markers.selectedRange.map(MarkerRangeBox.init)
             guard let anchor = TextMarkerField.anchor(for: markerRange, caret: content.selection, textLength: (value as NSString).length),
                   let end = markers.anchorMarker(anchor)
@@ -408,7 +408,7 @@ enum FieldProbe {
         case .ranges:
             return restore(prepared.originalSelection, in: prepared.field)
         case .textMarkers:
-            guard let original = prepared.originalMarkerSelection, let markers = TextMarkerField(prepared.field) else {
+            guard let original = prepared.originalMarkerSelection, let markers = TextMarkerField(prepared.field, readsToMeasure: true) else {
                 return "no original selection to restore"
             }
             return markers.setSelection(original.range) == .success ? "original selection restored" : "restoring the selection failed"
@@ -480,7 +480,7 @@ enum FieldProbe {
         switch prepared.kind {
         case .ranges: selectionIsMarker(prepared.field, prepared.markerRange, pair: prepared.pair)
         case .textMarkers:
-            TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field)?.selectedString, pair: prepared.pair)
+            TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field, readsToMeasure: true)?.selectedString, pair: prepared.pair)
         }
     }
 

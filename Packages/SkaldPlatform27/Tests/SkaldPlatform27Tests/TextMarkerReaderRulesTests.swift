@@ -99,6 +99,24 @@ private func source(of field: RangesField, markersAnswer: Bool) -> (kind: FieldK
     #expect(TextAccessRules.markerText(length: 4) { nil } == nil)
 }
 
+@Test func aMarkerLengthTheAppDoesNotAnswerIsUnknownAndTheFieldIsNeverReadToMeasureIt() {
+    var reads = 0
+    func read() -> String? {
+        reads += 1
+        return "They is ready."
+    }
+    #expect(TextMarkerField.measuredLength(answered: 14, readsToMeasure: false, read: read) == 14)
+    #expect(TextMarkerField.measuredLength(answered: nil, readsToMeasure: false, read: read) == nil)
+    #expect(reads == 0)
+    #expect(TextMarkerField.measuredLength(answered: nil, readsToMeasure: true, read: read) == 14)
+}
+
+@Test func aTextMarkerFieldThatCannotBeReadNamesAFixedKind() {
+    #expect(TextAccessRules.markerUnreadKind(length: nil) == "the app gives no marker lengths")
+    #expect(TextAccessRules.markerUnreadKind(length: 20_001) == "over the read limit")
+    #expect(TextAccessRules.markerUnreadKind(length: 20_000) == nil)
+}
+
 // MARK: Selecting by markers
 
 /// Text markers over a text: one marker before each grapheme and one at the end, so a wide grapheme is one step.
@@ -126,8 +144,13 @@ private final class Markers: @unchecked Sendable { // reason: each test touches 
         return marker > 0 ? marker - 1 : nil
     }
 
+    /// The units between two adjacent markers; any wider span is never asked for.
+    func length(_ start: Int, _ end: Int) -> Int? {
+        end == start + 1 ? offsets[end] - offsets[start] : nil
+    }
+
     func walk(from start: Int, to target: Int) -> Int? {
-        TextAccessRules.walk(from: start, to: target, offset: offset, next: next, previous: previous)
+        TextAccessRules.walk(from: start, at: offsets[start], to: target, next: next, previous: previous, length: length)
     }
 }
 
@@ -161,10 +184,10 @@ private final class Markers: @unchecked Sendable { // reason: each test touches 
 
 @Test func aWalkWhoseStepsMakeNoProgressEnds() {
     var steps = 0
-    let found = TextAccessRules.walk(from: 0, to: 10, offset: { _ in 3 }, next: { marker in
+    let found = TextAccessRules.walk(from: 0, at: 3, to: 10, next: { marker in
         steps += 1
         return steps < 100 ? marker : nil
-    }, previous: { $0 })
+    }, previous: { $0 }, length: { _, _ in 0 })
     #expect(found == nil)
     #expect(steps <= 2 * 7)
 }
