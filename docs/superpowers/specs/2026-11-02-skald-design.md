@@ -101,6 +101,64 @@ running macOS 27.2, with a typical development workload running in the backgroun
      and short paragraphs inherit the field's last confident language.
    - The spell server is unreachable from inside an agent sandbox; these lookups run outside
      it.
+7. **Text access per app, and the model inside the signed app** (the plan's feasibility probe,
+   2026-11-05 and 2026-11-06, a signed build run from `/Applications` with Michael at the
+   Mac). This answers finding 5's open question.
+
+   | App and field | Read through | Range bounds | Clean write | ⌘Z | Class |
+   |---|---|---|---|---|---|
+   | Notes | ranges | yes | Accessibility, formatting kept | exact; earlier history survives | full |
+   | TextEdit | ranges | yes | Accessibility, formatting kept | exact; earlier history survives | full |
+   | Zen: a textarea, GitLab's comment box | ranges | yes, stable through scrolling | paste | exact; earlier history survives | full |
+   | Zen: Basecamp's editor (Trix) | ranges | yes | paste | exact; earlier history survives | full |
+   | Slack | ranges | no; field frame | paste | exact | badge |
+   | Signal | ranges | no; field frame | paste | exact | badge |
+   | Obsidian | ranges | no; field frame | paste | exact | badge |
+   | Proton Mail | ranges; the caret reads 0 after a paste | no; field frame | none: a paste adds a line break | exact | badge, Copy only |
+   | Mail (compose) | text markers | not measured; field frame | paste | exact | badge |
+
+   - **Accessibility writes** are clean only in Notes and TextEdit. Elsewhere the app accepts
+     the call and then ignores it (Signal, Obsidian), inserts the text one unit off
+     without removing the old text (Zen's text areas, the open Firefox bug 1866621), or applies
+     it some time later (Zen's plain input). A paste of the same replacement landed exactly
+     within about 25 ms in Zen's text areas (including GitLab's comment box), Signal, Obsidian
+     and Slack.
+   - **Undo.** Slack merges edits made within about a second into one undo step: a paste that
+     follows the user's own edit too closely is undone together with it, hence the paste
+     write's quiet period. With it, the first ⌘Z after a paste restored the text exactly in
+     every paste app. A second ⌘Z removed the user's own previous edit wherever it was
+     measured (Notes, TextEdit, Zen's text areas, Basecamp), so the app's earlier history
+     survives; a paste is an ordinary edit in the app's own undo stack.
+   - **Electron apps** need `AXManualAccessibility`; Obsidian's focused element appears about
+     1 s after it is set. They give the field's frame but no bounds for a character range, so
+     they get the badge. Zen's fields give range bounds; its textarea's stayed correct through
+     scrolling.
+   - **Change notifications** (value, selection, focus) arrived within 2 s of a keystroke in
+     every text field probed.
+   - **Text markers.** Mail's compose area is a web area that is its own editable element; it
+     answers text-marker reads (the text, and the caret as marker-range lengths), not
+     character ranges. WebKit doesn't answer `AXStartTextMarkerForTextMarkerRange` or
+     `AXIndexForTextMarker`; the public `AXTextMarkerRangeCopyStartMarker` and marker-range
+     lengths do the job. Mail's focused element appears about 1 s after the app is
+     activated. Proton Mail's composer reads through ranges while typing, but after a paste
+     its caret reads 0 until the next keystroke, and its text-marker selection comes and
+     goes.
+   - **Editors that format as you type.** Basecamp's Trix turns `~text~` into
+     strikethrough, so the probe's marker needed a form without tildes there. Zen's
+     rich-text editors are ordinary text areas to Accessibility once focused; no browser
+     extension is needed.
+   - **Cost of asking for the tree.** The probe couldn't take a clean before-and-after pair:
+     an Electron app has no focused element until accessibility is on. While the probe was
+     reading them, Signal used 10–17 % of a core and Obsidian 7–14 %. Left on afterwards,
+     with nothing reading them, Signal and Slack idled at 1–2 %. Firefox answers
+     `AXEnhancedUserInterface` with an error and builds its tree for any client that asks,
+     so Zen's cost is the cost of being read at all; its samples during the probe (40–94 %)
+     were taken while Michael browsed. Ten minutes of `powermetrics` at acceptance measure
+     the cost while typing.
+   - **Apple's model inside the signed app,** on the seed set with the spike's prompt and
+     scorer: recall 0.97 (34/35), precision 0.83, 3 of 12 clean paragraphs flagged, 0.47 s /
+     0.57 s per paragraph (p50 / p90). The one difference from the spike's run is a new Dutch
+     false alarm, "reviewt" → "beoordeelt", a translated anglicism the edit guard drops.
 
 ## Success
 
@@ -152,6 +210,7 @@ Skald has failed, even if it works, if it:
 - rewrites, rephrases or translates when the user asked for a fix, or while checking as they
   type;
 - changes any text the user didn't accept, or replaces text that changed since it was checked;
+- leaves the clipboard different from how it found it after a paste write;
 - sends text off the Mac unless the user chose a remote engine for that action or made one the
   panel's default;
 - writes user text to disk, logs it, or collects telemetry. Only the never-touch list is stored;
@@ -175,7 +234,9 @@ Skald has failed, even if it works, if it:
 - **Install location.** `/Applications`, launched with `open`, so the Accessibility grant goes
   to Skald and not to a terminal.
 - **Identity.** Bundle identifier `com.michaelrigart.skald`.
-- **Signing.** Ad-hoc, like Linger and Hulder. Every rebuild needs Accessibility granted again.
+- **Signing.** Michael's Apple Development certificate (his Personal Team), so the
+  Accessibility grant survives rebuilds. A builder without it signs ad hoc and grants
+  Accessibility again after every rebuild. (Ad hoc until 2026-11-05.)
 - **Toolchain.** The same as Hulder:
   - Xcode through `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` per command.
   - XcodeGen, pinned in the repository's `mise.toml`; the generated project is not tracked.
@@ -222,20 +283,46 @@ Three parts, as in Hulder, so that a macOS change or a new engine touches one la
 
 Names are left to the builder.
 
-- **Capabilities per app,** decided by the feasibility check and probed at run time: read,
-  range bounds, the field's frame, a clean write, or nothing. A write is clean only if ⌘Z
-  undoes exactly that change and the formatting around it survives. An app without a clean
-  write is read-only: Copy instead of Accept. Skald does only what an app supports and says
-  what it can't do there.
+- **Capabilities per app,** decided by the feasibility check (finding 7) and probed at run
+  time: read, range bounds, the field's frame, a clean write, or nothing. A write is clean only
+  if ⌘Z undoes exactly that change and the formatting around it survives. An app without a
+  clean write is read-only: Copy instead of Accept. Skald does only what an app supports and
+  says what it can't do there.
+- **Two ways to read a field.** Most fields answer Accessibility's character ranges (value,
+  selection, a string and bounds for a range). Some answer only through text markers, such as
+  Mail's compose area (WebKit). Skald reads those through text markers: the field's text, and the selection as UTF-16 offsets measured as
+  the lengths of marker ranges from the field's start. It decides per field which source
+  places the caret, and keeps that source while the field lives. Text markers give no cheap
+  way to read a window around the caret, so a text-marker field longer than the read limit
+  isn't read at all (a reply above a long quoted thread, for example).
+- **Web areas.** When the focused element is a web area, it is a field only if the element
+  at its selection's start marker has an editable ancestor; the field is that ancestor
+  (Mail's compose area is its own). A page being read is never a field. Zen's rich-text
+  editors need no special route: focused, they are ordinary text areas (finding 7).
+- **Two ways to write a clean replacement,** per app, each enabled only where the feasibility
+  check measured it as clean:
+  - **Accessibility:** select the range, then set the selected text (Notes, TextEdit).
+  - **Paste,** where an app reads but ignores or misplaces Accessibility writes (Electron
+    apps, Firefox), and in fields read through text markers (Mail): select the range
+    through Accessibility and verify the selection; put the replacement on the clipboard,
+    marked transient and concealed so clipboard managers skip it; post ⌘V to that app alone; wait for the field to change; then put the clipboard back
+    exactly as it was. Right before ⌘V, Skald checks again that the app is still frontmost,
+    the focused element is the same one and the selection still covers the range; any change
+    aborts, restores the clipboard and the selection, and leaves the text untouched. It waits
+    until the field has been unchanged for 1.5 s, so the paste gets an undo step of its own in apps that merge edits made close together. It doesn't paste when
+    the clipboard holds content it can't put back faithfully (concealed or promised data), or
+    when the clipboard changed since Skald saved it; the suggestion then offers Copy.
 - **Snapshots** of the focused field: its text, selection and an identity stable while the
   field lives. Reads are bounded: a field longer than a limit is checked only around the caret.
 - **Bounds** for a character range, in screen coordinates, used to draw underlines.
 - **Replace** a range only if it is still the same field and the whole paragraph the issue was
   computed from is unchanged, not just the flagged words; otherwise the replacement is refused
   and the issue dropped. ("They is ready" → "are" must not apply after "They" became "He".)
-- **Change events** from Accessibility notifications where the app sends them, with a light
-  poll of the focused field otherwise.
-- **Never:** secure text fields, excluded apps, synthetic keyboard or mouse events.
+- **Change events** from Accessibility notifications. Every probed app sends them (finding
+  7), so there is no poll; an app that sends none is checked only when its field gains
+  focus.
+- **Never:** secure text fields, excluded apps, synthetic mouse events, or any synthetic
+  keystroke except a paste write's single ⌘V, posted to the target app only.
 
 A fake implementation drives the core's tests.
 
@@ -443,7 +530,8 @@ Never user text, never the never-touch list, never the API key.
 - **Manual acceptance on Michael's Mac:**
   - checking while typing in Notes, Mail, Zen (a plain field and Basecamp's editor), and each
     Electron app the feasibility check marked as supported;
-  - accepting, ignoring and never-flagging; ⌘Z after an accept;
+  - accepting, ignoring and never-flagging; ⌘Z after an accept, in an app written through
+    Accessibility and in one written by paste, with the clipboard unchanged afterwards;
   - the panel's Fix and rewrites on This Mac and Claude, and on the Mac Studio once it is
     available (until then its client is tested against a stub server);
   - `powermetrics` during ten minutes of normal writing: GPU at idle level, no sustained CPU
@@ -483,6 +571,17 @@ Never user text, never the never-touch list, never the API key.
   - Proton Mail, Signal or Slack get neither underlines nor the badge (panel only), which would
     break Michael's decision that Electron apps are covered;
   - forcing accessibility on costs noticeable CPU in an app he keeps open all day.
+- **At the stop gate (2026-11-05)** the probe showed Electron apps and Zen's text areas
+  reading but not taking Accessibility writes, and Zen's rich-text editors not readable as
+  fields. Michael chose paste writes for the first and an investigation of Firefox's text
+  markers for the second (see Decisions). The text access contract above records the result.
+- **The gate on 2026-11-06,** after the probe's last runs (finding 7): nothing on the list
+  triggers. Zen's rich-text editors turned out to be ordinary text areas once focused, read and
+  written like its textareas, so the choice between text markers, the panel only and an
+  extension didn't arise. Slack and Signal take paste writes; Proton Mail gets the badge with
+  Copy only. Apple's model inside the app stays within the bounds (recall 0.97, precision 0.83,
+  3 of 12 clean paragraphs flagged). Electron apps with accessibility on idle at 1–2 % of a
+  core; the cost while typing is measured at acceptance.
 
 ## Left to the builder
 
@@ -511,6 +610,21 @@ Never user text, never the never-touch list, never the API key.
 - The name is Skald.
 - A throwaway spike before this spec (its results are in "Measured on macOS 27.2").
 - Continue the work overnight without him (2026-11-02, 01:00).
+
+**Michael decided at the feasibility stop gate (2026-11-05):**
+
+- Apps without a clean Accessibility write (the Electron apps, Zen's text areas) get Accept
+  through a synthetic paste: select through Accessibility, verify the selection, put the fix
+  on the clipboard marked so clipboard managers skip it, post ⌘V, restore the clipboard. Each
+  app gets it only where the probe shows that the paste replaces exactly and ⌘Z undoes
+  exactly; the others get Copy only.
+- Zen's rich-text editors (Basecamp, GitLab): the probe first tries Firefox's text-marker
+  interface, the one VoiceOver uses; he then chooses between that, the panel only and a
+  browser extension.
+- Builds are signed with his Apple Development certificate, so the Accessibility grant
+  survives rebuilds.
+- Distribution (release script, verification, cask, CI) gets its own spec and plan, released
+  only after v1's remaining tasks.
 
 **Claude's calls, for Michael to check:**
 
