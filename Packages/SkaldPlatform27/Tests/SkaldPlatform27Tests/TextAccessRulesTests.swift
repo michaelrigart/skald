@@ -510,9 +510,9 @@ private let replaced = TextRange(location: 10, length: 4)
     #expect(reads.values.isEmpty)
 }
 
-@Test func aDisabledAppOrAWebAreaIsNoField() {
+@Test func aDisabledAppIsNoFieldAndAWebAreaResolvedToItselfIsOne() {
     #expect(!TextAccessRules.isFieldCandidate(role: "AXTextArea", subrole: nil, appEnabled: false))
-    #expect(!TextAccessRules.isFieldCandidate(role: "AXWebArea", subrole: nil, appEnabled: true))
+    #expect(TextAccessRules.isFieldCandidate(role: "AXWebArea", subrole: nil, appEnabled: true))
     #expect(TextAccessRules.isFieldCandidate(role: "AXTextArea", subrole: nil, appEnabled: true))
 }
 

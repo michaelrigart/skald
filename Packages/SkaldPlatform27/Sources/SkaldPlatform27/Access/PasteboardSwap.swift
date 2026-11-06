@@ -67,9 +67,14 @@ final class PasteboardSwap {
         return .staged
     }
 
+    /// The clipboard still holds what `stage` put there: nobody copied anything since.
+    var holdsStage: Bool {
+        changeCountAfterStage == pasteboard.changeCount
+    }
+
     func restore() -> Restoration {
-        guard let staged = changeCountAfterStage else { return .restored }
-        guard pasteboard.changeCount == staged else { return .leftAlone }
+        guard changeCountAfterStage != nil else { return .restored }
+        guard holdsStage else { return .leftAlone }
         pasteboard.clearContents()
         let items = saved.filter { !$0.isEmpty }.map { entries in
             let item = NSPasteboardItem()

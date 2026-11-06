@@ -187,12 +187,16 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
         registry.newest(app: app)
     }
 
-    /// Asked live: the field is the focused element of the system's focused app.
+    /// Asked live: the field is the focused element of the system's focused app, resolved as at registration.
     func isFocused(_ entry: Registry.Entry) -> Bool {
-        guard let pid = entry.element.pid, AXElement.focusedApplicationPID() == pid,
-              let focused = AXElement.focused(inApp: pid)
-        else { return false }
-        return focused.isSame(as: entry.element)
+        guard let pid = entry.element.pid, AXElement.focusedApplicationPID() == pid else { return false }
+        return isFocusedElement(entry, pid: pid)
+    }
+
+    /// The app's focused element, resolved through `EditableResolver`, is the field.
+    func isFocusedElement(_ entry: Registry.Entry, pid: pid_t) -> Bool {
+        guard let focused = AXElement.focused(inApp: pid), let field = EditableResolver.field(for: focused) else { return false }
+        return field.isSame(as: entry.element)
     }
 
     // MARK: FocusPort
@@ -215,9 +219,10 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     }
 
     func queryFocus(pid: pid_t, app: String) -> FocusMachine.QueryResult {
-        guard let element = AXElement.focused(inApp: pid) else { return .missing }
-        let candidate = TextAccessRules.isFieldCandidate(role: element.role, subrole: element.subrole, appEnabled: isAppEnabled(app))
-        return .element(registry.focus(element, app: app, isCandidate: candidate, source: { RangeReader(element) }))
+        guard let focused = AXElement.focused(inApp: pid) else { return .missing }
+        guard isAppEnabled(app), let element = EditableResolver.field(for: focused) else { return .element(nil) }
+        let candidate = TextAccessRules.isFieldCandidate(role: element.role, subrole: element.subrole, appEnabled: true)
+        return .element(registry.focus(element, app: app, isCandidate: candidate, source: { FieldSource.reader(for: element) }))
     }
 
     func watch(_ field: FieldID?) {

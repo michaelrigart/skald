@@ -113,6 +113,40 @@ struct TextMarkerField {
         AXUIElementSetAttributeValue(element.element, Self.selectedAttribute as CFString, range)
     }
 
+    /// The length of the element's text in UTF-16 units, measured on its marker range.
+    var textLength: Int? {
+        elementRange.flatMap { length(of: $0) }
+    }
+
+    var selectionStartMarker: AXTextMarker? {
+        selectedRange.map { AXTextMarkerRangeCopyStartMarker($0) }
+    }
+
+    /// A marker's offset from the field's start: the length of the marker range between them.
+    func offset(of marker: AXTextMarker) -> Int? {
+        guard let whole = elementRange else { return nil }
+        return length(of: AXTextMarkerRangeCreate(nil, AXTextMarkerRangeCopyStartMarker(whole), marker))
+    }
+
+    func next(_ marker: AXTextMarker) -> AXTextMarker? {
+        Self.marker(element.parameterized("AXNextTextMarkerForTextMarker", marker))
+    }
+
+    func previous(_ marker: AXTextMarker) -> AXTextMarker? {
+        Self.marker(element.parameterized("AXPreviousTextMarkerForTextMarker", marker))
+    }
+
+    func bounds(of range: AXTextMarkerRange) -> CGRect? {
+        guard let raw = element.parameterized("AXBoundsForTextMarkerRange", range), CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        return AXValueGetValue(raw as! AXValue, .cgRect, &rect) ? rect : nil
+    }
+
+    /// The start marker of any element's selected marker range, without requiring the element to be a field.
+    static func selectionStart(of element: AXElement) -> AXTextMarker? {
+        markerRange(element.attribute(selectedAttribute)).map { AXTextMarkerRangeCopyStartMarker($0) }
+    }
+
     private func string(of range: AXTextMarkerRange) -> String? {
         element.parameterized("AXStringForTextMarkerRange", range) as? String
     }
@@ -127,7 +161,7 @@ struct TextMarkerField {
         return (raw as! AXTextMarkerRange)
     }
 
-    private static func axElement(_ raw: CFTypeRef?) -> AXElement? {
+    static func axElement(_ raw: CFTypeRef?) -> AXElement? {
         guard let raw, CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
         return AXElement(raw as! AXUIElement)
     }

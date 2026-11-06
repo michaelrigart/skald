@@ -3,8 +3,9 @@ import Foundation
 import SkaldCore
 import struct SkaldCore.TextRange
 
-/// Text access on macOS 27 through Accessibility: fields read through character ranges, written through
-/// Accessibility where finding 7 measured that as clean. Every Accessibility call runs on `AXQueue`.
+/// Text access on macOS 27 through Accessibility: fields read through character ranges or text markers, written
+/// through Accessibility or by paste where finding 7 measured that as clean. Every Accessibility call runs on
+/// `AXQueue`; pasteboard work runs on the main actor.
 public final class SystemTextAccess: TextAccess {
     public let events: AsyncStream<FieldEvent>
 
@@ -12,16 +13,29 @@ public final class SystemTextAccess: TextAccess {
     private let isAppEnabled: @Sendable (String) -> Bool
     private let observer: FieldObserver
     private let waits: FocusWaits
+    private let writer: PasteWriter
 
     public init(isAppEnabled: @escaping @Sendable (String) -> Bool, clock: any Clock<Duration>) {
         let (events, continuation) = AsyncStream.makeStream(of: FieldEvent.self)
         let waits = FocusWaits(clock: clock)
+        let changes = ValueChanges()
+        let writer = PasteWriter(clock: PasteClock(clock), changes: changes)
         self.events = events
         self.isAppEnabled = isAppEnabled
         self.waits = waits
+        self.writer = writer
         observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled) { event in
             continuation.yield(event)
-            if case .focused(let field?) = event { waits.focused(field) }
+            switch event {
+            case .focused(let field?):
+                waits.focused(field)
+                Task { @MainActor in await writer.fieldChanged(field) }
+            case .edited(let field):
+                changes.changed(field)
+                Task { @MainActor in await writer.fieldChanged(field) }
+            case .focused(nil), .caretMoved:
+                break
+            }
         }
         observer.start()
     }
@@ -108,9 +122,92 @@ public final class SystemTextAccess: TextAccess {
         }
     }
 
-    /// Task 19's paste writer; until then a paste app's Accept offers Copy.
     private func pasteWrite(_ range: TextRange, expected: ExpectedText, with text: String, in field: FieldID) async -> ReplaceOutcome {
-        .unsupported
+        let target = AXPasteTarget(queue: queue, observer: observer, field: field, range: range, original: expected, replacement: text)
+        return await writer.write(text, in: field, target: target)
+    }
+}
+
+/// A paste write's Accessibility calls on its registered field, each on `AXQueue`.
+struct AXPasteTarget: PasteTarget {
+    let queue: AXQueue
+    let observer: FieldObserver
+    let field: FieldID
+    let range: TextRange
+    let original: ExpectedText
+    let replacement: String
+
+    private var revised: ExpectedText {
+        TextAccessRules.applying(replacement, at: range, to: original)
+    }
+
+    func state() async -> QuietPeriod.Read {
+        await queue.run { [observer, field] in
+            guard let reader = observer.entry(field)?.source else { return .unreadable }
+            return QuietPeriod.read(length: reader.length(), text: { reader.string(for: $0) }, selection: { reader.selection() })
+        }
+    }
+
+    func select() async -> (start: PastePlan.SelectionStart, user: TextRange?) {
+        await queue.run { [observer, field, range, original] in
+            guard let entry = observer.entry(field), let pid = entry.element.pid else { return (.refused(.otherField), nil) }
+            guard AXElement.focusedApplicationPID() == pid else { return (.refused(.notFrontmost), nil) }
+            guard observer.isFocusedElement(entry, pid: pid) else { return (.refused(.otherField), nil) }
+            let reader = entry.source
+            guard TextAccessRules.paragraphUnchanged(original, read: { reader.string(for: $0) }, length: { reader.length() }) else {
+                return (.refused(.paragraphChanged), nil)
+            }
+            let user = reader.selection()
+            switch reader.attemptSelect(range) {
+            case .accepted: return (.requested, user)
+            case .rejected: return (.rejected, user)
+            case .unreachable: return (.unreachable, user)
+            }
+        }
+    }
+
+    func covers() async -> Bool {
+        await queue.run { [observer, field] in observer.entry(field).map { covers($0.source) } ?? false }
+    }
+
+    func recheck() async -> PastePlan.Mismatch? {
+        await queue.run { [observer, field] in
+            guard let entry = observer.entry(field), let pid = entry.element.pid else { return .otherField }
+            guard AXElement.focusedApplicationPID() == pid else { return .notFrontmost }
+            guard observer.isFocusedElement(entry, pid: pid) else { return .otherField }
+            return covers(entry.source) ? nil : .selectionMoved
+        }
+    }
+
+    func post(keyCode: CGKeyCode) async -> Bool {
+        await queue.run { [observer, field] in
+            guard let pid = observer.entry(field)?.element.pid else { return false }
+            return CommandV.post(to: pid, keyCode: keyCode)
+        }
+    }
+
+    func read() async -> PastePlan.Read {
+        await queue.run { [observer, field, original, revised] in
+            guard let reader = observer.entry(field)?.source else { return .unreadable }
+            return TextAccessRules.pasteRead(original: original, revised: revised, read: { reader.string(for: $0) }, length: { reader.length() })
+        }
+    }
+
+    func restoreCaret(_ end: WriteEnd, user: TextRange?) async {
+        await queue.run { [observer, field, range, replacement] in
+            guard let user, let entry = observer.entry(field) else { return }
+            let reader = entry.source
+            let target = TextAccessRules.pasteCaret(
+                user: user, replaced: range, replacementLength: replacement.utf16.count, end: end,
+                current: reader.selection(), stillFocused: observer.isFocused(entry)
+            )
+            if let target { _ = reader.select(target) }
+        }
+    }
+
+    private func covers(_ reader: any FieldReader) -> Bool {
+        guard let text = TextAccessRules.text(of: original, at: range) else { return false }
+        return TextAccessRules.selectionCovers(range, text: text, selection: reader.selection(), selectedText: reader.selectedText())
     }
 }
 

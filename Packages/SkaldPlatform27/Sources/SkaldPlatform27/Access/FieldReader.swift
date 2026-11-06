@@ -11,6 +11,43 @@ protocol FieldReader: Sendable {
     func bounds(for range: TextRange) -> CGRect?
     /// Asks the app to select `range`; true when it accepted the call.
     func select(_ range: TextRange) -> Bool
+    /// Like `select`, but tells a range the reader can't reach from one the app rejected.
+    func attemptSelect(_ range: TextRange) -> SelectAttempt
+    /// The text the app reports as selected.
+    func selectedText() -> String?
+}
+
+enum SelectAttempt: Sendable, Equatable {
+    case accepted, rejected
+    /// The reader can't address the range (text markers beyond their reach); nothing was asked of the app.
+    case unreachable
+}
+
+extension FieldReader {
+    func attemptSelect(_ range: TextRange) -> SelectAttempt {
+        select(range) ? .accepted : .rejected
+    }
+
+    func selectedText() -> String? {
+        selection().flatMap { string(for: $0) }
+    }
+}
+
+/// The reader a newly focused field keeps while it lives (Task 19's source choice).
+enum FieldSource {
+    static func reader(for element: AXElement) -> (any FieldReader)? {
+        let ranges = RangeReader(element)
+        var markers: TextMarkerReader?
+        let kind = TextAccessRules.source(rangesReadable: ranges != nil) {
+            markers = TextMarkerReader(element)
+            return markers != nil
+        }
+        switch kind {
+        case .ranges: return ranges
+        case .textMarkers: return markers
+        case nil: return nil
+        }
+    }
 }
 
 /// A field read through Accessibility's character ranges, falling back to its whole value where ranged reads fail.
@@ -43,6 +80,10 @@ struct RangeReader: FieldReader {
 
     func select(_ range: TextRange) -> Bool {
         element.setSelectedRange(CFRange(range)) == .success
+    }
+
+    func selectedText() -> String? {
+        element.selectedText ?? selection().flatMap { string(for: $0) }
     }
 }
 

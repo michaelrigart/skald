@@ -17,6 +17,10 @@ enum WriteEnd: Sendable, Equatable {
     case unconfirmed
 }
 
+enum MarkerStep: Sendable, Equatable {
+    case reached, next, previous, refused
+}
+
 enum ReplaceStep: Sendable, Equatable {
     case refuse(ReplaceOutcome)
     case write(CleanWriteMethod)
@@ -44,11 +48,11 @@ enum TextAccessRules {
         role == secureRole || subrole == secureRole
     }
 
-    /// Secure fields, elements whose role can't be read and disabled apps are never fields; web areas wait for
-    /// Task 19's resolver.
+    /// Secure fields, elements whose role can't be read and disabled apps are never fields. A web area comes here
+    /// only once `EditableResolver` found it to be its own editable field.
     static func isFieldCandidate(role: String?, subrole: String?, appEnabled: Bool) -> Bool {
         guard appEnabled, let role else { return false }
-        return !isSecure(role: role, subrole: subrole) && role != webAreaRole
+        return !isSecure(role: role, subrole: subrole)
     }
 
     /// The retry offset to wait for after `attempts` focused-element queries, the activation's included; nil stops.
@@ -58,6 +62,19 @@ enum TextAccessRules {
     }
 
     // MARK: Reads
+
+    /// Ranges when their read window can be read (a working ranged read, or the full value of a short field),
+    /// else text markers when they answer, else nothing. The markers are asked only when the ranges fail.
+    static func source(rangesReadable: Bool, markersAnswer: () -> Bool) -> FieldKind? {
+        if rangesReadable { return .ranges }
+        return markersAnswer() ? .textMarkers : nil
+    }
+
+    /// A text-marker field's whole text, only when it is at most 20,000 units and agrees with its marker length.
+    static func markerText(length: Int?, read: () -> String?) -> String? {
+        guard let length, length <= wholeValueLimit, let text = read(), text.utf16.count == length else { return nil }
+        return text
+    }
 
     /// A ranged read first; where it fails, the whole value, but only for fields of at most 20,000 units.
     static func read(
@@ -182,6 +199,78 @@ enum TextAccessRules {
         }
         if position <= replaced.location { return position }
         return min(position, replaced.location + replacementLength)
+    }
+
+    // MARK: Paste writes
+
+    /// The selection is exactly `range` and holds the text expected there.
+    static func selectionCovers(_ range: TextRange, text: String, selection: TextRange?, selectedText: String?) -> Bool {
+        selection == range && selectedText == text
+    }
+
+    /// What the field shows after ⌘V: the paragraph with the replacement applied, the original one, or another.
+    static func pasteRead(
+        original: ExpectedText, revised: ExpectedText, read: (TextRange) -> String?, length: () -> Int?
+    ) -> PastePlan.Read {
+        guard length() != nil else { return .unreadable }
+        if paragraphUnchanged(revised, read: read, length: length) { return .expected }
+        if paragraphUnchanged(original, read: read, length: length) { return .original }
+        return .other
+    }
+
+    /// The caret rule for a paste write: the selection to set, or nil to leave it. Skald left the caret after the
+    /// replacement after a confirmed paste, and the range selected after an abort.
+    static func pasteCaret(
+        user: TextRange, replaced: TextRange, replacementLength: Int, end: WriteEnd, current: TextRange?, stillFocused: Bool
+    ) -> TextRange? {
+        guard let target = caretTarget(user: user, replaced: replaced, replacementLength: replacementLength, end: end) else { return nil }
+        let left = end == .confirmed ? TextRange(location: replaced.location + replacementLength, length: 0) : replaced
+        guard restoresCaret(stillFocused: stillFocused, current: current, left: left), current != target else { return nil }
+        return target
+    }
+
+    /// The expected text at `range`, which lies inside `expected`.
+    static func text(of expected: ExpectedText, at range: TextRange) -> String? {
+        let local = TextRange(location: range.location - expected.range.location, length: range.length)
+        guard local.location >= 0, local.end <= expected.text.utf16.count else { return nil }
+        return substring(of: expected.text, at: local)
+    }
+
+    // MARK: Selecting by text markers
+
+    static let markerReach = 2_000
+
+    /// One step toward `target` from a walk that began at `origin`: refused beyond the reach, past the target
+    /// (a grapheme wider than one unit at the boundary), or after twice as many steps as units to cover.
+    static func markerStep(origin: Int, current: Int?, target: Int, steps: Int) -> MarkerStep {
+        let distance = abs(target - origin)
+        guard target >= 0, distance <= markerReach, let current else { return .refused }
+        if current == target { return .reached }
+        guard steps < 2 * distance else { return .refused }
+        if origin <= target { return current < target ? .next : .refused }
+        return current > target ? .previous : .refused
+    }
+
+    /// The marker `target` units from the field's start, stepping from `start`; nil when the step rule refuses.
+    static func walk<Marker>(
+        from start: Marker, to target: Int, offset: (Marker) -> Int?, next: (Marker) -> Marker?, previous: (Marker) -> Marker?
+    ) -> Marker? {
+        guard let origin = offset(start) else { return nil }
+        var current = start
+        var steps = 0
+        while true {
+            switch markerStep(origin: origin, current: steps == 0 ? origin : offset(current), target: target, steps: steps) {
+            case .reached: return current
+            case .refused: return nil
+            case .next:
+                guard let following = next(current) else { return nil }
+                current = following
+            case .previous:
+                guard let preceding = previous(current) else { return nil }
+                current = preceding
+            }
+            steps += 1
+        }
     }
 
     // MARK: Capabilities

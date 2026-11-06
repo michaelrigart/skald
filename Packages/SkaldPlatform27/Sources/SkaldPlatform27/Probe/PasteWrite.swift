@@ -52,15 +52,7 @@ enum PasteWrite {
     }
 
     private static func postCommandV(to pid: pid_t) -> Bool {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: layoutDependentVKeyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: layoutDependentVKeyCode, keyDown: false)
-        else { return false }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
-        down.postToPid(pid)
-        up.postToPid(pid)
-        return true
+        CommandV.post(to: pid, keyCode: layoutDependentVKeyCode)
     }
 
     private static func waitForChange(of field: AXElement, kind: FieldKind, from original: String) -> Int? {
