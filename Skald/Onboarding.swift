@@ -50,8 +50,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
         onTrusted()
     }
 
+    /// The prompt lists Skald in the Accessibility pane, switched off, so the user only has to switch it on.
+    private static func requestAccess() {
+        // The value of kAXTrustedCheckOptionPrompt, a global var Swift 6 won't read without isolation.
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        NSWorkspace.shared.open(accessibilityPane)
+    }
+
     private func makeWindow() -> NSWindow {
-        let view = OnboardingView { NSWorkspace.shared.open(Self.accessibilityPane) }
+        let view = OnboardingView { Self.requestAccess() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Welcome to Skald"
         window.styleMask = [.titled, .closable]
@@ -69,7 +76,7 @@ private struct OnboardingView: View {
             Text("Skald needs Accessibility access")
                 .font(.title2.bold())
             Text("Skald reads the text field you are typing in to check its spelling and grammar, and changes it only when you accept a fix. macOS lets an app do that only with Accessibility access.")
-            Text("Open Privacy & Security, choose Accessibility, and turn on Skald. If Skald isn't in the list, add it with the + button from your Applications folder.")
+            Text("Click Open Accessibility Settings: macOS adds Skald to the Accessibility list in Privacy & Security, and you switch it on there.")
             Text("Your text stays on this Mac, unless you choose the Mac Studio or Claude in the panel.")
                 .foregroundStyle(.secondary)
             HStack {

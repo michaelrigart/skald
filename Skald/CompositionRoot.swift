@@ -33,7 +33,7 @@ final class CompositionRoot {
         case pause(Bool)
     }
 
-    private struct Conditions {
+    struct Conditions {
         let apple: UnavailableReason?
         let thermalPaused: Bool
         let claudeKeyPresent: Bool
@@ -43,13 +43,14 @@ final class CompositionRoot {
         let keychain = KeychainStore.claudeKey
         let store = SettingsStore(directory: Self.settingsDirectory)
         let (settings, readOnly) = Self.load(store)
-        model = SettingsModel(settings: settings, store: store, keychain: keychain, readOnly: readOnly)
+        let model = SettingsModel(settings: settings, store: store, keychain: keychain, readOnly: readOnly)
+        self.model = model
         applied = settings
         let switches = AppSwitches(settings)
         self.switches = switches
         textAccess = SystemTextAccess(isAppEnabled: { switches.isEnabled($0) }, clock: ContinuousClock())
         apple = AppleEngine()
-        liveRouter = LiveRouter(Self.makeRouter(settings, Self.conditions(keychain)))
+        liveRouter = LiveRouter(Self.router(settings, Self.conditions(claudeKeyPresent: model.claudeKeyStored)))
         pipeline = CheckPipeline(
             access: textAccess,
             apple: apple,
@@ -111,9 +112,9 @@ final class CompositionRoot {
         commands.finish()
     }
 
-    /// The router for the current settings and conditions.
-    func makeRouter() -> EngineRouter {
-        Self.makeRouter(model.settings, Self.conditions(keychain))
+    /// The router for the current settings and conditions, or for `conditions` already read.
+    func makeRouter(_ conditions: Conditions? = nil) -> EngineRouter {
+        Self.router(model.settings, conditions ?? currentConditions())
     }
 
     /// The panel's engines for the current settings. Remote engines are cheap values, so build them per use.
@@ -146,11 +147,10 @@ final class CompositionRoot {
     }
 
     private func applyRouting() {
-        let conditions = Self.conditions(keychain)
-        let settings = model.settings
+        let conditions = currentConditions()
         model.appleUnavailable = conditions.apple
         model.thermalPaused = conditions.thermalPaused
-        commands.yield(.route(Self.makeRouter(settings, conditions), settings))
+        commands.yield(.route(makeRouter(conditions), model.settings))
         refreshStatus(conditions)
     }
 
@@ -181,15 +181,19 @@ final class CompositionRoot {
         statusItem?.show(state)
     }
 
-    private static func conditions(_ keychain: KeychainStore) -> Conditions {
+    private func currentConditions() -> Conditions {
+        Self.conditions(claudeKeyPresent: model.claudeKeyStored)
+    }
+
+    private static func conditions(claudeKeyPresent: Bool) -> Conditions {
         Conditions(
             apple: AppleAvailability.current(),
             thermalPaused: ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue,
-            claudeKeyPresent: keychain.containsValue()
+            claudeKeyPresent: claudeKeyPresent
         )
     }
 
-    private static func makeRouter(_ settings: Settings, _ conditions: Conditions) -> EngineRouter {
+    private static func router(_ settings: Settings, _ conditions: Conditions) -> EngineRouter {
         EngineRouter(
             settings: settings, appleAvailability: conditions.apple,
             thermalPaused: conditions.thermalPaused, claudeKeyPresent: conditions.claudeKeyPresent

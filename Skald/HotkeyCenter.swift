@@ -122,7 +122,7 @@ extension Hotkey {
         let status = layout.withUnsafeBytes { bytes in
             UCKeyTranslate(
                 bytes.baseAddress!.assumingMemoryBound(to: UCKeyboardLayout.self), keyCode, UInt16(kUCKeyActionDisplay), 0,
-                UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, characters.count, &length, &characters
+                UInt32(LMGetKbdType()), OptionBits(1 << kUCKeyTranslateNoDeadKeysBit), &deadKeys, characters.count, &length, &characters
             )
         }
         guard status == noErr, length > 0 else { return "key \(keyCode)" }

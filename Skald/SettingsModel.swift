@@ -115,11 +115,18 @@ import struct SwiftUI.Binding
         return true
     }
 
-    func removeClaudeKey() {
-        try? keychain.delete()
+    @discardableResult
+    func removeClaudeKey() -> Bool {
+        do {
+            try keychain.delete()
+        } catch {
+            return false
+        }
         claudeKeyChanged()
+        return true
     }
 
+    /// The cached presence the router reads, so routing never asks the Keychain.
     private func claudeKeyChanged() {
         claudeKeyStored = keychain.containsValue()
         onChange?(settings)
