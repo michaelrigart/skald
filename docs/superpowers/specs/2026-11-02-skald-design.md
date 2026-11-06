@@ -313,29 +313,30 @@ Names are left to the builder.
     wait until the field holds the paragraph with the replacement applied. Right before ⌘V,
     Skald checks again that the app is still frontmost, the focused element is the same one
     and the selection still covers the range; any change aborts before anything is pasted.
-    It pastes only after watching the field for 1.5 s without a change (the text read at
-    the start and at the end of that interval is the same, and no change notification
-    arrived in between), so the paste gets an undo step of its own in apps that merge edits
-    made close together (Slack). Notifications can arrive late, so an old one is no proof of
-    a quiet field. It doesn't paste
-    when the clipboard holds content it can't put back faithfully (concealed or promised
-    data), or when the clipboard changed since Skald saved it; the suggestion then offers
-    Copy.
-  - **The clipboard after a paste** goes back to what it held only once the field shows the
-    replacement, which proves the app consumed the paste, and only while the clipboard
-    still holds Skald's replacement: if the user or another app copied something
-    meanwhile, that newer content stays. When the field doesn't show the replacement within
-    3 s, the accept is reported as unconfirmed and the card says the clipboard now holds the
-    fix. Skald keeps watching that field and puts the old content back if the replacement
+    It pastes only after watching the whole field for 1.5 s without a change (its length,
+    the text Skald reads from it and its selection are the same at the start and at the end
+    of that interval, and no change notification arrived in between), so the paste gets an
+    undo step of its own in apps that merge edits made close together (Slack).
+    Notifications can arrive late, so the comparison, not the absence of a notification, is
+    the proof. It doesn't paste when the clipboard holds content it can't put back
+    faithfully (concealed or promised data), or when the clipboard changed since Skald saved
+    it; the suggestion then offers Copy.
+  - **The clipboard after a paste.** An abort before ⌘V is posted restores the clipboard at
+    once: nothing can paste. Once ⌘V is posted, the clipboard goes back to what it held only
+    once the field shows the replacement, which proves the app consumed the paste, and only
+    while the clipboard still holds Skald's replacement: if the user or another app copied
+    something meanwhile, that newer content stays. When the field shows anything else after
+    ⌘V, or nothing within 3 s, the accept is reported as unconfirmed and the card says the
+    clipboard now holds the fix. Skald keeps watching that field and puts the old content back if the replacement
     appears; otherwise the old content is not restored, neither after a deadline nor when
     Skald quits, so a paste the app handles late inserts the fix, never the old clipboard
     (which may hold a password).
   - **A paste can land on changed text.** If the user clicks or types in the target app in
     the instant between Skald's last check and the app handling ⌘V (about 25 ms in the
     probe), the paste can land somewhere else in the field or app. Skald can't prevent
-    this. It sees the field show something other than the expected paragraph, reports the
-    accept as failed, and ⌘Z undoes the paste like any other edit. Michael accepted this
-    risk (2026-11-06).
+    this. It sees the field show something other than the expected paragraph and reports
+    the accept as unconfirmed, as above; ⌘Z undoes the paste like any other edit. Michael
+    accepted this risk (2026-11-06).
   - **The caret.** After a write, and after an abort that had already moved the selection,
     Skald puts the caret back where the user had it (shifted by the length change when it
     was after the range), but only while the field is still focused and its selection is
