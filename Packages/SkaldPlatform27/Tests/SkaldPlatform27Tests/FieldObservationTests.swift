@@ -307,3 +307,18 @@ private let baseline = BoundsBaseline(
     plain.recordWrite(start())
     #expect(plain.writeKind == .ranges)
 }
+
+@Test func aBracketMarkerIsWrittenAndUndoneLikeATildeOne() {
+    let bracketed = "alpha Hello there [skald-probe]"
+    var observation = FieldObservation(app: "org.mozilla.zen", reading: reading(value: bracketed))
+    #expect(observation.shouldWrite(for: reading(value: bracketed)))
+    var start = WriteStart(original: bracketed, before: nil, beforeLocation: 8, beforeLength: 10)
+    start.pair = .bracket
+    observation.recordWrite(start)
+    observation.absorb(reading(value: "alpha Hello there [skald-ok]"))
+    #expect(observation.line.canWrite)
+    observation.recordUndo()
+    observation.absorb(reading(value: bracketed))
+    #expect(observation.line.undoExact)
+    #expect(observation.writeCheck(bracketed)?.contains("has ok marker false, has probe marker true") == true)
+}

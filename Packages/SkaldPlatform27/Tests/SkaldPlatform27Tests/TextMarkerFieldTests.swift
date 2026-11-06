@@ -27,11 +27,11 @@ import Testing
 }
 
 @Test func theSelectionIsTheMarkerOnlyWhenItsStringIsExactlyTheMarker() {
-    #expect(TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.pending))
-    #expect(!TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.pending + " "))
-    #expect(!TextMarkerField.isMarkerSelection(selectedString: "~skald-probe"))
-    #expect(!TextMarkerField.isMarkerSelection(selectedString: ""))
-    #expect(!TextMarkerField.isMarkerSelection(selectedString: nil))
+    #expect(TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.tilde.pending, pair: .tilde))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.tilde.pending + " ", pair: .tilde))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: "~skald-probe", pair: .tilde))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: "", pair: .tilde))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: nil, pair: .tilde))
 }
 
 @Test func theMarkerIsAnchoredAtTheCaretOrTheEndOfTheText() {
@@ -67,3 +67,9 @@ import Testing
     #expect(empty.description == "ranges contains marker false, text length -, caret none")
 }
 
+
+@Test func aMarkerSelectionMustBeThePendingMarkerOfItsOwnPair() {
+    #expect(TextMarkerField.isMarkerSelection(selectedString: "[skald-probe]", pair: .bracket))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: "[skald-probe]", pair: .tilde))
+    #expect(!TextMarkerField.isMarkerSelection(selectedString: "~skald-probe~", pair: .bracket))
+}

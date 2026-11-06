@@ -3,14 +3,34 @@ import ApplicationServices
 import Foundation
 
 enum ProbeMarker {
-    static let pending = "~skald-probe~"
-    static let replacement = "~skald-ok~"
+    /// A pending marker the user types and the ok marker the probe writes in its place; both pairs have the same lengths.
+    struct Pair: Sendable, Equatable {
+        static let tilde = Pair(pending: "~skald-probe~", replacement: "~skald-ok~")
+        /// For editors that turn `~text~` into strikethrough and drop the tildes.
+        static let bracket = Pair(pending: "[skald-probe]", replacement: "[skald-ok]")
 
-    static var length: Int { (pending as NSString).length }
+        let pending: String
+        let replacement: String
+    }
+
+    static let tilde = Pair.tilde
+    static let bracket = Pair.bracket
+    static let pairs = [Pair.tilde, .bracket]
+
+    static var length: Int { (tilde.pending as NSString).length }
+
+    /// The pair whose pending marker is exactly `text`; a mixed or partial marker is none.
+    static func pair(pending text: String?) -> Pair? {
+        pairs.first { $0.pending == text }
+    }
+
+    static func containsPending(_ text: String) -> Bool {
+        pairs.contains { text.contains($0.pending) }
+    }
 
     /// Why a marker in the value was not accepted: the caret and the offsets, as numbers only.
     static func caretSummary(of value: String, caret: CFRange?, characterCount: Int?) -> String? {
-        guard let found = value.range(of: pending, options: .backwards), range(in: value, caret: caret) == nil else { return nil }
+        guard let found = lastPending(in: value), range(in: value, caret: caret) == nil else { return nil }
         let end = NSRange(found, in: value)
         let caretText = caret.map { "\($0.location),\($0.length)" } ?? "none"
         return "caret \(caretText), last marker ends at \(end.location + end.length), value \((value as NSString).length) units, "
@@ -19,20 +39,29 @@ enum ProbeMarker {
 
     /// Where the last marker sits relative to the end of the value, as a unit count and a boolean only.
     static func tailSummary(of value: String) -> String? {
-        guard let range = value.range(of: pending, options: .backwards) else { return nil }
+        guard let range = lastPending(in: value) else { return nil }
         let after = value[range.upperBound...]
         return "\(after.utf16.count) units after it, starts with a newline \(after.first?.isNewline == true)"
     }
 
     /// The marker the probe may replace, in UTF-16 units: one that ends the value, or one that ends exactly at a collapsed caret.
     static func range(in value: String, caret: CFRange?) -> CFRange? {
+        match(in: value, caret: caret)?.range
+    }
+
+    /// The marker the probe may replace and the pair it belongs to.
+    static func match(in value: String, caret: CFRange?) -> (range: CFRange, pair: Pair)? {
         let text = value as NSString
         guard text.length >= length else { return nil }
         let suffix = CFRange(location: text.length - length, length: length)
-        if text.substring(from: suffix.location) == pending { return suffix }
+        if let pair = pair(pending: text.substring(from: suffix.location)) { return (suffix, pair) }
         guard let caret, caret.length == 0, caret.location >= length, caret.location <= text.length else { return nil }
         let candidate = CFRange(location: caret.location - length, length: length)
-        return text.substring(with: NSRange(location: candidate.location, length: candidate.length)) == pending ? candidate : nil
+        return pair(pending: text.substring(with: NSRange(location: candidate.location, length: candidate.length))).map { (candidate, $0) }
+    }
+
+    private static func lastPending(in value: String) -> Range<String.Index>? {
+        pairs.compactMap { value.range(of: $0.pending, options: .backwards) }.max { $0.lowerBound < $1.lowerBound }
     }
 }
 
@@ -88,7 +117,7 @@ struct SourceSummary: Sendable, Equatable {
 
     init(name: String, text: String?, caret: CFRange?) {
         self.init(
-            name: name, containsMarker: text?.contains(ProbeMarker.pending) == true,
+            name: name, containsMarker: text.map(ProbeMarker.containsPending) ?? false,
             textLength: text.map { ($0 as NSString).length }, caretLocation: caret?.location, caretLength: caret?.length
         )
     }
@@ -116,7 +145,7 @@ struct FieldReading: Sendable {
     var formatted: AttributedSnapshot?
 
     var isSecure: Bool { role == ProbeLine.secureRole || subrole == ProbeLine.secureRole }
-    var containsMarker: Bool { sources.contains { $0.containsMarker } || value?.contains(ProbeMarker.pending) == true }
+    var containsMarker: Bool { sources.contains { $0.containsMarker } || value.map(ProbeMarker.containsPending) ?? false }
 }
 
 enum WriteMethod: String, Sendable, Codable {
@@ -134,12 +163,13 @@ struct WriteStart: Sendable {
     var beforeLength: Int
     var method = WriteMethod.ax
     var kind = FieldKind.ranges
+    var pair = ProbeMarker.tilde
 
     var markerLocation: Int { beforeLocation + beforeLength }
 
     var expectedAfterWrite: String {
         (original as NSString).replacingCharacters(
-            in: NSRange(location: markerLocation, length: ProbeMarker.length), with: ProbeMarker.replacement
+            in: NSRange(location: markerLocation, length: ProbeMarker.length), with: pair.replacement
         )
     }
 }
@@ -155,11 +185,12 @@ struct PreparedWrite: Sendable {
     var selectionWaitedMs: Int
     var kind = FieldKind.ranges
     var originalMarkerSelection: MarkerRangeBox?
+    var pair = ProbeMarker.tilde
 
     func start(method: WriteMethod) -> WriteStart {
         WriteStart(
             original: value, before: before, beforeLocation: beforeLocation, beforeLength: beforeLength,
-            method: method, kind: kind
+            method: method, kind: kind, pair: pair
         )
     }
 }
@@ -301,7 +332,8 @@ enum FieldProbe {
         guard let resolved = resolvedField(pid), !isSecure(resolved.element) else { return nil }
         let field = resolved.element
         let content = readContent(of: field)
-        guard let value = content.value, let markerRange = ProbeMarker.range(in: value, caret: content.selection) else { return nil }
+        guard let value = content.value, let match = ProbeMarker.match(in: value, caret: content.selection) else { return nil }
+        let markerRange = match.range
         if content.kind == .textMarkers, method != .paste {
             return .aborted(reason: "a text-marker field is written by paste only")
         }
@@ -315,14 +347,15 @@ enum FieldProbe {
             : nil
         var prepared = PreparedWrite(
             field: field, value: value, markerRange: markerRange, originalSelection: content.selection,
-            before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, selectionWaitedMs: 0, kind: content.kind
+            before: before, beforeLocation: beforeLocation, beforeLength: beforeLength, selectionWaitedMs: 0, kind: content.kind,
+            pair: match.pair
         )
         switch content.kind {
         case .ranges:
             let selectResult = field.setSelectedRange(markerRange)
             guard selectResult == .success else { return .aborted(reason: "selection rejected (AXError \(selectResult.rawValue))") }
-            guard let waited = waitForMarkerSelection({ selectionIsMarker(field, markerRange) }) else {
-                let seen = describeSelection(field, markerRange)
+            guard let waited = waitForMarkerSelection({ selectionIsMarker(field, markerRange, pair: match.pair) }) else {
+                let seen = describeSelection(field, markerRange, pair: match.pair)
                 return .aborted(reason: "selection does not cover the marker after \(selectionWaitMs) ms (\(seen)); \(restore(content.selection, in: field))")
             }
             prepared.selectionWaitedMs = waited
@@ -336,7 +369,9 @@ enum FieldProbe {
             guard selectResult == .success else {
                 return .aborted(reason: "marker selection rejected (AXError \(selectResult.rawValue)); \(cancel(prepared))")
             }
-            guard let waited = waitForMarkerSelection({ TextMarkerField.isMarkerSelection(selectedString: markers.selectedString) }) else {
+            guard let waited = waitForMarkerSelection({
+                TextMarkerField.isMarkerSelection(selectedString: markers.selectedString, pair: match.pair)
+            }) else {
                 return .aborted(reason: "marker selection does not cover the marker after \(selectionWaitMs) ms; \(cancel(prepared))")
             }
             prepared.selectionWaitedMs = waited
@@ -346,7 +381,7 @@ enum FieldProbe {
 
     static func writeByAccessibility(_ prepared: PreparedWrite, pid: pid_t) -> WriteStart {
         let textSettable = prepared.field.isSettable(kAXSelectedTextAttribute)
-        let textResult = prepared.field.setSelectedText(ProbeMarker.replacement)
+        let textResult = prepared.field.setSelectedText(prepared.pair.replacement)
         PlatformLog.probe.notice("write sent: pid \(pid): selection on the marker after \(prepared.selectionWaitedMs) ms, selected text settable \(textSettable), set result AXError \(textResult.rawValue)")
         return prepared.start(method: .ax)
     }
@@ -434,25 +469,26 @@ enum FieldProbe {
         }
     }
 
-    private static func describeSelection(_ field: AXElement, _ markerRange: CFRange) -> String {
+    private static func describeSelection(_ field: AXElement, _ markerRange: CFRange, pair: ProbeMarker.Pair) -> String {
         let range = field.selectedRange.map { "\($0.location),\($0.length)" } ?? "none"
-        let text = field.selectedText.map { "\(($0 as NSString).length) units, is marker \($0 == ProbeMarker.pending)" } ?? "none"
-        let ranged = field.string(for: markerRange).map { "is marker \($0 == ProbeMarker.pending)" } ?? "none"
+        let text = field.selectedText.map { "\(($0 as NSString).length) units, is marker \($0 == pair.pending)" } ?? "none"
+        let ranged = field.string(for: markerRange).map { "is marker \($0 == pair.pending)" } ?? "none"
         return "selected range \(range) for marker \(markerRange.location),\(markerRange.length); selected text \(text); text at marker range \(ranged)"
     }
 
     private static func selectionIsMarker(_ prepared: PreparedWrite) -> Bool {
         switch prepared.kind {
-        case .ranges: selectionIsMarker(prepared.field, prepared.markerRange)
-        case .textMarkers: TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field)?.selectedString)
+        case .ranges: selectionIsMarker(prepared.field, prepared.markerRange, pair: prepared.pair)
+        case .textMarkers:
+            TextMarkerField.isMarkerSelection(selectedString: TextMarkerField(prepared.field)?.selectedString, pair: prepared.pair)
         }
     }
 
-    private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange) -> Bool {
-        if let selectedText = field.selectedText { return selectedText == ProbeMarker.pending }
+    private static func selectionIsMarker(_ field: AXElement, _ markerRange: CFRange, pair: ProbeMarker.Pair) -> Bool {
+        if let selectedText = field.selectedText { return selectedText == pair.pending }
         guard let selected = field.selectedRange else { return false }
         return selected.location == markerRange.location && selected.length == markerRange.length
-            && field.string(for: markerRange) == ProbeMarker.pending
+            && field.string(for: markerRange) == pair.pending
     }
 
     private static func length(of field: AXElement, value: String?) -> Int? {

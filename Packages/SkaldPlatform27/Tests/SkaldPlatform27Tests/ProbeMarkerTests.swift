@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import SkaldPlatform27
 
-private let markerLength = (ProbeMarker.pending as NSString).length
+private let markerLength = ProbeMarker.length
 
 private func caret(_ location: Int, _ length: Int = 0) -> CFRange {
     CFRange(location: location, length: length)
@@ -83,4 +83,38 @@ private func found(_ value: String, _ caret: CFRange?) -> (location: Int, length
     #expect(ProbeMarker.caretSummary(of: "Hi ~skald-probe~", caret: nil, characterCount: 16) == nil)
     #expect(ProbeMarker.caretSummary(of: "Hi ~skald-probe~ tail", caret: caret(16), characterCount: nil) == nil)
     #expect(ProbeMarker.caretSummary(of: "nothing here", caret: caret(3), characterCount: nil) == nil)
+}
+
+@Test func eachPendingMarkerMapsToTheOkMarkerOfItsOwnPair() {
+    #expect(ProbeMarker.pair(pending: "~skald-probe~")?.replacement == "~skald-ok~")
+    #expect(ProbeMarker.pair(pending: "[skald-probe]")?.replacement == "[skald-ok]")
+    #expect(ProbeMarker.match(in: "Hi [skald-probe]", caret: nil)?.pair == .bracket)
+    #expect(ProbeMarker.match(in: "Hi ~skald-probe~", caret: nil)?.pair == .tilde)
+    #expect(ProbeMarker.match(in: "Hi [skald-probe]\n\nSignature", caret: caret(16))?.pair == .bracket)
+}
+
+@Test func aMixedPairIsNotAMarker() {
+    #expect(ProbeMarker.pair(pending: "~skald-probe]") == nil)
+    #expect(ProbeMarker.pair(pending: "[skald-probe~") == nil)
+    #expect(found("Hi ~skald-probe]", nil) == nil)
+    #expect(found("Hi [skald-probe~", nil) == nil)
+    #expect(!ProbeMarker.containsPending("Hi [skald-probe~ and ~skald-probe]"))
+    #expect(ProbeMarker.containsPending("Hi [skald-probe] there"))
+}
+
+@Test func bothPairsHaveTheSameLengths() {
+    for pair in ProbeMarker.pairs {
+        #expect((pair.pending as NSString).length == 13)
+        #expect((pair.replacement as NSString).length == 10)
+    }
+    #expect(ProbeMarker.length == 13)
+}
+
+@Test func theBracketPairIsWrittenAsItsOwnOkMarker() {
+    var start = WriteStart(original: "😀 [skald-probe] tail", before: nil, beforeLocation: 0, beforeLength: 3)
+    start.pair = .bracket
+    #expect(start.expectedAfterWrite == "😀 [skald-ok] tail")
+    #expect(ProbeMarker.tailSummary(of: "Hi [skald-probe]\nSecret") == "7 units after it, starts with a newline true")
+    #expect(ProbeMarker.caretSummary(of: "Hi [skald-probe] tail", caret: caret(0), characterCount: nil)
+        == "caret 0,0, last marker ends at 16, value 21 units, characters none")
 }

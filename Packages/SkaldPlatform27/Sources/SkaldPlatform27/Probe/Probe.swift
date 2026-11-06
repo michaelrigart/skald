@@ -434,7 +434,7 @@ public final class Probe {
                 selectionLocation: reading.selection?.location
             )
             : nil
-        let markerSeen = reading.value?.contains(ProbeMarker.pending) == true || !session.observation.awaitingWrite
+        let markerSeen = (reading.value.map(ProbeMarker.containsPending) ?? false) || !session.observation.awaitingWrite
         if session.valueTrace.observe(sample, containsMarker: markerSeen) {
             PlatformLog.probe.notice("value trace: \(app, privacy: .public): \(session.valueTrace.summary(keystrokes: session.keystrokes), privacy: .public)")
         }
@@ -527,7 +527,7 @@ public final class Probe {
             _ = await queue.run { FieldProbe.cancel(prepared) }
             return nil
         }
-        let staging = swap.stage(ProbeMarker.replacement)
+        let staging = swap.stage(prepared.pair.replacement)
         if let refusal = staging.refusal {
             let selection = await queue.run { FieldProbe.cancel(prepared) }
             return .aborted(reason: "\(refusal); \(selection)")

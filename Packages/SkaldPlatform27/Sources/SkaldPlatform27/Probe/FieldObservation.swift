@@ -50,7 +50,7 @@ struct FieldObservation {
         let length = (value as NSString).length
         return "value \(length) units (written \((write.expectedAfterWrite as NSString).length), original \((write.original as NSString).length)); "
             + "is written \(value == write.expectedAfterWrite), is original \(value == write.original), "
-            + "has ok marker \(value.contains(ProbeMarker.replacement)), has probe marker \(value.contains(ProbeMarker.pending)), undo presses \(undoPresses)"
+            + "has ok marker \(value.contains(write.pair.replacement)), has probe marker \(value.contains(write.pair.pending)), undo presses \(undoPresses)"
     }
 
     var finishedLine: ProbeLine {

@@ -45,8 +45,8 @@ struct TextMarkerField {
         return CFRange(location: offset, length: length)
     }
 
-    static func isMarkerSelection(selectedString: String?) -> Bool {
-        selectedString == ProbeMarker.pending
+    static func isMarkerSelection(selectedString: String?, pair: ProbeMarker.Pair) -> Bool {
+        selectedString == pair.pending
     }
 
     static func anchor(for marker: CFRange, caret: CFRange?, textLength: Int) -> Anchor? {
