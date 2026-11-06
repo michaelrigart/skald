@@ -29,9 +29,13 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         CFEqual(element, other.element)
     }
 
-    static func focusedQuery(inApp pid: pid_t) -> (element: AXElement?, error: AXError) {
+    /// The focused-element query and its error; a longer timeout applies to this query only and is reset afterwards.
+    static func focusedQuery(inApp pid: pid_t, timeout: Float = messagingTimeout) -> (element: AXElement?, error: AXError) {
+        let app = application(pid: pid).element
+        if timeout != messagingTimeout { AXUIElementSetMessagingTimeout(app, timeout) }
+        defer { if timeout != messagingTimeout { AXUIElementSetMessagingTimeout(app, messagingTimeout) } }
         var result: CFTypeRef?
-        let error = AXUIElementCopyAttributeValue(application(pid: pid).element, kAXFocusedUIElementAttribute as CFString, &result)
+        let error = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &result)
         return (error == .success ? result.flatMap { axElement($0) } : nil, error)
     }
 

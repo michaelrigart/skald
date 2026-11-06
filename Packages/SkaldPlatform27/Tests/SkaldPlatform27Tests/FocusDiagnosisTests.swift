@@ -28,3 +28,20 @@ import Testing
     #expect(!FocusDiagnosis.startsSession(found: true, frontmost: false, generationUnchanged: true))
     #expect(!FocusDiagnosis.startsSession(found: true, frontmost: true, generationUnchanged: false))
 }
+
+@Test func aQueryThatCannotCompleteOrHitsTheTimeoutIsAskedAgainWithMoreTime() {
+    #expect(FocusDiagnosis.needsSlowQuery(errorCode: -25204, elapsedMs: 3))
+    #expect(FocusDiagnosis.needsSlowQuery(errorCode: -25212, elapsedMs: 250))
+    #expect(!FocusDiagnosis.needsSlowQuery(errorCode: -25212, elapsedMs: 249))
+    #expect(!FocusDiagnosis.needsSlowQuery(errorCode: 0, elapsedMs: 10))
+    #expect(SlowFocusQuery.timeout == 1)
+}
+
+@Test func theSlowQueryIsReportedInNumbersAndBooleansOnly() {
+    let diagnosis = FocusDiagnosis(
+        found: false, role: nil, errorCode: -25204, elapsedMs: 251,
+        slow: SlowFocusQuery(answered: true, found: true, errorCode: 0, elapsedMs: 640)
+    )
+    #expect(diagnosis.summary(afterMs: 3000) == "after 3000 ms: element found false role -, focused query AXError -25204 in 251 ms; "
+        + "1 s timeout query answered true, element found true, AXError 0, 640 ms")
+}

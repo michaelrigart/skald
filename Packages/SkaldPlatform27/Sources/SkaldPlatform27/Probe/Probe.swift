@@ -214,7 +214,7 @@ public final class Probe {
                 reading = await queue.run { FieldProbe.measure(pid: pid, formatting: nil) }
                 guard generation == focusGeneration, running else { return }
             }
-            if reading == nil, mode != .native, !diagnosedPIDs.contains(pid), diagnosingPIDs.insert(pid).inserted {
+            if reading == nil, !diagnosedPIDs.contains(pid), diagnosingPIDs.insert(pid).inserted {
                 Task { await diagnoseMissingFocus(pid: pid, generation: generation, app: bundleID) }
             }
             guard let reading else {
@@ -650,7 +650,7 @@ public final class Probe {
         PlatformLog.probe.notice("accessibility enabled: \(app, privacy: .public): \(results.map(\.summary).joined(separator: ", "), privacy: .public)")
     }
 
-    /// The app may be slow to answer: look at the focus query right after enabling, then again up to 10 s later,
+    /// The app may be slow to answer: look at the focus query right away (after enabling, for a non-native app), then up to 10 s later,
     /// and start the session as soon as a focused field appears.
     private func diagnoseMissingFocus(pid: pid_t, generation: Int, app: String) async {
         defer { diagnosingPIDs.remove(pid) }
