@@ -32,7 +32,7 @@ public struct IssueTracker: Sendable {
         self.issues.append(contentsOf: kept)
     }
 
-    /// Returns the keys whose issues were dropped.
+    /// Returns the keys whose issues or model result were dropped.
     @discardableResult
     public mutating func revalidate(_ s: FieldSnapshot) -> [ParagraphKey] {
         suspended.remove(s.field)
@@ -72,11 +72,13 @@ public struct IssueTracker: Sendable {
 
         for key in modelResults.keys where key.field == s.field {
             if ParagraphKeys.locate(key, in: parents) != nil { continue }
-            switch key.position {
-            case .occurrence: modelResults[key] = nil
-            case .location(let location):
-                if isGone(TextRange(location: location, length: key.text.utf16.count)) { modelResults[key] = nil }
+            let gone = switch key.position {
+            case .occurrence: true
+            case .location(let location): isGone(TextRange(location: location, length: key.text.utf16.count))
             }
+            guard gone else { continue }
+            modelResults[key] = nil
+            if !dropped.contains(key) { dropped.append(key) }
         }
         return dropped
     }

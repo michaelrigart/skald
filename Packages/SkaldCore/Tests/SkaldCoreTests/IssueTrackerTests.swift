@@ -121,7 +121,7 @@ private func longParagraph() -> String {
     let key = ParagraphKeys.keyed(snapshot)[0].0
     var tracker = IssueTracker()
     tracker.setModel([], for: key)
-    #expect(tracker.revalidate(wholeSnapshot("second")).isEmpty)
+    #expect(tracker.revalidate(wholeSnapshot("second")) == [key])
     tracker.setSpelling([issue(in: snapshot, replacing: "reviewt", with: "reviewed")], for: key)
     #expect(tracker.visible(in: fieldA).count == 1)
 }
@@ -310,7 +310,7 @@ private func longParagraph() -> String {
     #expect(tracker.visible(in: fieldA).isEmpty)
 
     let edited = "He is ready\n" + filler + "Zij zijn klaar"
-    #expect(tracker.revalidate(windowSnapshot(edited, windowA)).isEmpty)
+    #expect(tracker.revalidate(windowSnapshot(edited, windowA)) == [keyA])
     tracker.setSpelling([flag()], for: keyA)
     #expect(tracker.visible(in: fieldA).map(\.word) == ["is"])
 }

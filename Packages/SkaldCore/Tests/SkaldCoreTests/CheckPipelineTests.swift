@@ -475,6 +475,23 @@ struct CheckPipelineTests {
         #expect(await rig.engine.requests.count == 1)
     }
 
+    @Test func aWithdrawnSpellingFlagStaysWithdrawnAfterAnEditAnUndoAndARefocus() async {
+        let rig = Rig(makeSettings(), engine: FakeEngine { request, _ in .success(request.text) })
+        await rig.focus(flew)
+        await rig.check()
+        #expect(await rig.visible().isEmpty)
+
+        await rig.access.set("", caret: 0, in: fieldA)
+        await rig.recheckAtCaret()
+        await rig.access.set(flew, caret: 0, in: fieldA)
+        await rig.recheckAtCaret()
+        await rig.focus(flew)
+        await rig.check()
+
+        #expect(await rig.visible().isEmpty)
+        #expect(await rig.engine.texts == [flew, flew])
+    }
+
     // MARK: Never-touch words
 
     @Test func afterNeverFlagAndUpdateTheNextCheckOffersNoEditOnTheWord() async throws {
