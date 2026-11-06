@@ -274,6 +274,7 @@ final class CompositionRoot {
             var opening = PanelOpening(session: session, text: text, target: target, engines: picker, engine: settings.panelDefaultEngine)
             opening.needsLanguage = await session.needsLanguage()
             if content == .unreadable { opening.notice = PanelController.unreadableNotice }
+            if case .clipboard = content { opening.fromClipboard = true }
             let opened = panel.open(opening)
             Log.ui.notice("panel opened: \(opened, privacy: .public), field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
         }

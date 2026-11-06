@@ -49,6 +49,8 @@ struct PanelOpening {
     let engine: EngineKind
     /// Some paragraph's language can't be detected or inherited: the user picks one before any run.
     var needsLanguage = false
+    /// No field was focused, so the text is the clipboard's: the panel says so above it.
+    var fromClipboard = false
     /// Why there is nothing to run, when there isn't.
     var notice: String?
 }
@@ -69,8 +71,11 @@ struct PanelOpening {
 
     static let noTextNotice = "Select some text, or copy some, then press the hotkey again."
     static let unreadableNotice = "Skald can't read this field here."
+    static let clipboardLabel = "Text from the clipboard"
 
     private(set) var original = ""
+    /// The text came from the clipboard, not a field.
+    private(set) var fromClipboard = false
     private(set) var engines: [EngineKind] = []
     var engine: EngineKind = .thisMac
     private(set) var phase = Phase.blocked(PanelController.noTextNotice)
@@ -125,6 +130,7 @@ struct PanelOpening {
         generation += 1
         self.opening = opening
         original = opening.text
+        fromClipboard = opening.fromClipboard
         engines = opening.engines.contains(opening.engine) ? opening.engines : opening.engines + [opening.engine]
         engine = opening.engine
         if let notice = opening.notice {

@@ -78,6 +78,9 @@ struct PanelView: View {
                 .labelsHidden()
                 .fixedSize()
             }
+            if controller.fromClipboard {
+                note(PanelController.clipboardLabel)
+            }
             ScrollView {
                 Text(content)
                     .textSelection(.enabled)

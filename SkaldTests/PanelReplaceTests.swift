@@ -172,6 +172,19 @@ private final class FocusWait {
         #expect(spy.writes == [revised])
     }
 
+    @Test func clipboardTextIsLabelledAndAFieldsTextIsNot() {
+        let controller = PanelController(window: window, clipboard: spy)
+        var opening = PanelOpening(session: FakeSession(), text: original, target: nil, engines: [.thisMac], engine: .thisMac)
+        opening.fromClipboard = true
+        controller.open(opening)
+        #expect(controller.fromClipboard)
+        #expect(PanelController.clipboardLabel == "Text from the clipboard")
+
+        opening.fromClipboard = false
+        controller.open(opening)
+        #expect(!controller.fromClipboard)
+    }
+
     @Test func withoutACapturedFieldThePanelOffersOnlyCopy() async {
         let controller = PanelController(window: window, clipboard: spy)
         let session = FakeSession(outcome: .replaced)
