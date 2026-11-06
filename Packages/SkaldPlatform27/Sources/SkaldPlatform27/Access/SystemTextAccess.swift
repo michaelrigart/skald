@@ -65,7 +65,7 @@ public final class SystemTextAccess: TextAccess {
     public func snapshot(of field: FieldID) async -> FieldSnapshot? {
         guard isAppEnabled(field.app) else { return nil }
         return await queue.run { [observer] in
-            observer.entry(field).flatMap { TextAccessRules.snapshot(of: field, reader: $0.source) }
+            observer.read(app: field.app) { observer.entry(field).flatMap { TextAccessRules.snapshot(of: field, reader: $0.source) } }
         }
     }
 
@@ -97,7 +97,7 @@ public final class SystemTextAccess: TextAccess {
     public func capture(of field: FieldID) async -> SelectionCapture? {
         guard isAppEnabled(field.app) else { return nil }
         return await queue.run { [observer] in
-            observer.entry(field).flatMap { TextAccessRules.capture(of: field, reader: $0.source) }
+            observer.read(app: field.app) { observer.entry(field).flatMap { TextAccessRules.capture(of: field, reader: $0.source) } }
         }
     }
 

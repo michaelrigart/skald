@@ -166,6 +166,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     /// Contexts live as long as the observer, so a callback already running never sees a freed one.
     private var contexts: [pid_t: ObserverContext] = [:]
     private var enabledPIDs: Set<pid_t> = []
+    private var unresponsive = UnresponsiveApps()
 
     init(
         queue: AXQueue, clock: any Clock<Duration>, isAppEnabled: @escaping @Sendable (String) -> Bool,
@@ -221,13 +222,28 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     private func activated(pid: pid_t, app: String?) {
         let app = app ?? "unknown"
-        queue.enqueue { [self] in driver.activated(pid: pid, app: app, enabled: isAppEnabled(app)) }
+        queue.enqueue { [self] in
+            unresponsive.activated(app)
+            driver.activated(pid: pid, app: app, enabled: isAppEnabled(app))
+        }
     }
 
     // MARK: On AXQueue only
 
     func entry(_ id: FieldID) -> Registry.Entry? {
         registry.entry(id)
+    }
+
+    /// A snapshot or capture read of `app`'s field, skipped while the app is marked unresponsive. Its third
+    /// timed-out read in a row marks it, logged once.
+    func read<T>(app: String, _ body: () -> T?) -> T? {
+        guard !unresponsive.isMarked(app) else { return nil }
+        let before = AXTimeouts.count
+        let result = body()
+        if unresponsive.read(app, timedOut: AXTimeouts.count > before) {
+            PlatformLog.access.notice("unresponsive: \(app, privacy: .public): \(UnresponsiveApps.timeoutsToMark) reads in a row timed out, skipped until it is activated again")
+        }
+        return result
     }
 
     func newest(app: String) -> Registry.Entry? {

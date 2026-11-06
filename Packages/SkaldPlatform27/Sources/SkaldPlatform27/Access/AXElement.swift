@@ -36,6 +36,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         defer { if timeout != messagingTimeout { AXUIElementSetMessagingTimeout(app, messagingTimeout) } }
         var result: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &result)
+        AXTimeouts.record(error)
         return (error == .success ? result.flatMap { axElement($0) } : nil, error)
     }
 
@@ -92,6 +93,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         let error = AXUIElementCopyParameterizedAttributeValue(
             element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &result
         )
+        AXTimeouts.record(error)
         return (error == .success ? result.flatMap { Self.rect($0) } : nil, error)
     }
 
@@ -217,7 +219,9 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
     func attribute(_ name: String) -> CFTypeRef? {
         var result: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success ? result : nil
+        let error = AXUIElementCopyAttributeValue(element, name as CFString, &result)
+        AXTimeouts.record(error)
+        return error == .success ? result : nil
     }
 
     private func stringAttribute(_ name: String) -> String? {
@@ -232,8 +236,9 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
 
     func parameterized(_ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
         var result: CFTypeRef?
-        return AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success
-            ? result : nil
+        let error = AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result)
+        AXTimeouts.record(error)
+        return error == .success ? result : nil
     }
 
     private static func range(_ raw: CFTypeRef) -> CFRange? {
