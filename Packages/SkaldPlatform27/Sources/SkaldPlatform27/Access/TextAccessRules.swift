@@ -44,9 +44,11 @@ enum TextAccessRules {
         role == secureRole || subrole == secureRole
     }
 
-    /// Secure fields and disabled apps are never fields; web areas wait for Task 19's resolver.
+    /// Secure fields, elements whose role can't be read and disabled apps are never fields; web areas wait for
+    /// Task 19's resolver.
     static func isFieldCandidate(role: String?, subrole: String?, appEnabled: Bool) -> Bool {
-        appEnabled && !isSecure(role: role, subrole: subrole) && role != webAreaRole
+        guard appEnabled, let role else { return false }
+        return !isSecure(role: role, subrole: subrole) && role != webAreaRole
     }
 
     /// The retry offset to wait for after `attempts` focused-element queries, the activation's included; nil stops.
@@ -101,48 +103,45 @@ enum TextAccessRules {
         return normalizedCapture(field: field, selection: selection, text: text, offset: window.location)
     }
 
-    /// The selection with the paragraphs it overlaps; an empty selection becomes the caret's paragraph.
+    /// The selection with the whole lines it touches as context, so the context is bounded by line breaks or
+    /// the window's ends; an empty selection becomes the caret's paragraph.
     static func normalizedCapture(field: FieldID, selection: TextRange, text: String, offset: Int) -> SelectionCapture? {
+        let units = Array(text.utf16)
         let local = TextRange(location: selection.location - offset, length: selection.length)
-        guard local.location >= 0, local.end <= text.utf16.count else { return nil }
+        guard local.location >= 0, local.end <= units.count else { return nil }
+        var start = local.location
+        while start > 0, !isLineBreak(units[start - 1]) { start -= 1 }
+        var end = local.end
+        while end < units.count, !isLineBreak(units[end]) { end += 1 }
+        let line = TextRange(location: start, length: end - start)
+        let context = ExpectedText(range: TextRange(location: start + offset, length: line.length), text: substring(of: text, at: line))
         if selection.length == 0 {
-            guard let paragraph = Paragraphs.around(caret: selection.location, in: text, offset: offset) else {
-                return SelectionCapture(field: field, selection: selection, selectedText: "", context: ExpectedText(range: selection, text: ""))
-            }
-            return SelectionCapture(
-                field: field, selection: paragraph.range, selectedText: paragraph.text,
-                context: ExpectedText(range: paragraph.range, text: paragraph.text)
-            )
+            return SelectionCapture(field: field, selection: context.range, selectedText: context.text, context: context)
         }
-        let overlapping = Paragraphs.all(in: text, offset: offset).filter {
-            $0.range.location < selection.end && selection.location < $0.range.end
-        }
-        let context: TextRange
-        if let first = overlapping.first, let last = overlapping.last {
-            let location = min(first.range.location, selection.location)
-            context = TextRange(location: location, length: max(last.range.end, selection.end) - location)
-        } else {
-            context = selection
-        }
-        return SelectionCapture(
-            field: field, selection: selection, selectedText: substring(of: text, at: local),
-            context: ExpectedText(
-                range: context, text: substring(of: text, at: TextRange(location: context.location - offset, length: context.length))
-            )
-        )
+        return SelectionCapture(field: field, selection: selection, selectedText: substring(of: text, at: local), context: context)
     }
 
     // MARK: Replace
 
-    /// Same field, unchanged paragraph, a clean write: then the app's write method. `currentText` reads `expected.range`.
+    /// Same field, unchanged paragraph, a clean write: then the app's write method.
     static func replaceStep(
-        _ range: TextRange, expected: ExpectedText, isFocusedField: Bool, currentText: () -> String?, access: AppAccess
+        _ range: TextRange, expected: ExpectedText, isFocusedField: Bool,
+        read: (TextRange) -> String?, length: () -> Int?, access: AppAccess
     ) -> ReplaceStep {
         guard isFocusedField else { return .refuse(.refusedOtherField) }
         guard range.location >= expected.range.location, range.end <= expected.range.end else { return .refuse(.failed) }
-        guard currentText() == expected.text else { return .refuse(.refusedChanged) }
+        guard paragraphUnchanged(expected, read: read, length: length) else { return .refuse(.refusedChanged) }
         guard access.capabilities.contains(.cleanWrite), let method = access.write else { return .refuse(.unsupported) }
         return .write(method)
+    }
+
+    /// The whole paragraph is still there: its text, and a line break or the field's edge on either side of it.
+    static func paragraphUnchanged(_ expected: ExpectedText, read: (TextRange) -> String?, length: () -> Int?) -> Bool {
+        guard read(expected.range) == expected.text, let total = length(), expected.range.end <= total else { return false }
+        let range = expected.range
+        let before = range.location == 0 || isLineBreak(read(TextRange(location: range.location - 1, length: 1)))
+        let after = range.end == total || isLineBreak(read(TextRange(location: range.end, length: 1)))
+        return before && after
     }
 
     /// The expected paragraph once `text` replaced `range` in it.
@@ -195,6 +194,16 @@ enum TextAccessRules {
     }
 
     // MARK: Helpers
+
+    /// The units `Paragraphs` splits at.
+    private static func isLineBreak(_ unit: UInt16) -> Bool {
+        unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
+    }
+
+    private static func isLineBreak(_ text: String?) -> Bool {
+        guard let text, text.utf16.count == 1, let unit = text.utf16.first else { return false }
+        return isLineBreak(unit)
+    }
 
     private static func contains(_ selection: TextRange, total: Int) -> Bool {
         selection.location >= 0 && selection.length >= 0 && selection.end <= total

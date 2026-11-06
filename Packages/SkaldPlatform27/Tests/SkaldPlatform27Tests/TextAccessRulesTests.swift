@@ -141,63 +141,74 @@ private let notes = FieldID(app: "com.apple.Notes", token: "1")
 
 // MARK: Replace decision
 
-private let paragraph = ExpectedText(range: TextRange(location: 10, length: 13), text: "They is ready")
-private let flagged = TextRange(location: 15, length: 2)
+/// "They is ready" as the second line of "Hello\nThey is ready\nBye", with "is" flagged.
+private let paragraph = ExpectedText(range: TextRange(location: 6, length: 13), text: "They is ready")
+private let flagged = TextRange(location: 11, length: 2)
+
+private func decide(
+    _ text: String, in app: String = "com.apple.Notes", range: TextRange = flagged, focused: Bool = true
+) -> ReplaceStep {
+    let field = FakeField(text)
+    return TextAccessRules.replaceStep(
+        range, expected: paragraph, isFocusedField: focused, read: field.string(for:), length: field.length,
+        access: CapabilityTable.access(for: app)
+    )
+}
 
 @Test func aCleanWriteAppGetsItsWriteMethod() {
-    let notesStep = TextAccessRules.replaceStep(
-        flagged, expected: paragraph, isFocusedField: true, currentText: { "They is ready" },
-        access: CapabilityTable.access(for: "com.apple.Notes")
-    )
-    #expect(notesStep == .write(.accessibility))
-    let slackStep = TextAccessRules.replaceStep(
-        flagged, expected: paragraph, isFocusedField: true, currentText: { "They is ready" },
-        access: CapabilityTable.access(for: "com.tinyspeck.slackmacgap")
-    )
-    #expect(slackStep == .write(.paste))
+    #expect(decide("Hello\nThey is ready\nBye") == .write(.accessibility))
+    #expect(decide("Hello\nThey is ready\nBye", in: "com.tinyspeck.slackmacgap") == .write(.paste))
 }
 
 @Test func anotherFieldIsRefusedWithoutReadingIt() {
-    let reads = Recorder<Int>()
+    let reads = Recorder<TextRange>()
     let step = TextAccessRules.replaceStep(
         flagged, expected: paragraph, isFocusedField: false,
-        currentText: {
-            reads.append(1)
-            return "They is ready"
+        read: {
+            reads.append($0)
+            return nil
         },
-        access: CapabilityTable.access(for: "com.apple.Notes")
+        length: { 23 }, access: CapabilityTable.access(for: "com.apple.Notes")
     )
     #expect(step == .refuse(.refusedOtherField))
     #expect(reads.values.isEmpty)
 }
 
 @Test func identicalFlaggedWordsWithChangedSurroundingTextAreRefused() {
-    let step = TextAccessRules.replaceStep(
-        flagged, expected: paragraph, isFocusedField: true, currentText: { "Them is ready" },
-        access: CapabilityTable.access(for: "com.apple.Notes")
-    )
-    #expect(step == .refuse(.refusedChanged))
+    #expect(decide("Hello\nThem is ready\nBye") == .refuse(.refusedChanged))
     let unreadable = TextAccessRules.replaceStep(
-        flagged, expected: paragraph, isFocusedField: true, currentText: { nil }, access: CapabilityTable.access(for: "com.apple.Notes")
+        flagged, expected: paragraph, isFocusedField: true, read: { _ in nil }, length: { 23 },
+        access: CapabilityTable.access(for: "com.apple.Notes")
     )
     #expect(unreadable == .refuse(.refusedChanged))
 }
 
+@Test func textTypedOnTheParagraphsLineAfterItsEndIsAChange() {
+    #expect(decide("Hello\nThey is ready now\nBye") == .refuse(.refusedChanged))
+    #expect(decide("Hello\nThey is ready.") == .refuse(.refusedChanged))
+}
+
+@Test func aRemovedLineBreakBeforeOrAfterTheParagraphIsAChange() {
+    #expect(decide("Hello They is ready\nBye") == .refuse(.refusedChanged))
+    #expect(decide("Hello\nThey is readyBye!") == .refuse(.refusedChanged))
+}
+
+@Test func aParagraphAtTheFieldsEdgesOrBetweenAnyLineBreaksIsUnchanged() {
+    #expect(decide("Hello\nThey is ready") == .write(.accessibility))
+    #expect(decide("Hello\u{2029}They is ready\r\nBye") == .write(.accessibility))
+    let first = ExpectedText(range: TextRange(location: 0, length: 5), text: "Hello")
+    let field = FakeField("Hello\nThey is ready")
+    #expect(TextAccessRules.paragraphUnchanged(first, read: field.string(for:), length: field.length))
+}
+
 @Test func aReadOnlyOrUnknownAppIsUnsupported() {
     for app in ["ch.protonmail.desktop", "com.example.editor"] {
-        let step = TextAccessRules.replaceStep(
-            flagged, expected: paragraph, isFocusedField: true, currentText: { "They is ready" }, access: CapabilityTable.access(for: app)
-        )
-        #expect(step == .refuse(.unsupported), "\(app)")
+        #expect(decide("Hello\nThey is ready\nBye", in: app) == .refuse(.unsupported), "\(app)")
     }
 }
 
 @Test func aRangeOutsideTheExpectedParagraphFails() {
-    let step = TextAccessRules.replaceStep(
-        TextRange(location: 20, length: 5), expected: paragraph, isFocusedField: true, currentText: { "They is ready" },
-        access: CapabilityTable.access(for: "com.apple.Notes")
-    )
-    #expect(step == .refuse(.failed))
+    #expect(decide("Hello\nThey is ready\nBye", range: TextRange(location: 16, length: 5)) == .refuse(.failed))
 }
 
 @Test func applyingAReplacementSplicesInUTF16Units() {
@@ -569,4 +580,186 @@ private let replaced = TextRange(location: 10, length: 4)
 @Test func aFieldAlreadyFocusedNeedsNoWait() async {
     let waits = FocusWaits(clock: TestClock())
     #expect(await waits.wait(for: notes, timeout: .seconds(1)) { true })
+}
+
+@Test func aFocusWaitAsksOnceMoreAtItsDeadline() async {
+    let clock = TestClock()
+    let waits = FocusWaits(clock: clock)
+    let focused = Recorder<Bool>()
+    let waiting = Task { await waits.wait(for: notes, timeout: .seconds(1)) { !focused.values.isEmpty } }
+    await clock.waitForSleepCalls(1)
+    focused.append(true)
+    clock.advance(by: .seconds(1))
+    #expect(await waiting.value)
+}
+
+// MARK: Capture lines
+
+@Test func aSelectedLineWithItsLineBreakTakesTheNextLineIntoItsContext() {
+    let field = FakeField("One two.\nThree four.\nFive.", selected: TextRange(location: 0, length: 9))
+    let capture = TextAccessRules.capture(of: notes, reader: field)
+    #expect(capture?.selection == TextRange(location: 0, length: 9))
+    #expect(capture?.context == ExpectedText(range: TextRange(location: 0, length: 20), text: "One two.\nThree four."))
+    let check = FakeField("One two.\nThree four.\nFive.")
+    #expect(capture.map { TextAccessRules.paragraphUnchanged($0.context, read: check.string(for:), length: check.length) } == true)
+}
+
+@Test func aSelectionOfOnlyALineBreakTakesBothLinesItJoins() {
+    let field = FakeField("One.\nTwo.", selected: TextRange(location: 4, length: 1))
+    let capture = TextAccessRules.capture(of: notes, reader: field)
+    #expect(capture?.selectedText == "\n")
+    #expect(capture?.context == ExpectedText(range: TextRange(location: 0, length: 9), text: "One.\nTwo."))
+}
+
+// MARK: Unknown roles
+
+@Test func anElementWhoseRoleCantBeReadIsNoFieldAndIsNeverRead() {
+    #expect(!TextAccessRules.isFieldCandidate(role: nil, subrole: nil, appEnabled: true))
+    #expect(!TextAccessRules.isFieldCandidate(role: nil, subrole: "AXSearchField", appEnabled: true))
+    var registry = FieldRegistry<Node, FakeField>(isSame: ==)
+    let reads = Recorder<Int>()
+    let candidate = TextAccessRules.isFieldCandidate(role: nil, subrole: nil, appEnabled: true)
+    let id = registry.focus(Node(id: 1), app: "com.apple.Notes", isCandidate: candidate) {
+        reads.append(1)
+        return FakeField("unknown")
+    }
+    #expect(FieldEvent.focused(id) == .focused(nil))
+    #expect(reads.values.isEmpty)
+}
+
+// MARK: The focus driver
+
+/// The Accessibility side, faked: a focused element per app, and every step the driver asks for.
+private final class FakePort: FocusPort, @unchecked Sendable { // reason: each test touches it from one task at a time
+    var focus: [pid_t: FocusMachine.QueryResult] = [:]
+    private(set) var events: [FieldEvent] = []
+    private(set) var observed: [pid_t?] = []
+    private(set) var ensured: [pid_t] = []
+    private(set) var queries: [pid_t] = []
+
+    func observe(pid: pid_t?, app: String?) { observed.append(pid) }
+    func ensureObserved(pid: pid_t, app: String) { ensured.append(pid) }
+
+    func queryFocus(pid: pid_t, app: String) -> FocusMachine.QueryResult {
+        queries.append(pid)
+        return focus[pid] ?? .missing
+    }
+
+    func watch(_ field: FieldID?) {}
+    func emit(_ event: FieldEvent) { events.append(event) }
+}
+
+private let skaldPID: pid_t = 7
+private let obsidianPID: pid_t = 42
+private let notesPID: pid_t = 43
+private let obsidianField = FieldID(app: "md.obsidian", token: "1")
+private let notesField = FieldID(app: "com.apple.Notes", token: "2")
+
+/// A driver whose retries report each finished attempt on `ticks`.
+private func makeDriver(_ clock: TestClock, port: FakePort) -> (FocusDriver, AsyncStream<FocusAttempt>) {
+    let (ticks, tick) = AsyncStream.makeStream(of: FocusAttempt.self)
+    let driver = FocusDriver(ownPID: skaldPID, clock: clock) { body in
+        let attempt = body()
+        tick.yield(attempt)
+        return attempt
+    }
+    driver.port = port
+    return (driver, ticks)
+}
+
+@Test func theObserverEmitsFocusedWhenARetryFindsTheElement() async {
+    let clock = TestClock()
+    let port = FakePort()
+    let (driver, ticks) = makeDriver(clock, port: port)
+    var attempts = ticks.makeAsyncIterator()
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    #expect(port.events == [.focused(nil)])
+    await clock.waitForSleepCalls(1)
+    clock.advance(by: .seconds(1))
+    #expect(await attempts.next() == .missing)
+    port.focus[obsidianPID] = .element(obsidianField)
+    await clock.waitForSleepCalls(2)
+    clock.advance(by: .seconds(2))
+    #expect(await attempts.next() == .found)
+    #expect(port.events == [.focused(nil), .focused(obsidianField)])
+    #expect(port.ensured == [obsidianPID])
+    #expect(driver.current == obsidianField)
+}
+
+@Test func aFocusChangeCancelsThePendingRetries() async {
+    let clock = TestClock()
+    let port = FakePort()
+    let (driver, _) = makeDriver(clock, port: port)
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    await clock.waitForSleepCalls(1)
+    driver.focusChanged(pid: obsidianPID)
+    clock.advance(by: .seconds(20))
+    #expect(clock.wokenDeadlines.isEmpty)
+    #expect(port.queries == [obsidianPID, obsidianPID])
+}
+
+@Test func aFrontmostChangeCancelsThePendingRetries() async {
+    let clock = TestClock()
+    let port = FakePort()
+    let (driver, _) = makeDriver(clock, port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    await clock.waitForSleepCalls(1)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    clock.advance(by: .seconds(20))
+    #expect(clock.wokenDeadlines.isEmpty)
+    #expect(port.events == [.focused(nil), .focused(notesField)])
+}
+
+@Test func theSameFieldFocusedAgainIsNoEvent() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    driver.focusChanged(pid: notesPID)
+    #expect(port.events == [.focused(notesField)])
+    port.focus[notesPID] = .element(nil)
+    driver.focusChanged(pid: notesPID)
+    driver.focusChanged(pid: notesPID)
+    #expect(port.events == [.focused(notesField), .focused(nil), .focused(nil)])
+}
+
+@Test func skaldsOwnAppIsNoFieldAndIsNeverAsked() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[skaldPID] = .element(notesField)
+    driver.activated(pid: skaldPID, app: "com.michaelrigart.skald", enabled: true)
+    #expect(port.events == [.focused(nil)])
+    #expect(port.queries.isEmpty)
+    #expect(port.observed == [nil])
+}
+
+@Test func aDisabledAppIsNoFieldAndIsNeverAsked() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: false)
+    #expect(port.events == [.focused(nil)])
+    #expect(port.queries.isEmpty)
+}
+
+@Test func changesAreTheCurrentFieldsAndOnlyTheFrontmostAppsCount() {
+    let port = FakePort()
+    let (driver, _) = makeDriver(TestClock(), port: port)
+    port.focus[notesPID] = .element(notesField)
+    driver.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    driver.fieldChanged(pid: notesPID, value: true)
+    driver.fieldChanged(pid: notesPID, value: false)
+    driver.fieldChanged(pid: obsidianPID, value: true)
+    #expect(port.events == [.focused(notesField), .edited(notesField), .caretMoved(notesField)])
+}
+
+@Test func aFocusChangeInAnAppThatIsNotFrontmostIsIgnored() {
+    var idle = FocusMachine(ownPID: skaldPID)
+    #expect(idle.focusChanged(pid: obsidianPID).isEmpty)
+    var machine = FocusMachine(ownPID: skaldPID)
+    _ = machine.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    #expect(machine.focusChanged(pid: obsidianPID).isEmpty)
+    #expect(!machine.retryTick(generation: machine.generation - 1, pid: notesPID))
+    #expect(machine.retryTick(generation: machine.generation, pid: notesPID))
 }

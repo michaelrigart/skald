@@ -64,18 +64,30 @@ private final class ObserverSession {
     private static let fieldNotifications = [kAXValueChangedNotification, kAXSelectedTextChangedNotification]
 
     let pid: pid_t
+    private let app: String
     private let observer: AXObserver
     private let refcon: UnsafeMutableRawPointer
     private var field: AXElement?
+    private(set) var focusRegistered = false
 
-    init?(pid: pid_t, refcon: UnsafeMutableRawPointer) {
+    init?(pid: pid_t, app: String, refcon: UnsafeMutableRawPointer) {
         var created: AXObserver?
-        guard AXObserverCreate(pid, deliver, &created) == .success, let created else { return nil }
+        let error = AXObserverCreate(pid, deliver, &created)
+        guard error == .success, let created else {
+            PlatformLog.access.notice("observer not created: \(app, privacy: .public): AXError \(error.rawValue)")
+            return nil
+        }
         self.pid = pid
+        self.app = app
         self.refcon = refcon
         observer = created
-        AXObserverAddNotification(created, AXElement.application(pid: pid).element, kAXFocusedUIElementChangedNotification as CFString, refcon)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
+        registerFocus()
+    }
+
+    func registerFocus() {
+        guard !focusRegistered else { return }
+        focusRegistered = add(kAXFocusedUIElementChangedNotification, to: AXElement.application(pid: pid))
     }
 
     func watch(_ element: AXElement?) {
@@ -84,7 +96,7 @@ private final class ObserverSession {
         }
         field = element
         guard let element else { return }
-        Self.fieldNotifications.forEach { AXObserverAddNotification(observer, element.element, $0 as CFString, refcon) }
+        Self.fieldNotifications.forEach { _ = add($0, to: element) }
     }
 
     func detach() {
@@ -92,41 +104,48 @@ private final class ObserverSession {
         AXObserverRemoveNotification(observer, AXElement.application(pid: pid).element, kAXFocusedUIElementChangedNotification as CFString)
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
+
+    private func add(_ notification: String, to element: AXElement) -> Bool {
+        let error = AXObserverAddNotification(observer, element.element, notification as CFString, refcon)
+        guard error == .success || error == .notificationAlreadyRegistered else {
+            PlatformLog.access.notice("notification not registered: \(self.app, privacy: .public): \(notification, privacy: .public): AXError \(error.rawValue)")
+            return false
+        }
+        return true
+    }
 }
 
-/// Turns the frontmost app's Accessibility notifications into `FieldEvent`s without reading any text.
-final class FieldObserver: @unchecked Sendable { // reason: state is touched only inside AXQueue closures, the token only in init and deinit
+/// The Accessibility side of the frontmost app's focus: the focus machine decides, this makes the calls.
+/// It turns notifications into `FieldEvent`s without reading any text.
+final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is touched only inside AXQueue closures, the token only in init and deinit
     typealias Registry = FieldRegistry<AXElement, any FieldReader>
 
     private let queue: AXQueue
-    private let retries: FocusRetries
+    private let driver: FocusDriver
     private let isAppEnabled: @Sendable (String) -> Bool
-    private let emit: @Sendable (FieldEvent) -> Void
-    private let ownPID = ProcessInfo.processInfo.processIdentifier
+    private let send: @Sendable (FieldEvent) -> Void
 
     private var activation: NSObjectProtocol?
     private var registry = Registry(isSame: { $0.isSame(as: $1) })
-    private var front: (pid: pid_t, app: String)?
     private var session: ObserverSession?
     /// Contexts live as long as the observer, so a callback already running never sees a freed one.
     private var contexts: [pid_t: ObserverContext] = [:]
     private var enabledPIDs: Set<pid_t> = []
-    private var current: (id: FieldID, element: AXElement)?
-    private var generation = 0
 
     init(
         queue: AXQueue, clock: any Clock<Duration>, isAppEnabled: @escaping @Sendable (String) -> Bool,
         emit: @escaping @Sendable (FieldEvent) -> Void
     ) {
         self.queue = queue
-        retries = FocusRetries(clock: clock)
+        driver = FocusDriver(ownPID: ProcessInfo.processInfo.processIdentifier, clock: clock) { body in await queue.run(body) }
         self.isAppEnabled = isAppEnabled
-        self.emit = emit
+        send = emit
+        driver.port = self
     }
 
     deinit {
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }
-        retries.cancel()
+        driver.stop()
         session?.detach()
     }
 
@@ -143,7 +162,19 @@ final class FieldObserver: @unchecked Sendable { // reason: state is touched onl
     }
 
     func received(_ notification: String, pid: pid_t) {
-        queue.enqueue { [self] in handle(notification, pid: pid) }
+        queue.enqueue { [self] in
+            switch notification {
+            case kAXFocusedUIElementChangedNotification: driver.focusChanged(pid: pid)
+            case kAXValueChangedNotification: driver.fieldChanged(pid: pid, value: true)
+            case kAXSelectedTextChangedNotification: driver.fieldChanged(pid: pid, value: false)
+            default: break
+            }
+        }
+    }
+
+    private func activated(pid: pid_t, app: String?) {
+        let app = app ?? "unknown"
+        queue.enqueue { [self] in driver.activated(pid: pid, app: app, enabled: isAppEnabled(app)) }
     }
 
     // MARK: On AXQueue only
@@ -164,76 +195,37 @@ final class FieldObserver: @unchecked Sendable { // reason: state is touched onl
         return focused.isSame(as: entry.element)
     }
 
-    private func activated(pid: pid_t, app: String?) {
-        queue.enqueue { [self] in activate(pid: pid, app: app ?? "unknown") }
-    }
+    // MARK: FocusPort
 
-    private func activate(pid: pid_t, app: String) {
-        generation += 1
-        retries.cancel()
+    func observe(pid: pid_t?, app: String?) {
         session?.detach()
         session = nil
-        front = (pid, app)
-        guard pid != ownPID, isAppEnabled(app) else {
-            setCurrent(nil)
-            return
-        }
+        guard let pid, let app else { return }
         let mode = CapabilityTable.access(for: app).mode
         if mode != .native, enabledPIDs.insert(pid).inserted {
             let results = mode.enable(on: AXElement.application(pid: pid).element)
             PlatformLog.access.notice("accessibility enabled: \(app, privacy: .public): \(results.map(\.summary).joined(separator: ", "), privacy: .public)")
         }
-        session = ObserverSession(pid: pid, refcon: Unmanaged.passUnretained(context(for: pid)).toOpaque())
-        if let element = AXElement.focused(inApp: pid) {
-            focus(element)
-            return
-        }
-        setCurrent(nil)
-        PlatformLog.access.notice("no focused element at activation: \(app, privacy: .public)")
-        let started = generation
-        retries.start { [weak self, queue] in
-            guard let observer = self else { return .moved }
-            return await queue.run { observer.retry(generation: started, pid: pid) }
-        }
+        session = ObserverSession(pid: pid, app: app, refcon: Unmanaged.passUnretained(context(for: pid)).toOpaque())
     }
 
-    private func retry(generation started: Int, pid: pid_t) -> FocusAttempt {
-        guard started == generation, front?.pid == pid else { return .moved }
+    func ensureObserved(pid: pid_t, app: String) {
+        guard let session, session.pid == pid else { return observe(pid: pid, app: app) }
+        session.registerFocus()
+    }
+
+    func queryFocus(pid: pid_t, app: String) -> FocusMachine.QueryResult {
         guard let element = AXElement.focused(inApp: pid) else { return .missing }
-        PlatformLog.access.notice("focused element appeared on a retry: \(self.front?.app ?? "unknown", privacy: .public)")
-        focus(element)
-        return .found
-    }
-
-    private func handle(_ notification: String, pid: pid_t) {
-        guard front?.pid == pid else { return }
-        switch notification {
-        case kAXFocusedUIElementChangedNotification:
-            generation += 1
-            retries.cancel()
-            if let element = AXElement.focused(inApp: pid) { focus(element) } else { setCurrent(nil) }
-        case kAXValueChangedNotification:
-            if let current { emit(.edited(current.id)) }
-        case kAXSelectedTextChangedNotification:
-            if let current { emit(.caretMoved(current.id)) }
-        default:
-            break
-        }
-    }
-
-    private func focus(_ element: AXElement) {
-        guard let app = front?.app else { return setCurrent(nil) }
         let candidate = TextAccessRules.isFieldCandidate(role: element.role, subrole: element.subrole, appEnabled: isAppEnabled(app))
-        let id = registry.focus(element, app: app, isCandidate: candidate, source: { RangeReader(element) })
-        setCurrent(id.map { ($0, element) })
+        return .element(registry.focus(element, app: app, isCandidate: candidate, source: { RangeReader(element) }))
     }
 
-    /// The same field focused again is no event: a focus event cancels the running checks.
-    private func setCurrent(_ field: (id: FieldID, element: AXElement)?) {
-        session?.watch(field?.element)
-        let repeated = field != nil && current?.id == field?.id
-        current = field
-        if !repeated { emit(.focused(field?.id)) }
+    func watch(_ field: FieldID?) {
+        session?.watch(field.flatMap { registry.entry($0)?.element })
+    }
+
+    func emit(_ event: FieldEvent) {
+        send(event)
     }
 
     private func context(for pid: pid_t) -> ObserverContext {

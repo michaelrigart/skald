@@ -67,7 +67,7 @@ public final class SystemTextAccess: TextAccess {
             guard let entry = observer.entry(field) else { return .done(.refusedOtherField) }
             let decision = TextAccessRules.replaceStep(
                 range, expected: expected, isFocusedField: observer.isFocused(entry),
-                currentText: { entry.source.string(for: expected.range) }, access: access
+                read: { entry.source.string(for: $0) }, length: { entry.source.length() }, access: access
             )
             switch decision {
             case .refuse(let outcome):
@@ -170,13 +170,15 @@ final class FocusWaits: @unchecked Sendable { // reason: waiters are only touche
         sleep = { try await clock.sleep(for: $0) }
     }
 
-    func wait(for field: FieldID, timeout: Duration, isFocusedNow: @Sendable () async -> Bool) async -> Bool {
+    /// Focus can come back without an event (the same field refocused in an app that stayed active), so the
+    /// deadline asks once more before giving up.
+    func wait(for field: FieldID, timeout: Duration, isFocusedNow: @escaping @Sendable () async -> Bool) async -> Bool {
         let id = UUID()
         lock.withLock { waiters[id] = Waiter(field: field) }
         if await isFocusedNow() { resolve(id, true) }
         let timer = Task { [sleep] in
-            try? await sleep(timeout)
-            self.resolve(id, false)
+            do { try await sleep(timeout) } catch { return }
+            self.resolve(id, await isFocusedNow())
         }
         defer { timer.cancel() }
         return await withTaskCancellationHandler {
