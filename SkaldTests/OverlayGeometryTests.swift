@@ -63,6 +63,20 @@ struct OverlayGeometryTests {
         #expect(origin == CGPoint(x: 1140, y: 82))
     }
 
+    @Test func aBadgeListTallerThanTheScreenIsBoundedToItsVisibleFrame() {
+        let visible = CGRect(x: 0, y: 40, width: 1440, height: 835)
+        let badge = CGRect(x: 1300, y: 300, width: 18, height: 18)
+        let frame = OverlayGeometry.cardFrame(fitting: CGSize(width: 320, height: 2400), anchor: badge, within: visible)
+        #expect(frame == CGRect(x: 1120, y: 40, width: 320, height: 835))
+    }
+
+    @Test func aCardThatFitsKeepsItsSizeAndPlace() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let word = CGRect(x: 200, y: 500, width: 60, height: 18)
+        let frame = OverlayGeometry.cardFrame(fitting: CGSize(width: 300, height: 120), anchor: word, within: screen)
+        #expect(frame == CGRect(x: 200, y: 376, width: 300, height: 120))
+    }
+
     @Test func aChangedWordIsUnderlinedWhereItStands() {
         let flagged = issue(in: "They is ready", revised: "They are ready", at: 40)
         #expect(OverlayGeometry.underlineRange(for: flagged) == TextRange(location: 45, length: 2))

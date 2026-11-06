@@ -49,6 +49,13 @@ enum OverlayGeometry {
         return CGPoint(x: x, y: y)
     }
 
+    /// The card panel's frame for content of `size`: no taller than `screen`, the visible frame of the anchor's
+    /// screen, so a long list scrolls, and placed by `cardOrigin`; all in AppKit coordinates.
+    static func cardFrame(fitting size: CGSize, anchor: CGRect, within screen: CGRect) -> CGRect {
+        let bounded = CGSize(width: size.width, height: min(size.height, screen.height))
+        return CGRect(origin: cardOrigin(size: bounded, anchor: anchor, within: screen), size: bounded)
+    }
+
     /// The field range to underline. An insertion has an empty range, so its gap is underlined instead, or
     /// the character next to it at the paragraph's end or start.
     static func underlineRange(for issue: Issue) -> TextRange {

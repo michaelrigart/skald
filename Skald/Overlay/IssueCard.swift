@@ -43,8 +43,8 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// The panel that shows a card or the badge's list, placed by `OverlayGeometry.cardOrigin` and kept with
-/// its edge next to the anchor as the cards change size.
+/// The panel that shows a card or the badge's list, placed by `OverlayGeometry.cardFrame` and kept with
+/// its edge next to the anchor as the cards change size; a list taller than the screen scrolls.
 final class CardPanel {
     private let stack = CardStack()
     private let panel = OverlayPanel(size: CGSize(width: CardPanel.width, height: 100))
@@ -95,14 +95,16 @@ final class CardPanel {
         if stack.cards.isEmpty { close() }
     }
 
+    /// `size` is the cards' own size, before the screen bounds it.
     private func fit(_ size: CGSize) {
-        guard panel.isVisible, size.height > 0, panel.frame.size != size else { return }
-        place(size)
+        guard panel.isVisible, size.height > 0 else { return }
+        let frame = OverlayGeometry.cardFrame(fitting: size, anchor: anchor, within: screen)
+        guard panel.frame != frame else { return }
+        panel.setFrame(frame, display: true)
     }
 
     private func place(_ size: CGSize) {
-        let origin = OverlayGeometry.cardOrigin(size: size, anchor: anchor, within: screen)
-        panel.setFrame(CGRect(origin: origin, size: size), display: true)
+        panel.setFrame(OverlayGeometry.cardFrame(fitting: size, anchor: anchor, within: screen), display: true)
     }
 }
 
@@ -111,18 +113,21 @@ private struct CardStackView: View {
     let resized: (CGSize) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(stack.cards.enumerated()), id: \.element.id) { index, card in
-                if index > 0 { Divider() }
-                IssueCardView(card: card)
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(stack.cards.enumerated()), id: \.element.id) { index, card in
+                    if index > 0 { Divider() }
+                    IssueCardView(card: card)
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { resized($0) }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: CardPanel.width)
-        .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .environment(\.controlActiveState, .key)
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { resized($0) }
     }
 }
 
