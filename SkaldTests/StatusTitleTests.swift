@@ -61,9 +61,10 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
 @Test func everyStateShowsTheMenuBarGlyphAsATemplateDescribedByItsTitle() throws {
     let states: [StatusState] = [.on, .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
     let shared = try #require(NSImage(named: StatusState.glyphName))
+    let glyph = try #require(shared.tiffRepresentation)
     for state in states {
         let image = try #require(state.image())
-        #expect(image.tiffRepresentation == shared.tiffRepresentation)
+        #expect(image.tiffRepresentation == glyph)
         #expect(image.isTemplate)
         #expect(image.accessibilityDescription == state.title())
     }
