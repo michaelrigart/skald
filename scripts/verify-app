@@ -94,12 +94,8 @@ if [[ -n "$version" ]]; then
   if [[ "$short" != "$version" ]]; then
     fail "CFBundleShortVersionString is '$short', expected '$version'"
   fi
-  expected_build="${version//-/}"
-  if [[ "$version" == dev ]]; then
-    expected_build=0
-  fi
-  if [[ "$build" != "$expected_build" ]]; then
-    fail "CFBundleVersion is '$build', expected '$expected_build'"
+  if [[ "$build" != "${version//-/}" ]]; then
+    fail "CFBundleVersion is '$build', expected '${version//-/}'"
   fi
 fi
 

@@ -89,7 +89,6 @@ check_run "b: an added get-task-allow entitlement fails" 1 "entitlements are not
 
 copy="$(fresh_copy)"
 check "c: baseline passes" pass "$verify" "$copy"
-check "c: a dev build passes against the version dev" pass "$verify" "$copy" dev
 check_run "c: a dev build fails against a release version" 1 "CFBundleShortVersionString is" "$verify" "$copy" 20261101-1430
 
 copy="$(fresh_copy)"
@@ -117,9 +116,6 @@ check_run "g: a marketing version that differs fails" 1 "CFBundleShortVersionStr
 resign_after_plist_edit "Set :CFBundleShortVersionString 20261101-1430" "$copy"
 resign_after_plist_edit "Set :CFBundleVersion 0" "$copy"
 check_run "g: a build number that is not the version's digits fails" 1 "CFBundleVersion is '0'" "$verify" "$copy" 20261101-1430
-resign_after_plist_edit "Set :CFBundleShortVersionString dev" "$copy"
-resign_after_plist_edit "Set :CFBundleVersion 1" "$copy"
-check_run "g: the version dev with a build number other than 0 fails" 1 "CFBundleVersion is '1', expected '0'" "$verify" "$copy" dev
 
 copy="$(fresh_copy)"
 check "h: baseline passes" pass "$verify" "$copy"
