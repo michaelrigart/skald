@@ -63,6 +63,7 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
     let shared = try #require(NSImage(named: StatusState.glyphName))
     for state in states {
         let image = try #require(state.image())
+        #expect(image.tiffRepresentation == shared.tiffRepresentation)
         #expect(image.isTemplate)
         #expect(image.accessibilityDescription == state.title())
     }
