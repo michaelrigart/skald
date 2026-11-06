@@ -19,6 +19,29 @@ spell server and Foundation Models are unreachable inside the sandbox too.
 - Install: `rm -rf /Applications/Skald.app && ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app`
   (`ditto` merges into an existing bundle and would keep stale files)
 - Run: `open /Applications/Skald.app`
+- Script tests: `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'` (the
+  changelog tool), `scripts/tests/test-release-dry-run` and
+  `scripts/tests/test-verify-app <Release Skald.app> <Debug Skald.app>`
+- Verify a built app: `scripts/verify-app [--team <ID>] <Skald.app> [<version>]`. It fails on a
+  bad signature, non-empty entitlements, `LSUIElement` not true, a wrong bundle identifier or
+  version, the probe in the executable, or (with `--team`) a different `TeamIdentifier`. Give it
+  a Release build: a Debug build contains the probe.
+- Release: `scripts/release [--dry-run] [--version <YYYYMMDD-HHMM>]`, on Michael's Mac only (it
+  needs the signing certificate and pushes). Use `--dry-run` to check it; never run it for real
+  unless Michael asks. `--version` resumes a failed release.
+- Regenerate the app icon and menu bar glyph PNGs from the SVGs in `design/`: `design/render`
+  (needs `rsvg-convert`, Homebrew `librsvg`). The rendered PNGs are committed.
+- `mise.toml` pins XcodeGen and actionlint. After it changes, mise may refuse it until you run
+  `mise trust` once.
+
+## Releases and CI
+
+- A user-visible change adds an entry to `CHANGELOG.md` under `## [Unreleased]`, under `Added`,
+  `Changed`, `Fixed` or `Removed`. `scripts/release` moves it into the release.
+- CI (`.github/workflows/ci.yml`) runs on `xcode-27` and signs ad hoc, because the certificate
+  stays on Michael's Mac. It builds with `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`, as anyone
+  without the certificate does.
+- Distribution design: `docs/superpowers/specs/2026-11-05-skald-distribution-design.md`.
 
 ## Rules an agent gets wrong
 
