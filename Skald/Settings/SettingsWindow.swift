@@ -37,6 +37,7 @@ struct SettingsView: View {
                 WordsPane(model: model).tabItem { Label("Words", systemImage: "text.book.closed") }
                 LanguagesPane(model: model).tabItem { Label("Languages", systemImage: "globe") }
                 EnginesPane(model: model).tabItem { Label("Engines", systemImage: "cpu") }
+                AboutPane().tabItem { Label("About", systemImage: "info.circle") }
             }
             .padding()
         }
