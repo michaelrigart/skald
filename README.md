@@ -72,21 +72,21 @@ To build it yourself, you need the full Xcode. If `xcode-select -p` points at th
 Line Tools, prefix the `xcodebuild` and `swift` commands with
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
-The project is set up to sign with the maintainer's certificate, which you won't have. Add
-`CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=` to `xcodebuild` to sign ad hoc instead.
+The project is set up to sign with the maintainer's certificate, which you won't have.
+Add `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=` to `xcodebuild` to sign ad hoc instead.
 
 ```sh
 mise trust mise.toml
 mise exec -- xcodegen generate
-xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Release -derivedDataPath build -destination platform=macOS CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
+xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Release -derivedDataPath build CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
 rm -rf /Applications/Skald.app
 ditto build/Build/Products/Release/Skald.app /Applications/Skald.app
 open /Applications/Skald.app
 ```
 
-Remove the old app first: `ditto` merges into an existing bundle and would keep stale files.
-Quit Skald before you replace it, so that `open` starts the new build instead of bringing the
-old one forward.
+Remove the old app first: `ditto` merges into an existing bundle and would keep stale
+files. Quit Skald before you replace it, so that `open` starts the new build instead of
+bringing the old one forward.
 
 Start Skald with `open` or Finder: launched from a terminal, macOS gives the Accessibility
 permission to the terminal.
@@ -95,6 +95,11 @@ An ad hoc build is a different app to macOS every time you rebuild it, so you ne
 the Accessibility permission again, and the old build's entry stays in Device Control and
 Data Access without working. Run `tccutil reset Accessibility com.michaelrigart.skald` to
 clear it, then allow Skald again.
+
+Builds made without the override are signed with the maintainer's certificate and should keep
+the permission across rebuilds, because macOS ties the permission to the signature.
+
+A build made without a version shows `dev` as its version.
 
 ## Tests
 
