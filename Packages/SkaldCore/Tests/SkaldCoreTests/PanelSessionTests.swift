@@ -234,13 +234,19 @@ private func dutchRig(
     #expect(await rig.thisMac.requests.map(\.language) == [.en, .en, .nl, .nl])
 }
 
-@Test func aSelectionWhereNothingDetectsAndTheFieldHasNoLanguageStillAsksForOne() async {
-    let rig = Rig(text: "Hi Jan,\n\nmorgen")
-    #expect(await rig.session.needsLanguage())
-    #expect(await rig.session.run(.fix, on: nil) == .needsLanguage)
-    #expect(await rig.thisMac.requests.isEmpty)
-    await rig.session.choose(.nl)
+/// The last resort reads the captured paragraph around the selection, not just the selected fragment.
+@Test func aShortFragmentWithNoFieldLanguageTakesTheLanguageOfTheParagraphItWasSelectedIn() async {
+    let fragment = "tot morgn"
+    let line = "Ik heb het rapport gisteren gedownloaded, " + fragment
+    let location = line.utf16.count - fragment.utf16.count
+    let capture = SelectionCapture(
+        field: field, selection: TextRange(location: location, length: fragment.utf16.count), selectedText: fragment,
+        context: ExpectedText(range: TextRange(location: 0, length: line.utf16.count), text: line)
+    )
+    let rig = Rig(text: fragment, capture: capture)
     #expect(await !rig.session.needsLanguage())
+    _ = await rig.session.run(.fix, on: nil)
+    #expect(await rig.thisMac.requests.map(\.language) == [.nl])
 }
 
 // MARK: Rewrites
