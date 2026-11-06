@@ -427,7 +427,7 @@ A fake implementation drives the core's tests.
    2026-11-06, Task 16).
 
 Paragraphs are bounded by line breaks. Very long fields are checked only around the caret, and
-a paragraph cut by the edge of what was read is not checked.
+a paragraph cut by the edge of what was read is not spell-checked in the background.
 
 ### The edit guard
 
