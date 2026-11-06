@@ -55,6 +55,11 @@ private final class FieldSession {
     var lastValueChange: ContinuousClock.Instant?
     var absorbFocusUntil: ContinuousClock.Instant?
     var writtenIdentity: String?
+    var pendingTrigger: EvaluationTrigger?
+    var keystrokes = 0
+    var evaluations = 0
+    var loggedTrigger = false
+    var sawKeystrokeEvaluation = false
 
     init(pid: pid_t, mode: AppAccessibilityMode, observation: FieldObservation) {
         self.pid = pid
@@ -146,7 +151,7 @@ public final class Probe {
             FocusedSearchCache.shared.clear(pid: pid)
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { focusChanged(pid: pid) }
         case "AXValueChanged" where ownSession != nil:
-            scheduleEvaluation()
+            scheduleEvaluation(trigger: .notification)
         case "AXWindowMoved" where ownSession != nil:
             scheduleRecheck(.windowMoved)
         default:
@@ -253,6 +258,9 @@ public final class Probe {
     private func finish(_ session: FieldSession) {
         session.timer?.cancel()
         rememberWrite(session)
+        if !session.loggedKind, session.keystrokes > 0, !session.observation.line.isSecure {
+            PlatformLog.probe.notice("no field kind in this session: \(session.observation.line.app, privacy: .public): keystrokes \(session.keystrokes), evaluations \(session.evaluations)")
+        }
         WebAreaLog.shared.endSession(pid: session.pid)
         let line = session.observation.finishedLine
         PlatformLog.probe.notice("\(line.render(), privacy: .public)")
@@ -280,6 +288,7 @@ public final class Probe {
         session.markerRetries = 0
         session.retryGaveUp = false
         session.retryTask?.cancel()
+        session.keystrokes += 1
         if isUndo {
             session.observation.recordUndo()
             session.undoPending = true
@@ -297,7 +306,7 @@ public final class Probe {
         default:
             break
         }
-        scheduleEvaluation()
+        scheduleEvaluation(trigger: .keystroke)
     }
 
     private static func describeKind(_ reading: FieldReading) -> String {
@@ -347,28 +356,46 @@ public final class Probe {
         session.retryTask = Task {
             try? await clock.sleep(for: MarkerRetry.interval)
             guard !Task.isCancelled, session === current else { return }
-            await evaluate(session)
+            await evaluate(session, trigger: .retry)
         }
     }
 
-    private func scheduleEvaluation(after delay: Duration = Probe.evaluationDelay) {
+    private func scheduleEvaluation(after delay: Duration = Probe.evaluationDelay, trigger: EvaluationTrigger) {
         evaluationTask?.cancel()
         guard let session = current, !session.observation.line.isSecure else { return }
+        let trigger = EvaluationTrigger.merged(pending: session.pendingTrigger, incoming: trigger)
+        session.pendingTrigger = trigger
         evaluationTask = Task {
             try? await clock.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            await evaluate(session)
+            session.pendingTrigger = nil
+            await evaluate(session, trigger: trigger)
         }
     }
 
-    private func evaluate(_ session: FieldSession) async {
+    private func evaluate(_ session: FieldSession, trigger: EvaluationTrigger) async {
         guard session === current, !session.observation.line.isSecure else { return }
         let pid = session.pid
+        let app = session.observation.line.app
+        session.evaluations += 1
+        if !session.loggedTrigger {
+            session.loggedTrigger = true
+            PlatformLog.probe.notice("first evaluation: \(app, privacy: .public): trigger \(trigger.rawValue, privacy: .public)")
+        }
+        let firstKeystroke = trigger == .keystroke && !session.sawKeystrokeEvaluation
+        if trigger == .keystroke { session.sawKeystrokeEvaluation = true }
         let formatting = session.observation.formatting
         let forced = session.observation.writeKind
         let reading = await queue.run { FieldProbe.measure(pid: pid, formatting: formatting, forcing: forced) }
+        if firstKeystroke, !session.loggedKind, reading == nil || session !== current {
+            let measureReturnedNil = reading == nil
+            let sessionCurrent = session === current
+            let diagnosis = await queue.run {
+                FieldProbe.evaluationDiagnosis(pid: pid, measureReturnedNil: measureReturnedNil, sessionCurrent: sessionCurrent)
+            }
+            PlatformLog.probe.notice("evaluation diagnosis: \(app, privacy: .public): \(diagnosis.summary, privacy: .public)")
+        }
         guard session === current, let reading else { return }
-        let app = session.observation.line.app
         if !session.loggedKind {
             session.loggedKind = true
             PlatformLog.probe.notice("field kind: \(app, privacy: .public): \(Self.describeKind(reading), privacy: .public)")
@@ -415,7 +442,7 @@ public final class Probe {
                 session.loggedQuietWait = true
                 PlatformLog.probe.notice("paste waits for a quiet period: \(app, privacy: .public): \(Int(wait / .milliseconds(1))) ms to go")
             }
-            scheduleEvaluation(after: wait)
+            scheduleEvaluation(after: wait, trigger: .quietPeriod)
             return
         }
         session.observation.beginWrite()
@@ -442,7 +469,7 @@ public final class Probe {
         }
         switch attempt {
         case .started:
-            await evaluate(session)
+            await evaluate(session, trigger: .write)
             guard session === current, !session.observation.line.canWrite else { return }
             let settleStart = clock.now
             try? await clock.sleep(for: Self.writeSettle)

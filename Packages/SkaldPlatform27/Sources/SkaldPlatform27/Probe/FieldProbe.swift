@@ -238,6 +238,28 @@ enum FieldProbe {
         TextMarkerField.describeEditableAncestor(focusedField(pid).flatMap { TextMarkerField($0)?.selectionStartHasEditableAncestor })
     }
 
+    /// Diagnostic only, numbers, booleans and roles: each step of a measurement, taken again right after an evaluation that logged no field kind.
+    static func evaluationDiagnosis(pid: pid_t, measureReturnedNil: Bool, sessionCurrent: Bool) -> EvaluationDiagnosis {
+        let focused = AXElement.focusedQuery(inApp: pid)
+        let resolved = focusedField(pid)
+        let value = resolved.flatMap { readContent(of: $0).value }
+        return EvaluationDiagnosis(
+            measureReturnedNil: measureReturnedNil, sessionCurrent: sessionCurrent,
+            outcome: .classify(focusedFound: focused.element != nil, resolvedFound: resolved != nil, valueRead: value != nil),
+            focusedQueryError: focused.error.rawValue,
+            resolvedRole: resolved?.role,
+            sameAsFocused: resolved.flatMap { field in focused.element.map { field.isSame(as: $0) } },
+            resolvedMarkers: markerState(of: resolved), focusedMarkers: markerState(of: focused.element)
+        )
+    }
+
+    private static func markerState(of element: AXElement?) -> MarkerFieldState {
+        guard let element, let markers = TextMarkerField(element) else { return .unavailable }
+        let length = markers.text.map { ($0 as NSString).length }
+        let caret = length.flatMap { markers.caret(textLength: $0) }
+        return MarkerFieldState(initialises: true, textLength: length, caretLocation: caret?.location, caretLength: caret?.length)
+    }
+
     static func text(of field: AXElement, kind: FieldKind) -> String? {
         kind == .textMarkers ? TextMarkerField(field)?.text : field.value
     }
