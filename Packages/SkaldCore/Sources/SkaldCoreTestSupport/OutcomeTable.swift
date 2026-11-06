@@ -160,6 +160,8 @@ public let outcomeTable: [Row] = [
     Row("A two-letter chat abbreviation: dc", .fr, "ok dc on attend lundi", "ok donc on attend lundi", .drop(.nameNumberURLOrCode)),
     Row("A two-letter chat abbreviation: pr", .fr, "merci pr le retour", "merci pour le retour", .drop(.nameNumberURLOrCode)),
     Row("colour → color", .en, "I like the colour of the new logo.", "I like the color of the new logo.", .drop(.spellingVariant)),
+    Row("behaviour → behavior", .en, "His behaviour was odd during the call.", "His behavior was odd during the call.",
+        .drop(.spellingVariant)),
     Row("color → colour", .en, "I like the color of the new logo.", "I like the colour of the new logo.", .drop(.spellingVariant)),
     Row("centre → center, a spelling both dictionaries accept", .en, "The centre of town is closed today.",
         "The center of town is closed today.", .drop(.spellingVariant)),

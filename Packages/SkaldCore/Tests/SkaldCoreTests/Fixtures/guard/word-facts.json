@@ -30,6 +30,12 @@
    "lemma": "back",
    "misspelled": false
   },
+  "behavior": {
+   "english": true,
+   "lemma": "behavior",
+   "misspelled": false,
+   "only": "en"
+  },
   "behaviour": {
    "english": true,
    "misspelled": false,
