@@ -10,6 +10,8 @@ actor FakeWordOracle: WordOracle {
         let stem: String?
         let lemma: String?
         let function: Bool?
+        /// The one English dictionary that accepts the word, "en" or "en_GB", when only one does.
+        var only: String? = nil
     }
 
     struct Request: Equatable, Sendable {
@@ -41,6 +43,8 @@ actor FakeWordOracle: WordOracle {
             }
             if entry.misspelled { facts.misspelled.insert(word) }
             if entry.english { facts.english.insert(word) }
+            if entry.only == "en_GB" { facts.britishOnly.insert(word) }
+            if entry.only == "en" { facts.americanOnly.insert(word) }
             if let stem = entry.stem { facts.englishStems[word] = stem }
             if let lemma = entry.lemma { facts.lemmas[word] = lemma }
             if entry.function == true { facts.functionWords.insert(word) }

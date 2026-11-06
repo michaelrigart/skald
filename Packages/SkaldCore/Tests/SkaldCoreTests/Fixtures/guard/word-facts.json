@@ -30,6 +30,15 @@
    "lemma": "back",
    "misspelled": false
   },
+  "behaviour": {
+   "english": true,
+   "misspelled": false,
+   "only": "en_GB"
+  },
+  "behavour": {
+   "english": false,
+   "misspelled": true
+  },
   "book": {
    "english": true,
    "lemma": "book",
@@ -44,6 +53,27 @@
    "english": true,
    "lemma": "cant",
    "misspelled": false
+  },
+  "center": {
+   "english": true,
+   "lemma": "center",
+   "misspelled": false,
+   "only": "en"
+  },
+  "centre": {
+   "english": true,
+   "misspelled": false
+  },
+  "color": {
+   "english": true,
+   "lemma": "color",
+   "misspelled": false,
+   "only": "en"
+  },
+  "colour": {
+   "english": true,
+   "misspelled": false,
+   "only": "en_GB"
   },
   "deploy_app": {
    "english": true,
@@ -166,6 +196,16 @@
   "lets": {
    "english": true,
    "lemma": "let",
+   "misspelled": false
+  },
+  "loose": {
+   "english": true,
+   "lemma": "loose",
+   "misspelled": false
+  },
+  "lose": {
+   "english": true,
+   "lemma": "lose",
    "misspelled": false
   },
   "lot": {

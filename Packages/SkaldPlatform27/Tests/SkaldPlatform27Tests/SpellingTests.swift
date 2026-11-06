@@ -42,6 +42,14 @@ struct SpellingCheckerTests {
         #expect(edit.replacement == "onmiddellijk")
     }
 
+    @Test("An English flag proposes the British spelling", .tags(.requiresSystem),
+          arguments: [("behavour", "behaviour"), ("colur", "colour"), ("organisaton", "organisation"), ("centr", "centre"), ("recieve", "receive")])
+    func britishGuess(_ word: String, _ guess: String) async throws {
+        let edit = try #require(await flagged("We saw the \(word) today.", .en).first)
+        #expect(edit.original == word)
+        #expect(edit.replacement == guess)
+    }
+
     @Test("A flag without a guess has an empty replacement", .tags(.requiresSystem))
     func noGuess() async throws {
         let edits = await flagged("De Sidekiq-jobs zijn groen.", .nl)

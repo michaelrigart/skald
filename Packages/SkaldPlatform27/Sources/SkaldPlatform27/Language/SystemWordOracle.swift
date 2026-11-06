@@ -32,9 +32,12 @@ public final class SystemWordOracle: WordOracle {
         let lemmaTagger = language == .nl ? nil : NLTagger(tagSchemes: [.lemma])
         let classTagger = language == .nl ? nil : NLTagger(tagSchemes: [.lexicalClass])
         for word in words {
-            let misspelled = language == .en ? flags(word, "en") && flags(word, "en_GB") : flags(word, language.rawValue)
+            let american = !flags(word, "en"), british = !flags(word, "en_GB")
+            let misspelled = language == .en ? !american && !british : flags(word, language.rawValue)
             if misspelled { facts.misspelled.insert(word) }
-            if acceptedAsEnglish(word) { facts.english.insert(word) }
+            if american || british { facts.english.insert(word) }
+            if language == .en, british && !american { facts.britishOnly.insert(word) }
+            if language == .en, american && !british { facts.americanOnly.insert(word) }
             if let stem = englishStem(of: word, language, accepted: acceptedAsEnglish) { facts.englishStems[word] = stem }
             if let lemmaTagger, let lemma = tag(word, language, .lemma, lemmaTagger) { facts.lemmas[word] = lemma.lowercased() }
             if FunctionWords.contains(word, language) {

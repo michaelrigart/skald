@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DropReason: Equatable, Sendable {
-    case neverTouch, nameNumberURLOrCode, borrowedWord, replacement, tenseChange, addedFormality, noSuggestion, compoundSplit
+    case neverTouch, nameNumberURLOrCode, borrowedWord, replacement, tenseChange, addedFormality, noSuggestion, compoundSplit, spellingVariant
 }
 
 public enum GuardVerdict: Equatable, Sendable {
@@ -96,6 +96,9 @@ public struct EditGuard: Sendable {
             return verdict
         }
         if original.contains(where: { facts.misspelled.contains($0) && !isFunctionWord($0) }) { return .keep }
+        if language == .en, original.count == 1, replacement.count == 1, Self.isSpellingVariant(original[0], replacement[0], facts) {
+            return .drop(.spellingVariant)
+        }
         if Self.swapsOnlyFunctionWords(edit, language, facts) { return .keep }
         let auxiliary = Self.auxiliaryContext(edit, tokens, language)
         return Self.contentVerdict(original, replacement, facts, language, isFunctionWord, auxiliary)
@@ -279,6 +282,16 @@ public struct EditGuard: Sendable {
         let prefix = zip(x, y).prefix { $0 == $1 }.count
         let suffix = zip(x[prefix...].reversed(), y[prefix...].reversed()).prefix { $0 == $1 }.count
         return x.count - prefix - suffix <= 2 && y.count - prefix - suffix <= 2
+    }
+
+    /// British and American spellings of one word ("colour", "color"): both correct, so swapping one for the
+    /// other restyles the text. Both are English, sound alike and are accepted by different dictionaries.
+    private static func isSpellingVariant(_ a: String, _ b: String, _ facts: WordFacts) -> Bool {
+        func dictionaries(_ word: String) -> (british: Bool, american: Bool) {
+            (!facts.americanOnly.contains(word), !facts.britishOnly.contains(word))
+        }
+        return a != b && facts.english.isSuperset(of: [a, b]) && !facts.misspelled.contains(a) && isNearHomophone(a, b)
+            && dictionaries(a) != dictionaries(b)
     }
 
     private static func englishStem(_ word: String, _ facts: WordFacts) -> String? {

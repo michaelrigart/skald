@@ -159,6 +159,14 @@ public let outcomeTable: [Row] = [
     Row("A two-letter chat abbreviation: ds", .fr, "c'est ds le wiki", "c'est dans le wiki", .drop(.nameNumberURLOrCode)),
     Row("A two-letter chat abbreviation: dc", .fr, "ok dc on attend lundi", "ok donc on attend lundi", .drop(.nameNumberURLOrCode)),
     Row("A two-letter chat abbreviation: pr", .fr, "merci pr le retour", "merci pour le retour", .drop(.nameNumberURLOrCode)),
+    Row("colour → color", .en, "I like the colour of the new logo.", "I like the color of the new logo.", .drop(.spellingVariant)),
+    Row("color → colour", .en, "I like the color of the new logo.", "I like the colour of the new logo.", .drop(.spellingVariant)),
+    Row("centre → center, a spelling both dictionaries accept", .en, "The centre of town is closed today.",
+        "The center of town is closed today.", .drop(.spellingVariant)),
+    Row("loose → lose, two words both dictionaries accept", .en, "Don't loose the key.", "Don't lose the key.", .keep),
+    Row("behavour → behaviour", .en, "His behavour was odd during the call.", "His behaviour was odd during the call.", .keep),
+    Row("spelling behavour → behaviour", .en, "His behavour was odd during the call.", "His behaviour was odd during the call.", .keep,
+        source: .spelling),
 ]
 
 /// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".
