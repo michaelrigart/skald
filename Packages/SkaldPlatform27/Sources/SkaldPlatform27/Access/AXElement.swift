@@ -84,6 +84,11 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         parameterized(kAXBoundsForRangeParameterizedAttribute, range).flatMap { Self.rect($0) }
     }
 
+    /// A rect worth drawing at: finite, with a positive width and height.
+    static func usable(_ rect: CGRect) -> CGRect? {
+        rect.isNull || rect.isInfinite || rect.width <= 0 || rect.height <= 0 ? nil : rect
+    }
+
     public func isSettable(_ attribute: String) -> Bool {
         var settable: DarwinBoolean = false
         return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success && settable.boolValue

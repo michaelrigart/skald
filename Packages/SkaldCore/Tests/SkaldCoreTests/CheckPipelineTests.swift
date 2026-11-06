@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SkaldCore
+import SkaldCoreTestSupport
 import struct SkaldCore.Issue
 import struct SkaldCore.TextRange
 

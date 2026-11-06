@@ -308,7 +308,7 @@ enum FieldProbe {
         reading.selection = content.selection
         reading.canReadSelection = reading.selection != nil
         reading.characterCount = field.numberOfCharacters
-        reading.hasFrame = field.frame.flatMap { usable($0) } != nil
+        reading.hasFrame = field.frame.flatMap { AXElement.usable($0) } != nil
         reading.rangedRead = content.rangedRead
         if content.kind == .ranges, let length = content.length, let range = content.middle {
             reading.baseline = baseline(of: field, length: length, range: range)
@@ -419,7 +419,7 @@ enum FieldProbe {
         guard let field = focusedField(pid), !isSecure(field),
               length(of: field, value: nil) == baseline.length
         else { return .skipped }
-        let bounds = field.bounds(for: baseline.range).flatMap { usable($0) }
+        let bounds = field.bounds(for: baseline.range).flatMap { AXElement.usable($0) }
         let windowOrigin = field.window?.position
         let stable = BoundsComparison.isStable(kind, old: baseline, bounds: bounds, windowOrigin: windowOrigin)
         var updated = baseline
@@ -501,14 +501,10 @@ enum FieldProbe {
     }
 
     private static func baseline(of field: AXElement, length: Int, range: CFRange) -> BoundsBaseline? {
-        guard let bounds = field.bounds(for: range).flatMap({ usable($0) }) else { return nil }
+        guard let bounds = field.bounds(for: range).flatMap({ AXElement.usable($0) }) else { return nil }
         return BoundsBaseline(
             length: length, location: range.location, rangeLength: range.length,
             bounds: bounds, windowOrigin: field.window?.position
         )
-    }
-
-    private static func usable(_ rect: CGRect) -> CGRect? {
-        rect.isNull || rect.isInfinite || rect.width <= 0 || rect.height <= 0 ? nil : rect
     }
 }

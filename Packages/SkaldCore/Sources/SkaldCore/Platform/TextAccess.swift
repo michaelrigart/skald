@@ -42,6 +42,8 @@ public struct AccessCapabilities: OptionSet, Sendable {
 
 public enum ReplaceOutcome: Equatable, Sendable {
     case replaced, refusedChanged, refusedOtherField, unsupported, failed
+    /// A paste was sent but not seen in the field; the clipboard holds the replacement.
+    case unconfirmed
 }
 
 public protocol TextAccess: Sendable {

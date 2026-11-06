@@ -1,19 +1,19 @@
 import Foundation
 
 /// A manual clock: time moves only on `advance(by:)`, which wakes every sleeper whose deadline has come.
-final class TestClock: Clock, @unchecked Sendable { // reason: all state is guarded by a lock
-    struct Instant: InstantProtocol {
-        let offset: Duration
+public final class TestClock: Clock, @unchecked Sendable { // reason: all state is guarded by a lock
+    public struct Instant: InstantProtocol {
+        public let offset: Duration
 
-        func advanced(by duration: Duration) -> Instant {
+        public func advanced(by duration: Duration) -> Instant {
             Instant(offset: offset + duration)
         }
 
-        func duration(to other: Instant) -> Duration {
+        public func duration(to other: Instant) -> Duration {
             other.offset - offset
         }
 
-        static func < (lhs: Instant, rhs: Instant) -> Bool {
+        public static func < (lhs: Instant, rhs: Instant) -> Bool {
             lhs.offset < rhs.offset
         }
     }
@@ -31,12 +31,14 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
     private var woken: [Instant] = []
     private var callWaiters: [UUID: (count: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
 
-    var now: Instant { lock.withLock { current } }
-    var minimumResolution: Duration { .zero }
-    /// The deadlines of the sleepers `advance(by:)` has woken, in the order it woke them.
-    var wokenDeadlines: [Instant] { lock.withLock { woken } }
+    public init() {}
 
-    func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
+    public var now: Instant { lock.withLock { current } }
+    public var minimumResolution: Duration { .zero }
+    /// The deadlines of the sleepers `advance(by:)` has woken, in the order it woke them.
+    public var wokenDeadlines: [Instant] { lock.withLock { woken } }
+
+    public func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
@@ -58,7 +60,7 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
     }
 
     /// Wakes every sleeper whose deadline has come, earliest deadline first, then in the order they slept.
-    func advance(by duration: Duration) {
+    public func advance(by duration: Duration) {
         let due = lock.withLock { () -> [Sleeper] in
             current = current.advanced(by: duration)
             let due = sleepers.filter { $0.value.deadline <= current }
@@ -71,7 +73,7 @@ final class TestClock: Clock, @unchecked Sendable { // reason: all state is guar
     }
 
     /// Returns once `sleep` has been called `count` times in all, or when the waiting task is cancelled.
-    func waitForSleepCalls(_ count: Int) async {
+    public func waitForSleepCalls(_ count: Int) async {
         let id = UUID()
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in

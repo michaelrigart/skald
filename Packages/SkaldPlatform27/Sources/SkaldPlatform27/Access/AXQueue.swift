@@ -10,4 +10,9 @@ public final class AXQueue: Sendable {
             queue.async { continuation.resume(returning: body()) }
         }
     }
+
+    /// Runs `body` after everything already queued, in submission order; for callbacks that must not wait.
+    public func enqueue(_ body: @Sendable @escaping () -> Void) {
+        queue.async(execute: body)
+    }
 }
