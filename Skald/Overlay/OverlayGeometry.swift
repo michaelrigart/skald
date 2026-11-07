@@ -56,6 +56,19 @@ enum OverlayGeometry {
         return CGRect(origin: cardOrigin(size: bounded, anchor: anchor, within: screen), size: bounded)
     }
 
+    /// The issues whose underline range meets the field's visible range; all of them without one.
+    static func issues(_ issues: [Issue], meeting visible: TextRange?) -> [Issue] {
+        issues.filter { meets(underlineRange(for: $0), visible: visible) }
+    }
+
+    /// True when `range` shares a character with `visible`; a zero-length range counts when it lies within
+    /// `visible` or on either edge.
+    static func meets(_ range: TextRange, visible: TextRange?) -> Bool {
+        guard let visible else { return true }
+        if range.length == 0 { return range.location >= visible.location && range.location <= visible.end }
+        return range.location < visible.end && range.end > visible.location
+    }
+
     /// The field range to underline. An insertion has an empty range, so its gap is underlined instead, or
     /// the character next to it at the paragraph's end or start.
     static func underlineRange(for issue: Issue) -> TextRange {

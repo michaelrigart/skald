@@ -3,6 +3,7 @@ import Foundation
 import SkaldCore
 import Testing
 @testable import Skald
+import struct SkaldCore.Issue
 
 struct OverlayGeometryTests {
     /// Accessibility measures from the primary screen's top-left corner, AppKit from its bottom-left.
@@ -99,5 +100,65 @@ struct OverlayGeometryTests {
     @Test func aMissingFullStopAtTheEndUnderlinesTheLastCharacter() {
         let flagged = issue(in: "Hello world", revised: "Hello world.")
         #expect(OverlayGeometry.underlineRange(for: flagged) == TextRange(location: 10, length: 1))
+    }
+
+    // MARK: Which issues to ask bounds for
+
+    private let visible = TextRange(location: 100, length: 50)
+
+    /// A one-word replacement whose word spans `start..<start + 10`.
+    private func word(at start: Int) -> Issue {
+        issue(in: "aaaa bbbbbbbbbb cc", revised: "aaaa cccccccccc cc", at: start - 5)
+    }
+
+    /// A missing full stop after "Hello world" starting at `start`: the last character is underlined.
+    private func missingStop(after start: Int) -> Issue {
+        issue(in: "Hello world", revised: "Hello world.", at: start)
+    }
+
+    @Test func onlyIssuesWhoseUnderlineMeetsTheVisibleRangeAreAskedFor() {
+        let above = word(at: 20)
+        let straddlingStart = word(at: 95)
+        let inside = word(at: 120)
+        let straddlingEnd = word(at: 145)
+        let below = word(at: 300)
+        let all = [above, straddlingStart, inside, straddlingEnd, below]
+        #expect(OverlayGeometry.issues(all, meeting: visible).map(\.id) == [straddlingStart, inside, straddlingEnd].map(\.id))
+    }
+
+    @Test func anInsertionsUnderlineCountsWhereItLiesInTheVisibleRange() {
+        let gap = issue(in: "Hello world", revised: "Hello, world", at: 120)
+        #expect(OverlayGeometry.underlineRange(for: gap) == TextRange(location: 125, length: 1))
+        let lastInside = missingStop(after: 139)
+        #expect(OverlayGeometry.underlineRange(for: lastInside) == TextRange(location: 149, length: 1))
+        let pastTheEnd = missingStop(after: 140)
+        #expect(OverlayGeometry.underlineRange(for: pastTheEnd) == TextRange(location: 150, length: 1))
+        let justBefore = missingStop(after: 90)
+        #expect(OverlayGeometry.underlineRange(for: justBefore) == TextRange(location: 100, length: 1))
+        let endsAtTheStart = missingStop(after: 89)
+        #expect(OverlayGeometry.underlineRange(for: endsAtTheStart) == TextRange(location: 99, length: 1))
+        let all = [gap, lastInside, pastTheEnd, justBefore, endsAtTheStart]
+        #expect(OverlayGeometry.issues(all, meeting: visible).map(\.id) == [gap, lastInside, justBefore].map(\.id))
+    }
+
+    @Test func aZeroLengthRangeCountsInsideTheVisibleRangeAndOnEitherEdge() {
+        for location in [100, 125, 150] {
+            #expect(OverlayGeometry.meets(TextRange(location: location, length: 0), visible: visible))
+        }
+        for location in [99, 151] {
+            #expect(!OverlayGeometry.meets(TextRange(location: location, length: 0), visible: visible))
+        }
+    }
+
+    @Test func aRangeTouchingTheVisibleRangeOnlyAtAnEdgeDoesNotMeetIt() {
+        #expect(!OverlayGeometry.meets(TextRange(location: 90, length: 10), visible: visible))
+        #expect(!OverlayGeometry.meets(TextRange(location: 150, length: 5), visible: visible))
+        #expect(OverlayGeometry.meets(TextRange(location: 90, length: 11), visible: visible))
+        #expect(OverlayGeometry.meets(TextRange(location: 149, length: 5), visible: visible))
+    }
+
+    @Test func withoutAVisibleRangeEveryIssueIsAskedFor() {
+        let all = [word(at: 20), word(at: 120), word(at: 300)]
+        #expect(OverlayGeometry.issues(all, meeting: nil).map(\.id) == all.map(\.id))
     }
 }

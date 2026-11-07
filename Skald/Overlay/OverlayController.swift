@@ -234,7 +234,9 @@ final class OverlayController {
 
         if capabilities.contains(.rangeBounds) {
             let frame = await access.frame(of: field)
-            let issues = snapshot.issues.sorted { $0.source == .model && $1.source != .model }
+            let visible = await access.visibleRange(of: field)
+            let issues = OverlayGeometry.issues(snapshot.issues, meeting: visible).sorted { $0.source == .model && $1.source != .model }
+            Log.ui.debug("redraw: \(snapshot.issues.count, privacy: .public) issues, \(issues.count, privacy: .public) ranges asked")
             let allBounds = await access.bounds(issues.map(OverlayGeometry.underlineRange), in: field)
             var marks: [UnderlineView.Mark] = []
             var targets: [HoverTracker.Target] = []
