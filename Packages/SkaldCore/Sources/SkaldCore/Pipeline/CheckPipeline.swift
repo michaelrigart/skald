@@ -88,6 +88,8 @@ public actor CheckPipeline {
     private var backgroundJob: BackgroundJob?
     /// Every background spelling job still running, including those the scheduler has dropped.
     private var backgroundJobIDs: Set<UUID> = []
+    /// Called with the language before each route lookup; tests hold lookups here.
+    private var routeHook: (@Sendable (Language) async -> Void)?
     /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
     /// cancels is removed without a report, since the scheduler has already let it go.
     private var modelJobs: [Int: Task<Void, Never>] = [:]
@@ -228,6 +230,10 @@ public actor CheckPipeline {
             if field == currentField { readRevision += 1 }
         }
         send(.field(event))
+    }
+
+    func setRouteHook(_ hook: (@Sendable (Language) async -> Void)?) {
+        routeHook = hook
     }
 
     /// Waits until no job is running and no due timer is left to fire; with `ignoringBackground`, background
@@ -435,6 +441,7 @@ public actor CheckPipeline {
     // MARK: Routing and publication
 
     private func route(_ language: Language) async -> TypingRoute {
+        await routeHook?(language)
         let route = await router.current.typing(language)
         if route == .model, let appleUnavailable { return .spellingOnly(appleUnavailable) }
         return route

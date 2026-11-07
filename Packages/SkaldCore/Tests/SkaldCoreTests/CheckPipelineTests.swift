@@ -81,6 +81,41 @@ private actor GatedOracle: WordOracle {
     }
 }
 
+/// Holds the first route lookup for a language until released.
+private actor RouteHold {
+    private let language: Language
+    private var gate = CallGate(closed: true)
+
+    init(_ language: Language) {
+        self.language = language
+    }
+
+    func arrive(_ asked: Language) async {
+        guard asked == language else { return }
+        let index = gate.arrive()
+        if index == 0, gate.mustWait(0) {
+            await withCheckedContinuation { gate.hold(0, $0) }
+        }
+    }
+
+    func waitForLookup() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { gate.wait(id, for: 1, $0) }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
+        }
+    }
+
+    private func stopWaiting(_ id: UUID) {
+        gate.stopWaiting(id)
+    }
+
+    func release() {
+        gate.release(0)
+    }
+}
+
 private actor RecordingConfirmer: EditConfirming {
     private(set) var asked: [String] = []
 
@@ -696,6 +731,33 @@ struct CheckPipelineTests {
 
         #expect(await rig.spelling.calls(of: inB[0]).count == 1)
         #expect(await rig.spelling.calls(of: inB[1]).count == 1)
+    }
+
+    /// A background job superseded by the caret's visit finds its language routed off: it must not clear the key
+    /// the caret's job has since filled.
+    @Test func aSupersededBackgroundJobRoutedOffLeavesTheCaretsResultsAlone() async {
+        var settings = makeSettings()
+        settings.typingChecks[.fr] = false
+        let rig = Rig(settings)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        let french = "J'ai mergé le correctif hier soir."
+        let line = "teh end"
+        let text = [french, line, Self.englishLine, french + " Bis."].joined(separator: "\n")
+        let hold = RouteHold(.fr)
+        await rig.pipeline.setRouteHook { await hold.arrive($0) }
+        await rig.focus(text, caret: (french + "\n" + line + "\n").utf16.count + 3)
+        rig.pass()
+        await hold.waitForLookup()
+
+        await rig.access.moveCaret(to: french.utf16.count + 3, in: fieldA)
+        await rig.pipeline.receive(.caretMoved(fieldA))
+        rig.pass()
+        _ = await next(&published) { $0.issues.contains { $0.parent.text == line && $0.source == .model } }
+        await hold.release()
+        await rig.pipeline.drain()
+
+        let kept = await rig.visible().filter { $0.parent.text == line }
+        #expect(kept.map(\.source) == [.spelling, .model])
     }
 
     @Test func aParagraphRoutedOffStaysSpellChecked() async {
