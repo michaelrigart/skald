@@ -399,12 +399,12 @@ A fake implementation drives the core's tests.
    field is secure.
 2. After a pause in typing (builder's value, starting near 700 ms), the scheduler picks the
    paragraph around the caret. A blank or whitespace-only line has no paragraph of its own: the
-   caret there picks the nearest paragraph above, else the first below. Every other paragraph of
-   the text read (the whole field up to 20,000 UTF-16 units, else 10,000 around the caret) is
-   spell-checked in the background, one paragraph at a time, nearest the caret first, so the
-   whole field has spelling underlines after focus, launch and resume, and after a paste or an
-   edit away from the caret. A paragraph that becomes the caret's is spelled again in its own
-   language. Unchanged paragraphs are not checked again.
+   caret there picks the nearest paragraph above, else the first below. In a field read whole
+   (up to 20,000 UTF-16 units), every other paragraph is spell-checked in the background, one
+   paragraph at a time, nearest the caret first, so the whole field has spelling underlines
+   after focus, launch and resume, and after a paste or an edit away from the caret. A paragraph
+   that becomes the caret's is spelled again in its own language. A longer field, read only
+   around the caret, keeps to the caret's paragraph. Unchanged paragraphs are not checked again.
 3. **Spelling** comes first and immediately, from `NSSpellChecker` in the paragraph's language.
    Spelling flags go through the same edit guard as model edits. Once the model's result for the
    paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn. Only the
@@ -426,8 +426,7 @@ A fake implementation drives the core's tests.
    reach the app, and catching it would mean intercepting the user's typing (decided
    2026-11-06, Task 16).
 
-Paragraphs are bounded by line breaks. Very long fields are checked only around the caret, and
-a paragraph cut by the edge of what was read is not spell-checked in the background.
+Paragraphs are bounded by line breaks. Very long fields are checked only around the caret.
 
 ### The edit guard
 
@@ -702,10 +701,11 @@ Never user text, never the never-touch list, never the API key.
   leaves the fix on the clipboard for good, with no deadline and no restore at quit.
 - Slack keeps paste writes even if typing straight after an accept joins its undo step.
 
-**Michael decided during acceptance (2026-11-06):**
+**Michael decided during acceptance (2026-11-06 and 2026-11-07):**
 
-- Check the whole note, not only the caret's paragraph: the rest of the text read is
-  spell-checked in the background on focus, launch and resume, and the model stays on the
+- Check the whole note, not only the caret's paragraph: the rest of the field is spell-checked
+  in the background on focus, launch and resume, and the model stays on the caret's paragraph.
+- Only a field read whole (up to 20,000 UTF-16 units) gets this; a longer one keeps to the
   caret's paragraph.
 
 **Claude's calls, for Michael to check:**
