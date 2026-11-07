@@ -54,6 +54,10 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         attribute(kAXSelectedTextRangeAttribute).flatMap { Self.range($0) }
     }
 
+    public var visibleCharacterRange: CFRange? {
+        attribute(kAXVisibleCharacterRangeAttribute).flatMap { Self.range($0) }
+    }
+
     public var frame: CGRect? {
         attribute("AXFrame").flatMap { Self.rect($0) }
     }
@@ -154,7 +158,7 @@ public struct AXElement: @unchecked Sendable { // reason: AXUIElement is an immu
         return error == .success ? result : nil
     }
 
-    private static func range(_ raw: CFTypeRef) -> CFRange? {
+    static func range(_ raw: CFTypeRef) -> CFRange? {
         guard CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
         var range = CFRange()
         return AXValueGetValue(raw as! AXValue, .cfRange, &range) ? range : nil

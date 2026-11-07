@@ -913,6 +913,21 @@ private func makeDriver(_ clock: TestClock, port: FakePort) -> (FocusDriver, Asy
     #expect(port.queries == [notesPID])
 }
 
+@Test func aVisibleRangeInsideTheFieldIsKept() {
+    #expect(TextAccessRules.visibleRange(TextRange(location: 120, length: 800), totalLength: 5_000) == TextRange(location: 120, length: 800))
+    #expect(TextAccessRules.visibleRange(TextRange(location: 0, length: 5_000), totalLength: 5_000) == TextRange(location: 0, length: 5_000))
+}
+
+/// Without a range the overlay asks for every issue's bounds, so a range that can't be right must come out nil.
+@Test func anEmptyVisibleRangeOrOnePastTheFieldsEndGivesNone() {
+    #expect(TextAccessRules.visibleRange(TextRange(location: 40, length: 0), totalLength: 5_000) == nil)
+    #expect(TextAccessRules.visibleRange(TextRange(location: 4_900, length: 101), totalLength: 5_000) == nil)
+    #expect(TextAccessRules.visibleRange(TextRange(location: 5_001, length: 1), totalLength: 5_000) == nil)
+    #expect(TextAccessRules.visibleRange(TextRange(location: -1, length: 10), totalLength: 5_000) == nil)
+    #expect(TextAccessRules.visibleRange(nil, totalLength: 5_000) == nil)
+    #expect(TextAccessRules.visibleRange(TextRange(location: 0, length: 10), totalLength: nil) == nil)
+}
+
 @Test func switchesNeverObserveSkaldItself() {
     let port = FakePort()
     let (driver, _) = makeDriver(TestClock(), port: port)

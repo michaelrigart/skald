@@ -142,6 +142,14 @@ public final class SystemTextAccess: TextAccess {
         }
     }
 
+    /// The characters of the field the app reports as visible; nil when it gives none and for text-marker fields.
+    public func visibleRange(of field: FieldID) async -> TextRange? {
+        await queue.run(while: isOn(field.app), otherwise: nil) { [observer] in
+            guard let reader = observer.entry(field)?.source else { return nil }
+            return TextAccessRules.visibleRange(reader.visibleRange(), totalLength: reader.length())
+        }
+    }
+
     /// The field's frame on screen, top-left origin, for the badge.
     public func frame(of field: FieldID) async -> CGRect? {
         await queue.run(while: isOn(field.app), otherwise: nil) { [observer] in

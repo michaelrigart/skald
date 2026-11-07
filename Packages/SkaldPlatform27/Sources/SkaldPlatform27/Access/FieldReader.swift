@@ -17,6 +17,8 @@ protocol FieldReader: Sendable {
     func attemptSelect(_ range: TextRange) -> SelectAttempt
     /// The text the app reports as selected.
     func selectedText() -> String?
+    /// The characters the app reports as visible, as it answers; nil when it gives none.
+    func visibleRange() -> TextRange?
 }
 
 enum SelectAttempt: Sendable, Equatable {
@@ -40,6 +42,10 @@ extension FieldReader {
 
     func selectedText() -> String? {
         selection().flatMap { string(for: $0) }
+    }
+
+    func visibleRange() -> TextRange? {
+        nil
     }
 }
 
@@ -100,6 +106,10 @@ struct RangeReader: FieldReader {
 
     func selectedText() -> String? {
         element.selectedText ?? selection().flatMap { string(for: $0) }
+    }
+
+    func visibleRange() -> TextRange? {
+        element.visibleCharacterRange.map { TextRange(location: $0.location, length: $0.length) }
     }
 }
 

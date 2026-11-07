@@ -108,6 +108,13 @@ enum TextAccessRules {
         }
     }
 
+    /// The characters the app reports as visible, or nil when it reports none, an empty range, or one that is not
+    /// within the field; the overlay then asks for every issue's bounds.
+    static func visibleRange(_ raw: TextRange?, totalLength: Int?) -> TextRange? {
+        guard let raw, let totalLength, raw.location >= 0, raw.length > 0, raw.end <= totalLength else { return nil }
+        return raw
+    }
+
     // MARK: Capture
 
     /// The read windows around both ends of the selection, joined, so the selection is always inside.
