@@ -47,7 +47,6 @@ public actor CheckPipeline {
     }
 
     private struct BackgroundJob {
-        let id: UUID
         let key: ParagraphKey
         let generation: Int
     }
@@ -346,7 +345,7 @@ public actor CheckPipeline {
         let epoch = self.epoch
         let id = UUID()
         spellingJobs[key] = id
-        backgroundJob = BackgroundJob(id: id, key: key, generation: generation)
+        backgroundJob = BackgroundJob(key: key, generation: generation)
         backgroundJobIDs.insert(id)
         track(id) { pipeline in
             if let language = pipeline.detectLanguage(of: parent, in: key.field, atCaret: false) {
