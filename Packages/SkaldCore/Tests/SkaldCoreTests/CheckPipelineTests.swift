@@ -669,6 +669,35 @@ struct CheckPipelineTests {
         #expect(await rig.spelling.calls(of: Self.tehLines[2]).count == 1)
     }
 
+    /// A background job of the field left behind is not a caret job: the new field's pass is not started over.
+    @Test func anUpdateWhileAnOlderFieldsBackgroundJobIsStillRunningDoesNotRestartTheNewFieldsPass() async {
+        let settings = makeSettings(model: false)
+        let rig = Rig(settings)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        let held = Self.tehLines[1]
+        let inB = [Self.englishLine, Self.tehLines[2]]
+        await rig.spelling.hold(held)
+        await rig.access.set(inB.joined(separator: "\n"), caret: 3, in: fieldB)
+        await rig.focus([Self.tehLines[0], held].joined(separator: "\n"), caret: 3)
+        rig.pass()
+        await rig.spelling.waitForCalls(of: held, 1)
+
+        await rig.pipeline.receive(.focused(fieldB))
+        rig.pass()
+        _ = await next(&published) { $0.field == fieldB && $0.issues.contains { $0.parent.text == inB[1] } }
+        await rig.pipeline.drain(ignoringBackground: true)
+
+        var updated = settings
+        updated.addNeverTouch("Pieter")
+        await rig.update(updated)
+        rig.pass()
+        await rig.spelling.release(held)
+        await rig.pipeline.drain()
+
+        #expect(await rig.spelling.calls(of: inB[0]).count == 1)
+        #expect(await rig.spelling.calls(of: inB[1]).count == 1)
+    }
+
     @Test func aParagraphRoutedOffStaysSpellChecked() async {
         var settings = makeSettings()
         settings.typingChecks[.fr] = false

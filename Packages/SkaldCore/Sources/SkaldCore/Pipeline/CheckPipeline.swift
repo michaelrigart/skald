@@ -86,6 +86,8 @@ public actor CheckPipeline {
     /// The background spelling job the scheduler is running, which is also its key's spelling job unless the caret's
     /// visit superseded it.
     private var backgroundJob: BackgroundJob?
+    /// Every background spelling job still running, including those the scheduler has dropped.
+    private var backgroundJobIDs: Set<UUID> = []
     /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
     /// cancels is removed without a report, since the scheduler has already let it go.
     private var modelJobs: [Int: Task<Void, Never>] = [:]
@@ -159,7 +161,7 @@ public actor CheckPipeline {
     public func update(settings new: Settings) {
         let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
         let background = backgroundJob
-        let discarded = spellingJobs.values.contains { $0 != background?.id } || !modelJobs.isEmpty
+        let discarded = spellingJobs.values.contains { !backgroundJobIDs.contains($0) } || !modelJobs.isEmpty
         settings = new
         editGuard = EditGuard(neverTouch: Set(new.neverTouch))
         appleUnavailable = nil
@@ -228,13 +230,13 @@ public actor CheckPipeline {
         send(.field(event))
     }
 
-    /// Waits until no job is running and no due timer is left to fire; with `ignoringBackground`, the running
-    /// background spelling job may still be running.
+    /// Waits until no job is running and no due timer is left to fire; with `ignoringBackground`, background
+    /// spelling jobs may still be running.
     func drain(ignoringBackground: Bool = false) async {
         while !Task.isCancelled {
             if let timer, timer.deadline <= timing.elapsed() {
                 await timer.task.value
-            } else if let job = jobs.first(where: { !ignoringBackground || $0.key != backgroundJob?.id })?.value {
+            } else if let job = jobs.first(where: { !ignoringBackground || !backgroundJobIDs.contains($0.key) })?.value {
                 await job.value
             } else {
                 return
@@ -339,6 +341,7 @@ public actor CheckPipeline {
         let id = UUID()
         spellingJobs[key] = id
         backgroundJob = BackgroundJob(id: id, key: key, generation: generation)
+        backgroundJobIDs.insert(id)
         track(id) { pipeline in
             if let language = pipeline.detectLanguage(of: parent, in: key.field, atCaret: false) {
                 await pipeline.spell(key, chunk: chunk, language: language, epoch: epoch, id: id, inBackground: true)
@@ -347,6 +350,7 @@ public actor CheckPipeline {
             }
             if pipeline.spellingJobs[key] == id { pipeline.spellingJobs[key] = nil }
             if pipeline.backgroundJob?.generation == generation { pipeline.backgroundJob = nil }
+            pipeline.backgroundJobIDs.remove(id)
             pipeline.send(.backgroundSpelled(generation: generation))
         }
     }
