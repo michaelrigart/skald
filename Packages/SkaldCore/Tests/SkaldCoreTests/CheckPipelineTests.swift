@@ -743,6 +743,10 @@ struct CheckPipelineTests {
         #expect(detector.count - before == 2)
         #expect(await rig.spelling.calls.isEmpty)
 
+        let beforeUndo = detector.count
+        await edit(line: "bb")
+        #expect(detector.count - beforeUndo == 2)
+
         await edit(line: Self.tehLines[0])
         #expect(await rig.spelling.texts.sorted() == [lines[0], lines[2], lines[3], Self.tehLines[0]].sorted())
     }
