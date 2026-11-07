@@ -644,6 +644,7 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: text.utf16.count)
         rig.pass()
         await rig.spelling.waitForCalls(of: line, 1)
+        await rig.engine.waitForRequests(1)
 
         await rig.access.moveCaret(to: Self.dutchLine.utf16.count + 3, in: fieldA)
         await rig.pipeline.receive(.caretMoved(fieldA))
