@@ -47,8 +47,11 @@ public enum Paragraphs {
     /// The paragraph the caret is in or at the end of. On a blank line it is the nearest paragraph above, else the
     /// first below, so a caret resting after a paragraph still has that paragraph checked.
     public static func around(caret: Int, in text: String, offset: Int) -> Paragraph? {
-        let paragraphs = all(in: text, offset: offset)
-        return paragraphs.first { $0.range.location <= caret && caret <= $0.range.end }
+        around(caret: caret, in: all(in: text, offset: offset))
+    }
+
+    static func around(caret: Int, in paragraphs: [Paragraph]) -> Paragraph? {
+        paragraphs.first { $0.range.location <= caret && caret <= $0.range.end }
             ?? paragraphs.last { $0.range.end < caret }
             ?? paragraphs.first
     }

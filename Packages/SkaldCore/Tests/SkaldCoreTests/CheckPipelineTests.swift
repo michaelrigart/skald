@@ -104,7 +104,8 @@ private struct Rig {
         _ settings: Settings,
         engine: FakeEngine = .correcting(["teh": "the"]),
         misspellings: [String: String] = ["teh": "the"],
-        oracleGated: Bool = false
+        oracleGated: Bool = false,
+        detector: any LanguageDetecting = FakeLanguageDetector()
     ) {
         self.engine = engine
         spelling = FakeSpelling(misspellings)
@@ -114,7 +115,7 @@ private struct Rig {
             access: access,
             apple: engine,
             spelling: spelling,
-            detector: FakeLanguageDetector(),
+            detector: detector,
             oracle: oracle,
             confirmer: confirmer,
             clock: clock,
@@ -361,8 +362,8 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: text.utf16.count)
         await rig.check()
 
-        #expect(await rig.spelling.calls.map(\.language) == [.nl])
-        #expect(await rig.spelling.calls.map(\.text) == ["tot morgn"])
+        #expect(await rig.spelling.calls.count == 2)
+        #expect(await rig.spelling.calls(of: "tot morgn").map(\.language) == [.nl])
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
     }
 
@@ -374,8 +375,8 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: 42)
         await rig.check()
 
-        #expect(await rig.spelling.calls.map(\.text) == ["teh end"])
-        #expect(await rig.spelling.calls.map(\.language) == [.en])
+        #expect(await rig.spelling.calls.count == 3)
+        #expect(await rig.spelling.calls(of: "teh end").map(\.language) == [.en])
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .en)
     }
 
@@ -385,8 +386,8 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: text.utf16.count)
         await rig.check()
 
-        #expect(await rig.spelling.calls.map(\.text) == ["teh end"])
-        #expect(await rig.spelling.calls.map(\.language) == [.en])
+        #expect(await rig.spelling.calls.count == 3)
+        #expect(await rig.spelling.calls(of: "teh end").map(\.language) == [.en])
     }
 
     /// No single paragraph detects, but the whole read does: the last resort before a paragraph goes unchecked.
@@ -396,8 +397,8 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: text.utf16.count)
         await rig.check()
 
-        #expect(await rig.spelling.calls.map(\.text) == ["tot morgn"])
-        #expect(await rig.spelling.calls.map(\.language) == [.nl])
+        #expect(await rig.spelling.calls.count == 3)
+        #expect(await rig.spelling.calls(of: "tot morgn").map(\.language) == [.nl])
         #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .nl)
     }
 
@@ -407,8 +408,8 @@ struct CheckPipelineTests {
         await rig.focus(text, caret: 9)
         await rig.check()
 
-        #expect(await rig.spelling.calls.map(\.text) == ["teh title"])
-        #expect(await rig.spelling.calls.map(\.language) == [.en])
+        #expect(await rig.spelling.calls.count == 3)
+        #expect(await rig.spelling.calls(of: "teh title").map(\.language) == [.en])
     }
 
     @Test func aShortParagraphAloneInAFreshFieldStaysUnchecked() async {
@@ -550,6 +551,200 @@ struct CheckPipelineTests {
         #expect(await rig.engine.texts.filter { $0 == paragraphChanged }.count == 1)
         #expect(await rig.visible().filter { $0.parent.text == paragraphA }.isEmpty)
         #expect(await rig.visible().filter { $0.parent.text == paragraphChanged }.map(\.source) == [.spelling, .model])
+    }
+
+    // MARK: Spelling the rest of the field in the background
+
+    private static let dutchLine = "Ik heb de nieuwe versie gisteren gedownload."
+    private static let englishLine = "Thanks for the review of the doc."
+    private static let tehLines = [
+        "We flew to teh office yesterday morning",
+        "They drove to teh depot today evening",
+        "She sent teh report to everyone",
+    ]
+
+    @Test func everyParagraphOfAWholeFieldIsSpelledAndOnlyTheCaretsParagraphReachesTheModel() async {
+        let text = Self.tehLines.joined(separator: "\n")
+        let rig = Rig(makeSettings())
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+
+        let spelled = await rig.visible().filter { $0.source == .spelling }
+        #expect(spelled.map(\.parent.text) == Self.tehLines)
+        #expect(spelled.map(\.word) == ["teh", "teh", "teh"])
+        #expect(await rig.engine.texts == [Self.tehLines[2]])
+    }
+
+    /// A pass that set the field's language would leave the line typed next in Dutch.
+    @Test func aShortLineTypedAtTheCaretAfterTheBackgroundPassIsCheckedInEnglish() async {
+        let rig = Rig(makeSettings())
+        let text = Self.dutchLine + "\n" + Self.englishLine
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+        #expect(await rig.spelling.calls(of: Self.dutchLine).map(\.language) == [.nl])
+
+        let typed = text + "\nteh end"
+        await rig.access.set(typed, caret: typed.utf16.count, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        await rig.check()
+        #expect(await rig.spelling.calls(of: "teh end").map(\.language) == [.en])
+    }
+
+    /// The field's language is English here; a line among the Dutch paragraphs is Dutch.
+    @Test func aShortLineAmongDutchParagraphsIsSpelledInDutchWhateverTheFieldsLanguage() async {
+        let rig = Rig(makeSettings(), misspellings: ["morgn": "morgen"])
+        let text = [Self.englishLine, Self.dutchLine, "tot morgn"].joined(separator: "\n")
+        await rig.focus(text, caret: 3)
+        await rig.check()
+
+        #expect(await rig.spelling.calls(of: "tot morgn").map(\.language) == [.nl])
+        #expect(await rig.pipeline.lastConfidentLanguage(for: fieldA) == .en)
+    }
+
+    @Test func aBackgroundJobSupersededByTheCaretsVisitEndsWithoutPublishing() async {
+        let line = "teh end"
+        let text = [Self.dutchLine, line, Self.englishLine].joined(separator: "\n")
+        let rig = Rig(makeSettings())
+        await rig.spelling.hold(line)
+        await rig.focus(text, caret: text.utf16.count)
+        rig.pass()
+        await rig.spelling.waitForCalls(of: line, 1)
+
+        await rig.access.moveCaret(to: Self.dutchLine.utf16.count + 3, in: fieldA)
+        await rig.pipeline.receive(.caretMoved(fieldA))
+        rig.pass()
+        await rig.engine.waitForRequests(2)
+        await rig.spelling.release(line)
+        await rig.pipeline.drain()
+
+        let flags = await rig.visible().filter { $0.parent.text == line && $0.source == .spelling }
+        #expect(flags.map(\.word) == ["teh"])
+        #expect(flags.map(\.language) == [.en])
+
+        let spellingCalls = await rig.spelling.calls.count
+        let requests = await rig.engine.requests.count
+        await rig.recheckAtCaret()
+        #expect(await rig.spelling.calls.count == spellingCalls)
+        #expect(await rig.engine.requests.count == requests)
+    }
+
+    @Test func aFocusChangeDuringABackgroundLookupDropsTheRestOfThePass() async {
+        let text = Self.tehLines.joined(separator: "\n")
+        let rig = Rig(makeSettings(model: false), oracleGated: true)
+        await rig.focus(text, caret: 3)
+        rig.pass()
+        await rig.oracle.waitForCalls(2)
+        #expect(await rig.spelling.calls.count == 2)
+
+        await rig.pipeline.receive(.focused(fieldB))
+        await rig.oracle.open()
+        await rig.pipeline.drain()
+
+        #expect(await rig.visible(in: fieldA).isEmpty)
+        #expect(await rig.spelling.calls.count == 2)
+    }
+
+    @Test func aNeverTouchUpdateMidPassSpellsTheHeldParagraphAgainAndEachOtherOnce() async {
+        let settings = makeSettings(model: false)
+        let rig = Rig(settings)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        let text = Self.tehLines.joined(separator: "\n")
+        await rig.spelling.hold(Self.tehLines[1])
+        await rig.focus(text, caret: 3)
+        rig.pass()
+        await rig.spelling.waitForCalls(of: Self.tehLines[1], 1)
+        await rig.pipeline.drain(ignoringBackground: true)
+
+        var updated = settings
+        updated.addNeverTouch("Pieter")
+        await rig.update(updated)
+        await rig.access.set("\n" + text, caret: 4, in: fieldA)
+        rig.pass()
+        _ = await next(&published) { $0.issues.contains { $0.parent.text == Self.tehLines[0] && $0.parent.range.location == 1 } }
+        await rig.spelling.release(Self.tehLines[1])
+        await rig.pipeline.drain()
+
+        #expect(await rig.spelling.calls(of: Self.tehLines[0]).count == 1)
+        #expect(await rig.spelling.calls(of: Self.tehLines[1]).count == 2)
+        #expect(await rig.spelling.calls(of: Self.tehLines[2]).count == 1)
+    }
+
+    @Test func aParagraphRoutedOffStaysSpellChecked() async {
+        var settings = makeSettings()
+        settings.typingChecks[.fr] = false
+        let rig = Rig(settings)
+        let french = "J'ai mergé le correctif hier soir."
+        let text = french + "\n" + Self.tehLines[0]
+        await rig.focus(text, caret: text.utf16.count)
+        await rig.check()
+        #expect(await rig.spelling.texts == [Self.tehLines[0]])
+
+        await rig.router.set(engineRouter(makeSettings()))
+        let edited = french + "\n" + Self.tehLines[1]
+        await rig.access.set(edited, caret: edited.utf16.count, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        await rig.check()
+        #expect(await rig.spelling.texts.filter { $0 == french }.isEmpty)
+    }
+
+    @Test func aPassCallsTheDetectorAtMostTwiceForEachParagraph() async {
+        let detector = CountingLanguageDetector()
+        let lines = (0..<40).map { "line \($0)" } + [Self.tehLines[0]]
+        let text = lines.joined(separator: "\n")
+        let rig = Rig(makeSettings(model: false), detector: detector)
+        await rig.focus(text, caret: 3)
+        await rig.check()
+
+        #expect(await rig.spelling.calls.count == lines.count)
+        #expect(detector.count <= 2 * lines.count + 2)
+    }
+
+    @Test func publishedRoutedOffAndDroppedEndingsEachAdvanceThePass() async {
+        var settings = makeSettings(model: false)
+        settings.typingChecks[.fr] = false
+        let rig = Rig(settings)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        let french = "J'ai mergé le correctif hier soir."
+        let dropped = Self.tehLines[2]
+        let replacement = "She sent teh report to nobody"
+        await rig.spelling.hold(dropped)
+        let text = [Self.tehLines[0], Self.tehLines[1], french, dropped].joined(separator: "\n")
+        await rig.focus(text, caret: 3)
+        rig.pass()
+        await rig.spelling.waitForCalls(of: dropped, 1)
+
+        await rig.access.set("\n" + [Self.tehLines[0], Self.tehLines[1], french, replacement].joined(separator: "\n"), caret: 4, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        rig.pass()
+        _ = await next(&published) { $0.issues.contains { $0.parent.text == Self.tehLines[0] && $0.parent.range.location == 1 } }
+        await rig.spelling.release(dropped)
+        await rig.pipeline.drain()
+
+        let spelled = await rig.visible().filter { $0.source == .spelling }
+        #expect(spelled.map(\.parent.text) == [Self.tehLines[0], Self.tehLines[1], replacement])
+    }
+
+    @Test func aFieldWhereNothingDetectsFinishesItsPassAndAsksTheDetectorOnlyAboutWhatChanged() async {
+        let detector = CountingLanguageDetector()
+        let rig = Rig(makeSettings(), detector: detector)
+        let lines = ["aa", "bb", "cc", "dd"]
+        func edit(line: String) async {
+            let edited = [lines[0], line, lines[2], lines[3]].joined(separator: "\n")
+            await rig.access.set(edited, caret: 4, in: fieldA)
+            await rig.pipeline.receive(.edited(fieldA))
+            await rig.check()
+        }
+        await rig.focus(lines.joined(separator: "\n"), caret: 4)
+        await rig.check()
+        #expect(await rig.spelling.calls.isEmpty)
+
+        let before = detector.count
+        await edit(line: "bx")
+        #expect(detector.count - before == 2)
+        #expect(await rig.spelling.calls.isEmpty)
+
+        await edit(line: Self.tehLines[0])
+        #expect(await rig.spelling.texts.sorted() == [lines[0], lines[2], lines[3], Self.tehLines[0]].sorted())
     }
 
     // MARK: Lifecycle

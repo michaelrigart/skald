@@ -60,17 +60,41 @@ public enum ParagraphKeys {
     }
 
     public static func chunkKeys(_ s: FieldSnapshot, caret: Int) -> [(ParagraphKey, chunk: Paragraph, parent: Paragraph)] {
-        guard let parent = Paragraphs.around(caret: caret, in: s.text, offset: s.offset),
-              let key = keyed(s).first(where: { $0.1 == parent })?.0
+        let keyed = keyed(s)
+        guard let parent = Paragraphs.around(caret: caret, in: keyed.map(\.1)),
+              let key = keyed.first(where: { $0.1 == parent })?.0
         else { return [] }
-        return Paragraphs.chunks(parent).enumerated().map { index, chunk in
+        return chunkKeys(of: parent, key: key)
+    }
+
+    /// The keyed chunks of one paragraph, given its chunk-0 key.
+    static func chunkKeys(of parent: Paragraph, key: ParagraphKey) -> [(ParagraphKey, chunk: Paragraph, parent: Paragraph)] {
+        Paragraphs.chunks(parent).enumerated().map { index, chunk in
             (key.withChunk(index), chunk, parent)
         }
     }
 
     /// Every paragraph in the snapshot, by its chunk-0 key.
     static func parents(in s: FieldSnapshot) -> [ParagraphKey: Paragraph] {
-        Dictionary(keyed(s), uniquingKeysWith: { first, _ in first })
+        parents(keyed(s))
+    }
+
+    static func parents(_ keyed: [(ParagraphKey, Paragraph)]) -> [ParagraphKey: Paragraph] {
+        Dictionary(keyed, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// True when a read shows that `key`, which `locate` did not find in it, is gone: any key of a whole-field
+    /// read, an occurrence key of any read (the field grew past the read limit and its keys changed kind), and a
+    /// location key whose paragraph lies inside the read's window or past the field's end.
+    static func isGone(_ key: ParagraphKey, in s: FieldSnapshot) -> Bool {
+        switch key.position {
+        case .occurrence:
+            return true
+        case .location(let location):
+            let window = s.offset...(s.offset + s.text.utf16.count)
+            let end = location + key.text.utf16.count
+            return s.holdsWholeField || end > s.totalLength || (window.contains(location) && window.contains(end))
+        }
     }
 
     /// The parent paragraph and chunk that `key` names among `parents`, or nil when they no longer hold it.

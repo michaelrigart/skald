@@ -37,11 +37,6 @@ public struct IssueTracker: Sendable {
     public mutating func revalidate(_ s: FieldSnapshot) -> [ParagraphKey] {
         suspended.remove(s.field)
         let parents = ParagraphKeys.parents(in: s)
-        let window = s.offset...(s.offset + s.text.utf16.count)
-
-        func isGone(_ old: TextRange) -> Bool {
-            s.holdsWholeField || old.end > s.totalLength || (window.contains(old.location) && window.contains(old.end))
-        }
 
         var kept: [Issue] = []
         var dropped: [ParagraphKey] = []
@@ -62,7 +57,7 @@ public struct IssueTracker: Sendable {
                 ))
                 continue
             }
-            if isGone(issue.parent.range) {
+            if ParagraphKeys.isGone(issue.key, in: s) {
                 if !dropped.contains(issue.key) { dropped.append(issue.key) }
             } else {
                 kept.append(issue)
@@ -72,11 +67,7 @@ public struct IssueTracker: Sendable {
 
         for key in modelResults.keys where key.field == s.field {
             if ParagraphKeys.locate(key, in: parents) != nil { continue }
-            let gone = switch key.position {
-            case .occurrence: true
-            case .location(let location): isGone(TextRange(location: location, length: key.text.utf16.count))
-            }
-            guard gone else { continue }
+            guard ParagraphKeys.isGone(key, in: s) else { continue }
             modelResults[key] = nil
             if !dropped.contains(key) { dropped.append(key) }
         }

@@ -314,3 +314,19 @@ private func longParagraph() -> String {
     tracker.setSpelling([flag()], for: keyA)
     #expect(tracker.visible(in: fieldA).map(\.word) == ["is"])
 }
+
+@Test func anOccurrenceKeyIssueFarDownIsDroppedWhenTheFieldGrowsPastTheReadLimit() {
+    let filler = String(repeating: String(repeating: "a", count: 99) + "\n", count: 150)
+    let whole = "Intro\n" + filler + "They is ready"
+    let before = wholeSnapshot(whole)
+    let key = ParagraphKeys.keyed(before).last!.0
+    #expect(key.position == .occurrence(0))
+    var tracker = IssueTracker()
+    tracker.setSpelling([issue(in: before, paragraph: 151, replacing: "is", with: "are")], for: key)
+    #expect(tracker.visible(in: fieldA).count == 1)
+
+    let grown = "Intro\n" + filler + String(repeating: "b\n", count: 20_000) + "They is ready"
+    let window = TextRange(location: 0, length: 1_000)
+    #expect(tracker.revalidate(windowSnapshot(grown, window)) == [key])
+    #expect(tracker.visible(in: fieldA).isEmpty)
+}
