@@ -256,6 +256,10 @@ expect "a: writes Skald-<version>.zip" test -f "$zip"
 zip_entries="$(zipinfo -1 "$zip")"
 expect "a: the zip holds no ._ AppleDouble entries" test -z "$(grep -E '(^|/)\._' <<<"$zip_entries" || true)"
 
+built="$(cd "$clone" && find build -name Skald.app -prune)"
+expect "a: builds Skald.app under build/" test -n "$built"
+expect "a: builds Skald.app only inside a .noindex folder" test -z "$(grep -v '\.noindex/' <<<"$built" || true)"
+
 unpacked="$dir/unpacked"
 mkdir -p "$unpacked"
 ditto -x -k "$zip" "$unpacked"
