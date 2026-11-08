@@ -312,8 +312,11 @@ Names are left to the builder.
     through Accessibility and verify the selection; put the replacement on the clipboard,
     marked transient and concealed so clipboard managers skip it; post ⌘V to that app alone;
     wait until the field holds the paragraph with the replacement applied. Right before ⌘V,
-    Skald checks again that the app is still frontmost, the focused element is the same one
-    and the selection still covers the range; any change aborts before anything is pasted.
+    in the one Accessibility job that posts it, Skald checks again, in this order: the app is
+    still frontmost, the focused element is the same one, the whole paragraph is unchanged,
+    the selection still covers the range, and last, the clipboard still holds Skald's
+    replacement. Any change aborts before anything is pasted. A clipboard that changed
+    meanwhile holds a newer copy: it is left alone and the write fails.
     It pastes only after watching the whole field for 1.5 s without a change (its length,
     the text Skald reads from it and its selection are the same at the start and at the end
     of that interval, and no change notification arrived in between), so the paste gets an
