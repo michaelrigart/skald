@@ -14,9 +14,9 @@ spell server and Foundation Models are unreachable inside the sandbox too.
 - Core tests: `swift test --package-path Packages/SkaldCore`
 - Platform tests: `swift test --package-path Packages/SkaldPlatform27`
 - Generate the project: `mise exec -- xcodegen generate` (`Skald.xcodeproj` is not tracked)
-- Build: `xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build -destination platform=macOS -quiet build`
+- Build: `xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build/dd.noindex -destination platform=macOS -quiet build`
 - Without the signing certificate (ad hoc): add `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=` to the build.
-- Install: `rm -rf /Applications/Skald.app && ditto build/Build/Products/Debug/Skald.app /Applications/Skald.app`
+- Install: `rm -rf /Applications/Skald.app && ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app`
   (`ditto` merges into an existing bundle and would keep stale files)
 - Run: `open /Applications/Skald.app`
 
@@ -35,4 +35,7 @@ spell server and Foundation Models are unreachable inside the sandbox too.
   again after every rebuild.
 - A bare `log` is a zsh builtin. Use `/usr/bin/log`; the subsystem is
   `com.michaelrigart.skald`.
+- Every `xcodebuild -derivedDataPath` ends in `.noindex`: Spotlight skips those folders, so
+  builds never show up in Spotlight or Alfred. The default is `build/dd.noindex`; a parallel
+  or scratch build uses `build/dd-<name>.noindex`.
 - `Eval/` data is synthetic and holds no real company names.
