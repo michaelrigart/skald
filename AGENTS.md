@@ -35,7 +35,7 @@ spell server and Foundation Models are unreachable inside the sandbox too.
   again after every rebuild.
 - A bare `log` is a zsh builtin. Use `/usr/bin/log`; the subsystem is
   `com.michaelrigart.skald`.
-- Every `xcodebuild` passes a `-derivedDataPath` ending in `.noindex`: Spotlight skips those
-  folders, so builds never show up in Spotlight or Alfred. The default is `build/dd.noindex`;
-  a parallel or scratch build uses `build/dd-<name>.noindex`.
+- Every `xcodebuild` build passes a `-derivedDataPath` that ends in `.noindex`: Spotlight skips
+  those folders, so builds never show up in Spotlight or Alfred. The default is
+  `build/dd.noindex`; a parallel or scratch build uses `build/dd-<name>.noindex`.
 - `Eval/` data is synthetic and holds no real company names.
