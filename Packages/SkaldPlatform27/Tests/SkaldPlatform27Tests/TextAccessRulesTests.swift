@@ -199,6 +199,17 @@ private func decide(
     #expect(TextAccessRules.paragraphUnchanged(first, read: field.string(for:), length: field.length))
 }
 
+@Test func aParagraphIsUnchangedOnlyWhenItsUTF16UnitsAreTheSame() {
+    let angstrom = "\u{212B}"
+    let letterA = "\u{C5}"
+    #expect(angstrom == letterA)
+    let expected = ExpectedText(range: TextRange(location: 0, length: 1), text: angstrom)
+    let same = FakeField(angstrom)
+    let canonicallyEqual = FakeField(letterA)
+    #expect(TextAccessRules.paragraphUnchanged(expected, read: same.string(for:), length: same.length))
+    #expect(!TextAccessRules.paragraphUnchanged(expected, read: canonicallyEqual.string(for:), length: canonicallyEqual.length))
+}
+
 @Test func aReadOnlyOrUnknownAppIsUnsupported() {
     for app in ["ch.protonmail.desktop", "com.example.editor"] {
         #expect(decide("Hello\nThey is ready\nBye", in: app) == .refuse(.unsupported), "\(app)")

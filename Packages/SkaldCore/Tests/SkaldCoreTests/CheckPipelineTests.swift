@@ -1092,6 +1092,28 @@ struct CheckPipelineTests {
         #expect(await rig.modelIssues().map(\.word) == ["teh"])
     }
 
+    @Test func textThatOnlyChangedItsUnicodeEncodingNeverKeepsTheOldOffsets() async {
+        let composed = "Caf\u{E9} we flew to teh office"
+        let decomposed = "Cafe\u{301} we flew to teh office"
+        let rig = Rig(makeSettings(), engine: .correcting(["teh": "the"], gated: true))
+        await rig.focus(composed)
+        rig.pass()
+        await rig.engine.waitForRequests(1)
+
+        await rig.access.set(decomposed, caret: 3, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        rig.pass()
+        await rig.engine.open()
+        await rig.pipeline.drain()
+
+        let issues = await rig.visible()
+        #expect(Set(issues.map(\.source)) == [.spelling, .model])
+        for issue in issues {
+            #expect(issue.parent.text.utf16.elementsEqual(decomposed.utf16))
+            #expect((decomposed as NSString).substring(with: NSRange(location: issue.fieldRange.location, length: issue.fieldRange.length)) == issue.word)
+        }
+    }
+
     @Test func aModelResultForAVanishedParagraphIsDroppedAndRetried() async {
         let rig = Rig(makeSettings(), engine: .correcting(["teh": "the"], gated: true))
         var published = rig.pipeline.issues.makeAsyncIterator()

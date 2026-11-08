@@ -140,6 +140,18 @@ private func longParagraph() -> String {
     #expect(tracker.visible(in: fieldA).map(\.word) == ["wrng"])
 }
 
+@Test func revalidateDropsAnIssueWhenTheTextOnlyChangedItsUnicodeEncoding() {
+    let composed = wholeSnapshot("caf\u{E9} teh report is ready")
+    let decomposed = wholeSnapshot("cafe\u{301} teh report is ready")
+    let key = ParagraphKeys.keyed(composed)[0].0
+    #expect(composed.text == decomposed.text)
+    #expect(key != ParagraphKeys.keyed(decomposed)[0].0)
+    var tracker = IssueTracker()
+    tracker.setSpelling([issue(in: composed, replacing: "teh", with: "the")], for: key)
+    #expect(tracker.revalidate(decomposed) == [key])
+    #expect(tracker.visible(in: fieldA).isEmpty)
+}
+
 @Test func textInsertedAboveMovesTheIssue() {
     let before = wholeSnapshot("They is ready")
     let key = ParagraphKeys.keyed(before)[0].0

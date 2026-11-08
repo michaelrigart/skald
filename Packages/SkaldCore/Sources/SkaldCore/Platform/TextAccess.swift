@@ -10,6 +10,10 @@ public struct ExpectedText: Equatable, Sendable {
         self.range = range
         self.text = text
     }
+
+    public static func == (lhs: ExpectedText, rhs: ExpectedText) -> Bool {
+        lhs.range == rhs.range && lhs.text.hasSameUTF16(as: rhs.text)
+    }
 }
 
 public struct SelectionCapture: Equatable, Sendable {

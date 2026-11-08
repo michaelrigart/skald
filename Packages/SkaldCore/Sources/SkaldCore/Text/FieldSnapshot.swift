@@ -37,7 +37,8 @@ public enum ParagraphPosition: Hashable, Sendable {
 
 public struct ParagraphKey: Hashable, Sendable {
     public let field: FieldID
-    /// The whole parent paragraph, even for a chunk.
+    /// The whole parent paragraph, even for a chunk. Keys name it by its exact UTF-16 units, never by Swift's
+    /// canonical `String` equality: edits are UTF-16 offsets, and "é" and "e" + U+0301 have different ones.
     public let text: String
     public let position: ParagraphPosition
     public let chunk: Int
@@ -47,6 +48,18 @@ public struct ParagraphKey: Hashable, Sendable {
         self.text = text
         self.position = position
         self.chunk = chunk
+    }
+
+    public static func == (lhs: ParagraphKey, rhs: ParagraphKey) -> Bool {
+        lhs.field == rhs.field && lhs.position == rhs.position && lhs.chunk == rhs.chunk
+            && lhs.text.hasSameUTF16(as: rhs.text)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(field)
+        hasher.combine(position)
+        hasher.combine(chunk)
+        for unit in text.utf16 { hasher.combine(unit) }
     }
 
     func withChunk(_ chunk: Int) -> ParagraphKey {
@@ -107,12 +120,13 @@ public enum ParagraphKeys {
 
     private static func keyedParagraphs(_ paragraphs: [Paragraph], in s: FieldSnapshot) -> [(ParagraphKey, Paragraph)] {
         let whole = s.holdsWholeField
-        var seen: [String: Int] = [:]
+        var seen: [[UInt16]: Int] = [:]
         return paragraphs.map { paragraph in
             let position: ParagraphPosition
             if whole {
-                let n = seen[paragraph.text, default: 0]
-                seen[paragraph.text] = n + 1
+                let units = Array(paragraph.text.utf16)
+                let n = seen[units, default: 0]
+                seen[units] = n + 1
                 position = .occurrence(n)
             } else {
                 position = .location(paragraph.range.location)

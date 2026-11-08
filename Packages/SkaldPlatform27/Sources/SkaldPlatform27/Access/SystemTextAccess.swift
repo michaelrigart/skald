@@ -190,7 +190,7 @@ struct AXPasteJobs: PasteJobs {
     }
 
     var changesText: Bool {
-        TextAccessRules.text(of: original, at: range) != replacement
+        TextAccessRules.text(of: original, at: range)?.hasSameUTF16(as: replacement) != true
     }
 
     func state() -> QuietPeriod.Read {

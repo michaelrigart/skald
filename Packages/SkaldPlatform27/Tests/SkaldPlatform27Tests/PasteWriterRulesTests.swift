@@ -270,6 +270,7 @@ private func read(_ text: String?) -> PastePlan.Read {
     #expect(!TextAccessRules.selectionCovers(range, text: "is", selection: range, selectedText: "it"))
     #expect(!TextAccessRules.selectionCovers(range, text: "is", selection: range, selectedText: nil))
     #expect(!TextAccessRules.selectionCovers(range, text: "is", selection: nil, selectedText: "is"))
+    #expect(!TextAccessRules.selectionCovers(TextRange(location: 5, length: 1), text: "\u{212B}", selection: TextRange(location: 5, length: 1), selectedText: "\u{C5}"))
 }
 
 private let pasted = TextRange(location: 10, length: 4)

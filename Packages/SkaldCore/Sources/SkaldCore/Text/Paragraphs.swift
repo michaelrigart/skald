@@ -8,6 +8,15 @@ public struct Paragraph: Hashable, Sendable {
         self.range = range
         self.text = text
     }
+
+    public static func == (lhs: Paragraph, rhs: Paragraph) -> Bool {
+        lhs.range == rhs.range && lhs.text.hasSameUTF16(as: rhs.text)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(range)
+        for unit in text.utf16 { hasher.combine(unit) }
+    }
 }
 
 public enum Paragraphs {

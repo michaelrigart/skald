@@ -173,7 +173,7 @@ enum TextAccessRules {
 
     /// The whole paragraph is still there: its text, and a line break or the field's edge on either side of it.
     static func paragraphUnchanged(_ expected: ExpectedText, read: (TextRange) -> String?, length: () -> Int?) -> Bool {
-        guard read(expected.range) == expected.text, let total = length(), expected.range.end <= total else { return false }
+        guard let current = read(expected.range), current.hasSameUTF16(as: expected.text), let total = length(), expected.range.end <= total else { return false }
         let range = expected.range
         let before = range.location == 0 || isLineBreak(read(TextRange(location: range.location - 1, length: 1)))
         let after = range.end == total || isLineBreak(read(TextRange(location: range.end, length: 1)))
@@ -224,7 +224,7 @@ enum TextAccessRules {
 
     /// The selection is exactly `range` and holds the text expected there.
     static func selectionCovers(_ range: TextRange, text: String, selection: TextRange?, selectedText: String?) -> Bool {
-        selection == range && selectedText == text
+        selection == range && selectedText?.hasSameUTF16(as: text) == true
     }
 
     /// What the field shows after ⌘V: the paragraph with the replacement applied, the original one, or another.

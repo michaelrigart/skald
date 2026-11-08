@@ -291,6 +291,17 @@ private func focusedScheduler() -> CheckScheduler {
     ])
 }
 
+@Test func textThatOnlyChangedItsUnicodeEncodingIsCheckedAgain() {
+    var scheduler = focusedScheduler()
+    let composed = snapshot("caf\u{E9} teh report", caret: 2)
+    let decomposed = snapshot("cafe\u{301} teh report", caret: 2)
+    _ = scheduler.handle(.snapshot(composed), at: ms(700))
+    _ = scheduler.handle(.modelFinished(generation: 1), at: ms(800))
+    let effects = scheduler.handle(.snapshot(decomposed), at: ms(1500))
+    #expect(effects.contains { if case .checkSpelling = $0 { true } else { false } })
+    #expect(effects.contains { if case .checkModel = $0 { true } else { false } })
+}
+
 @Test func forgettingARememberedKeyChecksItAgain() {
     var scheduler = focusedScheduler()
     let s = snapshot("They is ready", caret: 4)
