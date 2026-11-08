@@ -199,6 +199,20 @@ private func decide(
     #expect(TextAccessRules.paragraphUnchanged(first, read: field.string(for:), length: field.length))
 }
 
+@Test func aReplacementChangesTheTextUnlessItHasTheSameUTF16UnitsAsTheRange() {
+    let original = ExpectedText(range: TextRange(location: 10, length: 14), text: "They is ready.")
+    let is_ = TextRange(location: 15, length: 2)
+    #expect(!TextAccessRules.changesText(original, at: is_, replacement: "is"))
+    #expect(TextAccessRules.changesText(original, at: is_, replacement: "are"))
+    #expect(TextAccessRules.changesText(original, at: TextRange(location: 0, length: 2), replacement: "is"))
+
+    let angstrom = ExpectedText(range: TextRange(location: 0, length: 1), text: "\u{212B}")
+    let whole = TextRange(location: 0, length: 1)
+    #expect("\u{212B}" == "\u{C5}")
+    #expect(!TextAccessRules.changesText(angstrom, at: whole, replacement: "\u{212B}"))
+    #expect(TextAccessRules.changesText(angstrom, at: whole, replacement: "\u{C5}"))
+}
+
 // MARK: The recheck in the job that posts ⌘V
 
 private let checked = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")

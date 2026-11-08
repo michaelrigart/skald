@@ -9,6 +9,38 @@ private func substring(_ text: String, _ range: TextRange) -> String {
     (text as NSString).substring(with: NSRange(location: range.location, length: range.length))
 }
 
+private let composedLine = "caf\u{E9}"
+private let decomposedLine = "cafe\u{301}"
+
+private func wholeField(_ text: String) -> FieldSnapshot {
+    FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 0, length: 0), totalLength: text.utf16.count)
+}
+
+@Test func linesThatDifferOnlyInEncodingCountTheirOccurrencesSeparately() {
+    #expect(composedLine == decomposedLine)
+    let both = ParagraphKeys.keyed(wholeField(composedLine + "\n" + decomposedLine))
+    #expect(both.map(\.0.position) == [.occurrence(0), .occurrence(0)])
+    let afterDeletingTheFirst = ParagraphKeys.keyed(wholeField(decomposedLine))
+    #expect(afterDeletingTheFirst[0].0 == both[1].0)
+    #expect(afterDeletingTheFirst[0].0 != both[0].0)
+}
+
+@Test func linesWithTheSameUnitsStillCountTheirOccurrences() {
+    let keys = ParagraphKeys.keyed(wholeField(composedLine + "\n" + composedLine)).map(\.0.position)
+    #expect(keys == [.occurrence(0), .occurrence(1)])
+}
+
+@Test func paragraphsAndExpectedTextTellEncodingsApart() {
+    let range = TextRange(location: 0, length: 4)
+    let composed = Paragraph(range: range, text: composedLine)
+    let decomposed = Paragraph(range: range, text: decomposedLine)
+    #expect(composed == Paragraph(range: range, text: composedLine))
+    #expect(composed != decomposed)
+    #expect(Set([composed, decomposed, composed]).count == 2)
+    #expect(ExpectedText(range: range, text: composedLine) == ExpectedText(range: range, text: composedLine))
+    #expect(ExpectedText(range: range, text: composedLine) != ExpectedText(range: range, text: decomposedLine))
+}
+
 private func longParagraph() -> String {
     (0..<10).map { _ in String(repeating: "x", count: 298) + ". " }.joined()
 }

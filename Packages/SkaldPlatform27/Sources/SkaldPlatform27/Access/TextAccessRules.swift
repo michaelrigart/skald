@@ -270,6 +270,12 @@ enum TextAccessRules {
         return selectionCovers(range, text: text, selection: reader.selection(), selectedText: reader.selectedText())
     }
 
+    /// False when `replacement` is what `original` already holds at `range`, unit for unit: the field would show
+    /// the expected paragraph before any paste, so it could never prove one.
+    static func changesText(_ original: ExpectedText, at range: TextRange, replacement: String) -> Bool {
+        text(of: original, at: range)?.hasSameUTF16(as: replacement) != true
+    }
+
     /// The expected text at `range`, which lies inside `expected`.
     static func text(of expected: ExpectedText, at range: TextRange) -> String? {
         let local = TextRange(location: range.location - expected.range.location, length: range.length)
