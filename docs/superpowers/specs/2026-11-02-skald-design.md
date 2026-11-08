@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-02
 **Owner:** Michael Rigart
-**Status:** In progress (branch `feat/skald-v1`; no merge request yet).
+**Status:** In progress (branch `feat/skald-v1`, [PR #1](https://github.com/michaelrigart/skald/pull/1)).
 **Sign-off:** not yet given by Michael. On 2026-11-02 he asked for the work to continue without
 him overnight. Codex approved the spec in round 4 (`xr-1793578392-bfc59cef`). The calls marked
 as Claude's under Decisions are his to check.
