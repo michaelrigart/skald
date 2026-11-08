@@ -96,8 +96,8 @@ the Accessibility permission again, and the old build's entry stays in Device Co
 Data Access without working. Run `tccutil reset Accessibility com.michaelrigart.skald` to
 clear it, then allow Skald again.
 
-Builds made without the override are signed with the maintainer's certificate and should keep
-the permission across rebuilds, because macOS ties the permission to the signature.
+Builds made without the override are signed with the maintainer's certificate and keep the
+permission across rebuilds, because macOS ties the permission to the signature.
 
 A build made without a version shows `dev` as its version.
 

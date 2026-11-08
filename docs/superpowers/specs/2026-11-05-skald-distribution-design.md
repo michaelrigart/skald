@@ -76,8 +76,10 @@ v1's Settings window exists.
 - Manual signing with the identity `Apple Development` and `DEVELOPMENT_TEAM: CX4MWR5579`
   (Michael's Personal Team, as for Hulder and Linger), for Debug and Release, Hardened Runtime on,
   `ARCHS: arm64`, and `CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO` for Release so it has no
-  `get-task-allow`. This part is done on `feat/skald-v1` (see Decisions); the result of the first
-  rebuild with the grant is recorded here when measured.
+  `get-task-allow`. This part is done on `feat/skald-v1` (see Decisions). Measured on 2026-11-08: a
+  team-signed Debug rebuild and the Release package from the dry run, each reinstalled over the
+  team-signed v1 build, kept the grant without a new one. The one grant at the switch from ad hoc
+  (2026-11-05) was not recorded at the time.
 - Skald has no entitlements: it is not sandboxed, reaches the network for the optional remote
   engines without one, and keeps the Claude API key as a generic Keychain item.
 - Anyone without the certificate (CI, contributors) builds ad hoc with

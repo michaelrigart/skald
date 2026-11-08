@@ -55,11 +55,11 @@ sandbox too.
 - Text offsets are UTF-16 code units (`TextRange`), never `Character` counts.
 - Skald must run from `/Applications`. Launch it with `open`: launched from a terminal,
   macOS gives the Accessibility grant to the terminal.
-- Builds are signed with Michael's Personal Team (Apple Development, team `CX4MWR5579`), so the
-  Accessibility grant should survive rebuilds (confirmed for Hulder, which signs the same way).
-  Switching from an ad hoc build to a team-signed one needs the grant once. Ad hoc builds
-  (`CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`, for anyone without the certificate) need the grant
-  again after every rebuild.
+- Builds are signed with Michael's Personal Team (Apple Development, team `CX4MWR5579`), and the
+  Accessibility grant survives rebuilds (measured 2026-11-08, for a Debug rebuild and the Release
+  package). Switching from an ad hoc build to a team-signed one needs the grant once. Ad hoc
+  builds (`CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`, for anyone without the certificate) need the
+  grant again after every rebuild.
 - A bare `log` is a zsh builtin. Use `/usr/bin/log`; the subsystem is
   `com.michaelrigart.skald`.
 - Every `xcodebuild` run that compiles (`build`, `test`, `archive` and the like) passes a
