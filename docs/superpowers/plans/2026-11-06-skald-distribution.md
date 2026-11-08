@@ -1,8 +1,8 @@
 # Skald Distribution Implementation Plan
 
-**Status:** In progress (branch `feat/skald-distribution`, branched from `feat/skald-v1` at
-`08d308b`; no merge request yet, because the repository has no remote). Tasks 1–9 are done at
-`aa1eadf` (2026-11-06): do not run them again. Tasks 10 and 11 remain, with Michael.
+**Status:** In progress (branch `feat/skald-distribution`, stacked on `feat/skald-v1`,
+[pull request #2](https://github.com/michaelrigart/skald/pull/2)). Tasks 1–9 (2026-11-06), Task 10 Steps 1–2 and Task 11 Steps 1–4
+(2026-11-08) are done: do not run them again. Task 10 Steps 3–4 and Task 11 Step 5 remain.
 
 **Execution notes:** one task at a time, in this order: 1, 5, 2, 3, 4, 8, 6, 7, 9 (most tasks
 build into `build/`, and Tasks 1 and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
@@ -265,11 +265,11 @@ task only adds the tests that are missing and says so.
 
 **Depends on:** Tasks 1–9, and v1's pull request being ready.
 
-- [ ] **Step 1: Audit the whole history** of every branch to be pushed: `gitleaks git` finds
+- [x] **Step 1: Audit the whole history** of every branch to be pushed: `gitleaks git` finds
   nothing; no machine details in tracked docs (hardware models, local paths beyond the
   repository's own); no real company names or customer text in `Eval/` or the fixtures; nothing
   under `.superpowers/` tracked. Report findings to Michael before any push.
-- [ ] **Step 2:** With Michael's go for this step: `gh repo create michaelrigart/skald --public`,
+- [x] **Step 2:** With Michael's go for this step: `gh repo create michaelrigart/skald --public`,
   add it as `origin`, push `main`, then `feat/skald-v1` and `feat/skald-distribution`. Open v1's
   draft pull request against `main`, then this one (its description notes it is stacked on v1).
 - [ ] **Step 3:** Watch CI on both; fix failures in new commits.

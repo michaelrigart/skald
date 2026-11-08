@@ -2,9 +2,8 @@
 
 **Date:** 2026-11-05
 **Owner:** Michael Rigart
-**Status:** In progress (branch `feat/skald-distribution`; no pull request yet, because the
-repository has no remote). Signed off by Michael on 2026-11-06 after Codex's spec review (round 2,
-`xr-1793919517-ca7c3e9d`). The work runs on `feat/skald-distribution` after v1's tasks.
+**Status:** In progress (branch `feat/skald-distribution`, [pull request #2](https://github.com/michaelrigart/skald/pull/2)). Signed
+off by Michael on 2026-11-06 after Codex's spec review (round 2, `xr-1793919517-ca7c3e9d`). The work runs on `feat/skald-distribution` after v1's tasks.
 **Template:** Hulder's distribution design (`michaelrigart/hulder`,
 `docs/superpowers/specs/2026-11-03-hulder-distribution-design.md`), which follows Linger's, and
 Muninn's for the menu bar glyph. Michael asked for the same here (2026-11-05). This document
