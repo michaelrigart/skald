@@ -23,4 +23,6 @@ private let buildFolder = "/Users/x/Code/skald/build/dd.noindex/Build/Products/D
 @Test func aTestHostStaysATestHostWhereverItRunsAndWhateverItIsAskedFor() {
     #expect(LaunchMode.resolve(isTestHost: true, probeRequested: false, bundlePath: buildFolder) == .testHost)
     #expect(LaunchMode.resolve(isTestHost: true, probeRequested: true, bundlePath: buildFolder) == .testHost)
+    #expect(LaunchMode.resolve(isTestHost: true, probeRequested: false, bundlePath: installed) == .testHost)
+    #expect(LaunchMode.resolve(isTestHost: true, probeRequested: true, bundlePath: installed) == .testHost)
 }
