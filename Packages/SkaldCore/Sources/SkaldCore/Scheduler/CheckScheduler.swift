@@ -157,7 +157,7 @@ public struct CheckScheduler: Sendable {
         forgetSpellingGone(from: snapshot, parents: ParagraphKeys.parents(keyed))
         let caret = Paragraphs.around(caret: snapshot.selection.location, in: keyed.map(\.1))
         backgroundQueue = caret.map { queuedChunks(of: keyed, awayFrom: $0, in: snapshot) } ?? []
-        guard let caret, let key = keyed.first(where: { $0.1 == caret })?.0 else { return effects }
+        guard let caret, let key = keyed.first(where: { $0.1 == caret })?.0 else { return effects + cancelRunning() }
         let chunks = ParagraphKeys.chunkKeys(of: caret, key: key).map {
             Chunk(key: $0.0, chunk: $0.chunk, parent: $0.parent)
         }

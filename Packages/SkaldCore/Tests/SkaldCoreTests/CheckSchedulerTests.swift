@@ -128,6 +128,15 @@ private func focusedScheduler() -> CheckScheduler {
     #expect(scheduler.handle(.snapshot(s), at: ms(700)) == [.revalidate(s)])
 }
 
+@Test func aSnapshotWithoutACaretParagraphCancelsTheRunningCheckAndItsQueuedChunks() {
+    var scheduler = focusedScheduler()
+    _ = scheduler.handle(.snapshot(snapshot(longText, caret: 10)), at: ms(700))
+    let emptied = snapshot("", caret: 0)
+    #expect(scheduler.handle(.snapshot(emptied), at: ms(1500)) == [.revalidate(emptied), .cancelModel(generation: 1)])
+    #expect(scheduler.handle(.modelFailed(generation: 1), at: ms(1600)).isEmpty)
+    #expect(scheduler.handle(.modelFinished(generation: 1), at: ms(1700)).isEmpty)
+}
+
 @Test func theSameParagraphWhileItsCheckRunsKeepsTheCheck() {
     var scheduler = focusedScheduler()
     let s = snapshot("They is ready", caret: 4)
@@ -457,7 +466,7 @@ private let threeParagraphs = "alpha\nbeta\ngamma"
     var scheduler = focusedScheduler()
     _ = scheduler.handle(.snapshot(snapshot(threeParagraphs, caret: 7)), at: ms(700))
     let empty = snapshot("")
-    #expect(scheduler.handle(.snapshot(empty), at: ms(1500)) == [.revalidate(empty)])
+    #expect(scheduler.handle(.snapshot(empty), at: ms(1500)) == [.revalidate(empty), .cancelModel(generation: 1)])
     #expect(scheduler.handle(.backgroundSpelled(generation: 1), at: ms(1600)).isEmpty)
 }
 
