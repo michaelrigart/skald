@@ -12,6 +12,11 @@ enum QuietPeriod {
         let length: Int
         let text: String
         let selection: TextRange?
+
+        /// The text by its UTF-16 units: a re-encoding that Swift calls equal is still a change.
+        static func == (lhs: State, rhs: State) -> Bool {
+            lhs.length == rhs.length && lhs.selection == rhs.selection && lhs.text.hasSameUTF16(as: rhs.text)
+        }
     }
 
     enum Read: Sendable, Equatable {

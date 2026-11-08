@@ -501,6 +501,17 @@ private func watch(
     #expect(!QuietPeriod.holds(start: one, end: other, notified: false))
 }
 
+@Test func aSameLengthReEncodingDuringTheIntervalIsAChange() {
+    let angstrom = "\u{212B}"
+    let letterA = "\u{C5}"
+    #expect(angstrom == letterA)
+    let caret = TextRange(location: 0, length: 0)
+    let start = QuietPeriod.State(length: 1, text: angstrom, selection: caret)
+    let end = QuietPeriod.State(length: 1, text: letterA, selection: caret)
+    #expect(start != end)
+    #expect(!QuietPeriod.holds(start: start, end: end, notified: false))
+}
+
 // MARK: The paste writer
 
 /// The Accessibility side of a paste write, scripted.
