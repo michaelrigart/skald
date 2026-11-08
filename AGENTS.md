@@ -14,12 +14,12 @@ sandbox too.
 - Core tests: `swift test --package-path Packages/SkaldCore`
 - Platform tests: `swift test --package-path Packages/SkaldPlatform27`
 - Generate the project: `mise exec -- xcodegen generate` (`Skald.xcodeproj` is not tracked)
-- Build: `xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build -quiet build`
+- Build: `xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build/dd.noindex -quiet build`
 - Release build: the same with `-configuration Release`; `scripts/verify-app` accepts only
   Release builds.
 - Without the signing certificate (ad hoc): add `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=` to
   either build.
-- Install: `rm -rf /Applications/Skald.app && ditto build/Build/Products/Debug/Skald.app /Applications/Skald.app`
+- Install: `rm -rf /Applications/Skald.app && ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app`
   (`ditto` merges into an existing bundle and would keep stale files)
 - Run: `open /Applications/Skald.app`
 - Script tests: `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'` (the

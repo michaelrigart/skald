@@ -78,9 +78,9 @@ Add `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=` to `xcodebuild` to sign ad hoc inst
 ```sh
 mise trust mise.toml
 mise exec -- xcodegen generate
-xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Release -derivedDataPath build CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
+xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Release -derivedDataPath build/dd.noindex CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
 rm -rf /Applications/Skald.app
-ditto build/Build/Products/Release/Skald.app /Applications/Skald.app
+ditto build/dd.noindex/Build/Products/Release/Skald.app /Applications/Skald.app
 open /Applications/Skald.app
 ```
 
@@ -118,9 +118,9 @@ new macOS or a new version of an app can be checked by rerunning it. Release bui
 contain it. Build Debug, install it to `/Applications`, then start it with `--probe`:
 
 ```sh
-xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build -destination platform=macOS CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
+xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Debug -derivedDataPath build/dd.noindex -destination platform=macOS CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet build
 rm -rf /Applications/Skald.app
-ditto build/Build/Products/Debug/Skald.app /Applications/Skald.app
+ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app
 open /Applications/Skald.app --args --probe
 ```
 
