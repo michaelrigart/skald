@@ -274,8 +274,9 @@ final class PendingRestore {
     }
 }
 
-/// Writes by paste for `.paste` apps: one write at a time per app, pasteboard work on the main actor, the
-/// quiet interval and every wait on the injected clock.
+/// Writes by paste for `.paste` apps: one write at a time per app, pasteboard work on the main actor (except the
+/// read-only change-count check `PasteboardSwap.stageCheck` makes on `AXQueue` right before ⌘V), the quiet
+/// interval and every wait on the injected clock.
 @MainActor
 final class PasteWriter {
     private struct Report {

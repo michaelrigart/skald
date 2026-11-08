@@ -10,7 +10,8 @@ public enum GeometryChange: Sendable, Equatable {
 
 /// Text access on macOS 27 through Accessibility: fields read through character ranges or text markers, written
 /// through Accessibility or by paste where finding 7 measured that as clean. Every Accessibility call runs on
-/// `AXQueue`; pasteboard work runs on the main actor.
+/// `AXQueue`; pasteboard work runs on the main actor, except one read-only check: the job that posts ⌘V reads the
+/// pasteboard's change count (`PasteboardSwap.stageCheck`) on `AXQueue`.
 public final class SystemTextAccess: TextAccess {
     public let events: AsyncStream<FieldEvent>
     /// The focused field may have moved on screen: one of its app's windows moved or changed size, the caret
