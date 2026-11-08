@@ -218,12 +218,15 @@ struct AXPasteJobs: PasteJobs {
         observer.entry(field).map { covers($0.source) } ?? false
     }
 
-    func recheckAndPost(keyCode: CGKeyCode) -> PastePlan.RecheckPost {
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: () -> Bool) -> PastePlan.RecheckPost {
         guard let entry = observer.entry(field), let pid = entry.element.pid else { return .mismatch(.otherField) }
-        guard AXElement.focusedApplicationPID() == pid else { return .mismatch(.notFrontmost) }
-        guard observer.isFocusedElement(entry, pid: pid) else { return .mismatch(.otherField) }
-        guard covers(entry.source) else { return .mismatch(.selectionMoved) }
-        return .posted(CommandV.post(to: pid, keyCode: keyCode))
+        return TextAccessRules.recheck(
+            isFrontmost: { AXElement.focusedApplicationPID() == pid },
+            isFocusedElement: { observer.isFocusedElement(entry, pid: pid) },
+            covers: { covers(entry.source) },
+            clipboardHeld: clipboardHeld,
+            post: { CommandV.post(to: pid, keyCode: keyCode) }
+        )
     }
 
     func read() -> PastePlan.Read {

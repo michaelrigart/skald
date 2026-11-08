@@ -14,13 +14,14 @@ struct PastePlan {
         case paragraphChanged = "the paragraph changed"
         case selectionMoved = "the selection left the range"
         case turnedOff = "the app was turned off"
+        case clipboardChanged = "the clipboard changed before the paste"
 
         /// What the write reports when it stops for this reason before ⌘V.
         var outcome: ReplaceOutcome {
             switch self {
             case .paragraphChanged: .refusedChanged
             case .turnedOff: .unsupported
-            case .notFrontmost, .otherField, .selectionMoved: .failed
+            case .notFrontmost, .otherField, .selectionMoved, .clipboardChanged: .failed
             }
         }
     }
@@ -158,7 +159,7 @@ struct PastePlan {
             guard recheckRequested, !postRequested else { return [] }
             switch result {
             case .mismatch(let mismatch):
-                return abort(mismatch.outcome, mismatch.rawValue)
+                return abort(mismatch.outcome, mismatch.rawValue, restoreClipboard: mismatch != .clipboardChanged)
             case .posted(false):
                 return abort(.failed, "the key events could not be created")
             case .posted(true):
@@ -205,7 +206,8 @@ protocol PasteTarget: Sendable {
     func select() async -> (start: PastePlan.SelectionStart, user: TextRange?)
     func covers() async -> Bool
     /// The checks right before ⌘V and the post, in one `AXQueue` job with nothing queued between them.
-    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost
+    /// `clipboardHeld` asks whether the clipboard still holds the stage; it is asked inside that job, last.
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: @escaping @Sendable () -> Bool) async -> PastePlan.RecheckPost
     func read() async -> PastePlan.Read
     func restoreCaret(_ end: WriteEnd, user: TextRange?) async
 }
@@ -216,7 +218,7 @@ protocol PasteJobs: Sendable {
     func state() -> QuietPeriod.Read
     func select() -> (start: PastePlan.SelectionStart, user: TextRange?)
     func covers() -> Bool
-    func recheckAndPost(keyCode: CGKeyCode) -> PastePlan.RecheckPost
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: () -> Bool) -> PastePlan.RecheckPost
     func read() -> PastePlan.Read
     func restoreCaret(_ end: WriteEnd, user: TextRange?)
 }
@@ -244,8 +246,10 @@ struct QueuedPasteTarget<Jobs: PasteJobs>: PasteTarget {
     }
 
     /// One `AXQueue` job, so no queued callback or read runs between the last check and ⌘V.
-    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
-        await queue.run(while: isOn, otherwise: .mismatch(.turnedOff)) { [jobs] in jobs.recheckAndPost(keyCode: keyCode) }
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: @escaping @Sendable () -> Bool) async -> PastePlan.RecheckPost {
+        await queue.run(while: isOn, otherwise: .mismatch(.turnedOff)) { [jobs] in
+            jobs.recheckAndPost(keyCode: keyCode, clipboardHeld: clipboardHeld)
+        }
     }
 
     func read() async -> PastePlan.Read {
@@ -341,11 +345,11 @@ final class PasteWriter {
             case .recheckAndPost:
                 if Task.isCancelled {
                     input = .cancelled
-                } else if swap?.holdsStage != true {
-                    input = .clipboardChangedBeforePaste
-                } else {
+                } else if let swap, swap.holdsStage {
                     postedAt = clock.now()
-                    input = .rechecked(await target.recheckAndPost(keyCode: keyCode))
+                    input = .rechecked(await target.recheckAndPost(keyCode: keyCode, clipboardHeld: swap.stageCheck()))
+                } else {
+                    input = .clipboardChangedBeforePaste
                 }
             case .poll(let delay):
                 guard await pause(delay) else {

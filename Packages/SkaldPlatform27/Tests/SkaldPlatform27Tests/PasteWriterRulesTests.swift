@@ -200,6 +200,43 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     #expect(plan.abortReason == "the clipboard changed before the paste")
 }
 
+@Test func aClipboardCopiedOverDuringTheRecheckJobAbortsAndIsLeftAlone() {
+    let taken = steps(Script(recheck: .mismatch(.clipboardChanged)))
+    #expect(Array(taken.suffix(3)) == [.recheckAndPost, .restoreCaret(.abortedAfterSelecting), .finish(.failed)])
+    #expect(count(.restoreClipboard, in: taken) == 0)
+    #expect(!taken.contains(where: isPoll))
+}
+
+/// The checks of the job that posts ⌘V, in the order they ran.
+private func recheckOrder(
+    frontmost: Bool = true, focused: Bool = true, covers: Bool = true, held: Bool = true
+) -> (result: PastePlan.RecheckPost, ran: [String]) {
+    var ran: [String] = []
+    let result = TextAccessRules.recheck(
+        isFrontmost: { ran.append("frontmost"); return frontmost },
+        isFocusedElement: { ran.append("focused"); return focused },
+        covers: { ran.append("covers"); return covers },
+        clipboardHeld: { ran.append("clipboard"); return held },
+        post: { ran.append("post"); return true }
+    )
+    return (result, ran)
+}
+
+@Test func theClipboardIsCheckedLastRightBeforeThePost() {
+    let ok = recheckOrder()
+    #expect(ok.result == .posted(true))
+    #expect(ok.ran == ["frontmost", "focused", "covers", "clipboard", "post"])
+}
+
+@Test func eachRecheckMismatchStopsBeforeThePost() {
+    #expect(recheckOrder(frontmost: false).result == .mismatch(.notFrontmost))
+    #expect(recheckOrder(focused: false).result == .mismatch(.otherField))
+    #expect(recheckOrder(covers: false).result == .mismatch(.selectionMoved))
+    let copied = recheckOrder(held: false)
+    #expect(copied.result == .mismatch(.clipboardChanged))
+    #expect(!copied.ran.contains("post"))
+}
+
 @Test func aReplacementThatEqualsTheTextAtTheRangeFailsBeforeTheSnapshot() {
     var plan = PastePlan(changesText: false)
     #expect(plan.start() == [.finish(.failed)])
@@ -552,7 +589,7 @@ private final class FakeTarget: PasteTarget, @unchecked Sendable { // reason: st
         return true
     }
 
-    func recheckAndPost(keyCode: CGKeyCode) async -> PastePlan.RecheckPost {
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: @escaping @Sendable () -> Bool) async -> PastePlan.RecheckPost {
         record("recheckAndPost")
         if let mismatch = recheckAnswer { return .mismatch(mismatch) }
         lock.withLock { _posts += 1 }
@@ -880,7 +917,11 @@ private final class FakeJobs: PasteJobs, @unchecked Sendable { // reason: state 
         return true
     }
 
-    func recheckAndPost(keyCode: CGKeyCode) -> PastePlan.RecheckPost {
+    func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: () -> Bool) -> PastePlan.RecheckPost {
+        guard clipboardHeld() else {
+            record("clipboardChanged")
+            return .mismatch(.clipboardChanged)
+        }
         record("post")
         onPost()
         return .posted(true)
@@ -950,4 +991,29 @@ private func switchedWrite(_ clock: TestClock, _ pasteboard: NSPasteboard, _ job
     #expect(await value(of: write) == .unconfirmed)
     #expect(jobs.calls == ["state", "state", "select", "covers", "post"])
     #expect(held(pasteboard) == "are")
+}
+
+@MainActor @Test func aClipboardCopiedWhileTheRecheckWaitsBehindQueuedWorkIsNotPastedOver() async throws {
+    let clock = TestClock()
+    let pasteboard = clipboard(holding: "old content")
+    defer { pasteboard.releaseGlobally() }
+    let queue = AXQueue()
+    let busy = DispatchSemaphore(value: 0)
+    let jobs = FakeJobs()
+    jobs.onCovers = { queue.enqueue { busy.wait() } }
+    let target = QueuedPasteTarget(queue: queue, jobs: jobs) { true }
+    let before = pasteboard.changeCount
+    let write = Task { await writer(clock, pasteboard).write("are", in: slack, target: target) }
+    try #require(await sleeps(clock, 1))
+    clock.advance(by: .milliseconds(1500))
+    for _ in 0 ..< 500 where pasteboard.changeCount == before {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(pasteboard.changeCount != before)
+    pasteboard.clearContents()
+    pasteboard.setString("user copy", forType: .string)
+    busy.signal()
+    #expect(await value(of: write) == .failed)
+    #expect(jobs.calls == ["state", "state", "select", "covers", "clipboardChanged", "caret"])
+    #expect(held(pasteboard) == "user copy")
 }

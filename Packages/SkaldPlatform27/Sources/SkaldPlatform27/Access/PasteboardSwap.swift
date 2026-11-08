@@ -72,6 +72,13 @@ final class PasteboardSwap {
         changeCountAfterStage == pasteboard.changeCount
     }
 
+    /// `holdsStage` as it stands now, for a job that runs off the main actor: it asks the pasteboard by name.
+    func stageCheck() -> @Sendable () -> Bool {
+        let name = pasteboard.name
+        let staged = changeCountAfterStage
+        return { staged == NSPasteboard(name: name).changeCount }
+    }
+
     func restore() -> Restoration {
         guard changeCountAfterStage != nil else { return .restored }
         guard holdsStage else { return .leftAlone }
