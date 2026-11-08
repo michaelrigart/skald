@@ -251,14 +251,23 @@ enum TextAccessRules {
     /// The checks of the job that posts ⌘V, in order and each asked only when the earlier ones passed. The
     /// clipboard comes last, so nothing but the post itself follows it.
     static func recheck(
-        isFrontmost: () -> Bool, isFocusedElement: () -> Bool, covers: () -> Bool, clipboardHeld: () -> Bool,
-        post: () -> Bool
+        isFrontmost: () -> Bool, isFocusedElement: () -> Bool, reader: some FieldReader, original: ExpectedText,
+        range: TextRange, clipboardHeld: () -> Bool, post: () -> Bool
     ) -> PastePlan.RecheckPost {
         guard isFrontmost() else { return .mismatch(.notFrontmost) }
         guard isFocusedElement() else { return .mismatch(.otherField) }
-        guard covers() else { return .mismatch(.selectionMoved) }
+        guard paragraphUnchanged(original, read: { reader.string(for: $0) }, length: { reader.length() }) else {
+            return .mismatch(.paragraphChanged)
+        }
+        guard covers(range, in: original, reader: reader) else { return .mismatch(.selectionMoved) }
         guard clipboardHeld() else { return .mismatch(.clipboardChanged) }
         return .posted(post())
+    }
+
+    /// The reader's selection is exactly `range` and holds the text `original` expects there.
+    static func covers(_ range: TextRange, in original: ExpectedText, reader: some FieldReader) -> Bool {
+        guard let text = text(of: original, at: range) else { return false }
+        return selectionCovers(range, text: text, selection: reader.selection(), selectedText: reader.selectedText())
     }
 
     /// The expected text at `range`, which lies inside `expected`.

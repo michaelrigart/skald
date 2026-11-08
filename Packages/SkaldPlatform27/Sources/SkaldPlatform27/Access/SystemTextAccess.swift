@@ -215,7 +215,7 @@ struct AXPasteJobs: PasteJobs {
     }
 
     func covers() -> Bool {
-        observer.entry(field).map { covers($0.source) } ?? false
+        observer.entry(field).map { TextAccessRules.covers(range, in: original, reader: $0.source) } ?? false
     }
 
     func recheckAndPost(keyCode: CGKeyCode, clipboardHeld: () -> Bool) -> PastePlan.RecheckPost {
@@ -223,7 +223,7 @@ struct AXPasteJobs: PasteJobs {
         return TextAccessRules.recheck(
             isFrontmost: { AXElement.focusedApplicationPID() == pid },
             isFocusedElement: { observer.isFocusedElement(entry, pid: pid) },
-            covers: { covers(entry.source) },
+            reader: entry.source, original: original, range: range,
             clipboardHeld: clipboardHeld,
             post: { CommandV.post(to: pid, keyCode: keyCode) }
         )
@@ -242,11 +242,6 @@ struct AXPasteJobs: PasteJobs {
             current: reader.selection(), stillFocused: observer.isFocused(entry)
         )
         if let target { _ = reader.select(target) }
-    }
-
-    private func covers(_ reader: any FieldReader) -> Bool {
-        guard let text = TextAccessRules.text(of: original, at: range) else { return false }
-        return TextAccessRules.selectionCovers(range, text: text, selection: reader.selection(), selectedText: reader.selectedText())
     }
 }
 

@@ -207,34 +207,10 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     #expect(!taken.contains(where: isPoll))
 }
 
-/// The checks of the job that posts ⌘V, in the order they ran.
-private func recheckOrder(
-    frontmost: Bool = true, focused: Bool = true, covers: Bool = true, held: Bool = true
-) -> (result: PastePlan.RecheckPost, ran: [String]) {
-    var ran: [String] = []
-    let result = TextAccessRules.recheck(
-        isFrontmost: { ran.append("frontmost"); return frontmost },
-        isFocusedElement: { ran.append("focused"); return focused },
-        covers: { ran.append("covers"); return covers },
-        clipboardHeld: { ran.append("clipboard"); return held },
-        post: { ran.append("post"); return true }
-    )
-    return (result, ran)
-}
-
-@Test func theClipboardIsCheckedLastRightBeforeThePost() {
-    let ok = recheckOrder()
-    #expect(ok.result == .posted(true))
-    #expect(ok.ran == ["frontmost", "focused", "covers", "clipboard", "post"])
-}
-
-@Test func eachRecheckMismatchStopsBeforeThePost() {
-    #expect(recheckOrder(frontmost: false).result == .mismatch(.notFrontmost))
-    #expect(recheckOrder(focused: false).result == .mismatch(.otherField))
-    #expect(recheckOrder(covers: false).result == .mismatch(.selectionMoved))
-    let copied = recheckOrder(held: false)
-    #expect(copied.result == .mismatch(.clipboardChanged))
-    #expect(!copied.ran.contains("post"))
+@Test func aParagraphChangedInTheRecheckJobIsRefusedAsChangedWithTheClipboardRestored() {
+    let taken = steps(Script(recheck: .mismatch(.paragraphChanged)))
+    #expect(Array(taken.suffix(4)) == [.recheckAndPost, .restoreClipboard, .restoreCaret(.abortedAfterSelecting), .finish(.refusedChanged)])
+    #expect(!taken.contains(where: isPoll))
 }
 
 @Test func aReplacementThatEqualsTheTextAtTheRangeFailsBeforeTheSnapshot() {

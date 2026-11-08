@@ -199,6 +199,56 @@ private func decide(
     #expect(TextAccessRules.paragraphUnchanged(first, read: field.string(for:), length: field.length))
 }
 
+// MARK: The recheck in the job that posts ⌘V
+
+private let checked = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
+private let isRange = TextRange(location: 5, length: 2)
+
+/// The posting job on `field`, with what it asked and did, in order.
+private func recheck(
+    _ field: FakeField, frontmost: Bool = true, focused: Bool = true, held: Bool = true
+) -> (result: PastePlan.RecheckPost, ran: [String]) {
+    var ran: [String] = []
+    let result = TextAccessRules.recheck(
+        isFrontmost: { ran.append("frontmost"); return frontmost },
+        isFocusedElement: { ran.append("focused"); return focused },
+        reader: field, original: checked, range: isRange,
+        clipboardHeld: { ran.append("clipboard"); return held },
+        post: { ran.append("post"); return true }
+    )
+    return (result, ran)
+}
+
+@Test func theClipboardIsTheLastCheckRightBeforeThePost() {
+    let outcome = recheck(FakeField("They is ready.", selected: isRange))
+    #expect(outcome.result == .posted(true))
+    #expect(outcome.ran == ["frontmost", "focused", "clipboard", "post"])
+}
+
+@Test func aParagraphChangedAfterTheSelectionWasValidatedIsRefusedInTheJobThatPosts() {
+    let outcome = recheck(FakeField("This is ready.", selected: isRange))
+    #expect(outcome.result == .mismatch(.paragraphChanged))
+    #expect(!outcome.ran.contains("clipboard"))
+    #expect(!outcome.ran.contains("post"))
+}
+
+@Test func aChangedParagraphIsReportedBeforeAMovedSelection() {
+    let outcome = recheck(FakeField("This is ready.", selected: TextRange(location: 0, length: 0)))
+    #expect(outcome.result == .mismatch(.paragraphChanged))
+}
+
+@Test func eachOtherRecheckMismatchStopsBeforeThePost() {
+    let field = FakeField("They is ready.", selected: isRange)
+    #expect(recheck(field, frontmost: false).result == .mismatch(.notFrontmost))
+    #expect(recheck(field, focused: false).result == .mismatch(.otherField))
+    let moved = recheck(FakeField("They is ready.", selected: TextRange(location: 0, length: 0)))
+    #expect(moved.result == .mismatch(.selectionMoved))
+    let copied = recheck(field, held: false)
+    #expect(copied.result == .mismatch(.clipboardChanged))
+    #expect(copied.ran == ["frontmost", "focused", "clipboard"])
+    #expect(!moved.ran.contains("post"))
+}
+
 @Test func aParagraphIsUnchangedOnlyWhenItsUTF16UnitsAreTheSame() {
     let angstrom = "\u{212B}"
     let letterA = "\u{C5}"
