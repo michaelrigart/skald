@@ -63,16 +63,20 @@ struct SystemWordOracleTests {
         #expect(en.englishStems.isEmpty)
     }
 
-    @Test("Lemmas come from NaturalLanguage for English and French, never Dutch", .tags(.requiresSystem))
+    @Test("Lemmas come from NaturalLanguage for English, never Dutch", .tags(.requiresSystem))
     func lemmas() async {
         let oracle = SystemWordOracle()
         let en = await oracle.facts(for: ["went", "walked"], language: .en)
         #expect(en.lemmas["went"] == "go")
         #expect(en.lemmas["walked"] == "walk")
-        let fr = await oracle.facts(for: ["sont"], language: .fr)
-        #expect(fr.lemmas["sont"] == "être")
         let nl = await oracle.facts(for: ["gebeurt", "gebeurd"], language: .nl)
         #expect(nl.lemmas.isEmpty)
+    }
+
+    @Test("Lemmas come from NaturalLanguage for French", .tags(.requiresSystem), .requiresFrenchTagger)
+    func frenchLemmas() async {
+        let fr = await SystemWordOracle().facts(for: ["sont"], language: .fr)
+        #expect(fr.lemmas["sont"] == "être")
     }
 
     @Test("Function words are the listed ones plus pronouns, conjunctions and particles only", .tags(.requiresSystem))
@@ -83,10 +87,14 @@ struct SystemWordOracleTests {
         #expect(en.functionWords.isDisjoint(with: ["all", "some", "afterwards", "tegen"]))
         let tagged = await oracle.facts(for: ["whoever", "up", "despite", "among"], language: .en)
         #expect(tagged.functionWords == ["whoever", "up"])
-        let fr = await oracle.facts(for: ["quelqu'un", "malgré"], language: .fr)
-        #expect(fr.functionWords == ["quelqu'un"])
         let nl = await oracle.facts(for: ["de", "wel", "niet"], language: .nl)
         #expect(nl.functionWords == ["de"])
+    }
+
+    @Test("French function words include what the tagger calls a pronoun", .tags(.requiresSystem), .requiresFrenchTagger)
+    func frenchFunctionWords() async {
+        let fr = await SystemWordOracle().facts(for: ["quelqu'un", "malgré"], language: .fr)
+        #expect(fr.functionWords == ["quelqu'un"])
     }
 
     @Test("A request answers only for the words it was given", .tags(.requiresSystem))

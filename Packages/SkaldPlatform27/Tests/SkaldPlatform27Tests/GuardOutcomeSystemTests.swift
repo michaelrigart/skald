@@ -3,8 +3,23 @@ import Testing
 @testable import SkaldPlatform27
 @testable import SkaldCore
 
-@Test("The spec's outcome table, with the system's word facts", .tags(.requiresSystem), arguments: outcomeTable + measuredGuesses)
+private func needsFrenchLemmas(_ row: Row) -> Bool {
+    row.language == .fr && row.expected == .drop(.tenseChange)
+}
+
+@Test("The spec's outcome table, with the system's word facts", .tags(.requiresSystem),
+      arguments: (outcomeTable + measuredGuesses).filter { !needsFrenchLemmas($0) })
 private func outcome(_ row: Row) async throws {
+    try await expectOutcome(row)
+}
+
+@Test("A French tense change needs the system's lemmas", .tags(.requiresSystem), .requiresFrenchTagger,
+      arguments: (outcomeTable + measuredGuesses).filter(needsFrenchLemmas))
+private func frenchOutcome(_ row: Row) async throws {
+    try await expectOutcome(row)
+}
+
+private func expectOutcome(_ row: Row) async throws {
     let found = TextDiff.edits(from: row.paragraph, to: row.revised)
     try #require(found.count == 1)
     let facts = await SystemWordOracle().facts(for: EditGuard.words(in: found), language: row.language)
