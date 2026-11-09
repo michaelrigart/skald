@@ -32,9 +32,11 @@ private final class Recorder: @unchecked Sendable { // reason: the lists are onl
     @Test("An installed tagger is not asked for")
     func installedTaggerIsNotAskedFor() {
         let recorder = Recorder()
-        let assets = TaggerAssets(isInstalled: { _ in true }, request: { recorder.requested($0, $1) })
+        let assets = TaggerAssets(isInstalled: { recorder.checked($0); return true }, request: { recorder.requested($0, $1) })
+        #expect(assets.ensure(.en) == nil)
         #expect(assets.ensure(.en) == nil)
         #expect(recorder.requests.isEmpty)
+        #expect(recorder.installedChecks.count == 1)
     }
 
     @Test("A language listed for only one scheme counts as missing")
@@ -69,7 +71,11 @@ private final class Recorder: @unchecked Sendable { // reason: the lists are onl
                 recorder.requested(language, scheme)
                 for await _ in held {}
             })
-        _ = await SystemWordOracle(queue: .shared, assets: assets).facts(for: ["bonjour"], language: .fr)
+        _ = await withTaskCancellationHandler {
+            await SystemWordOracle(queue: .shared, assets: assets).facts(for: ["bonjour"], language: .fr)
+        } onCancel: {
+            release.finish()
+        }
         #expect(recorder.installedChecks == [.french])
         release.finish()
     }
