@@ -1,5 +1,5 @@
-import NaturalLanguage
 import Testing
+@testable import SkaldPlatform27
 
 extension Tag {
     @Tag static var requiresSystem: Self
@@ -7,7 +7,7 @@ extension Tag {
 
 extension Trait where Self == ConditionTrait {
     static var requiresFrenchTagger: Self {
-        .enabled(if: NLTagger.availableTagSchemes(for: .word, language: .french).contains(.lexicalClass),
+        .enabled(if: TaggerAssets.isInstalled(.french),
                  "no French tagger on this Mac")
     }
 }

@@ -22,5 +22,7 @@ whether it is compatible with the one before. Each section says what changed.
   should survive updates. Switching from a self-built ad hoc copy needs it once more.
 - Skald tells you to move it to `/Applications` when it runs from anywhere else, and checks
   nothing until you do.
+- If your Mac lacks Apple's language data for English or French, Skald asks macOS to download
+  it the first time it checks that language.
 
 [Unreleased]: https://github.com/michaelrigart/skald/commits/main
