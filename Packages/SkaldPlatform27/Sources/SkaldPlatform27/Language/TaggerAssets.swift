@@ -34,8 +34,14 @@ final class TaggerAssets: @unchecked Sendable { // reason: the handled set is on
         self.request = request
     }
 
+    private static var schemes: [NLTagScheme] { [.lemma, .lexicalClass] }
+
     static func isInstalled(_ language: NLLanguage) -> Bool {
-        NLTagger.availableTagSchemes(for: .word, language: language).contains(.lexicalClass)
+        covers(NLTagger.availableTagSchemes(for: .word, language: language))
+    }
+
+    static func covers(_ listed: [NLTagScheme]) -> Bool {
+        schemes.allSatisfy(listed.contains)
     }
 
     @discardableResult
@@ -45,8 +51,9 @@ final class TaggerAssets: @unchecked Sendable { // reason: the handled set is on
         guard !isInstalled(tagged) else { return nil }
         let request = request
         return Task.detached(priority: .utility) {
-            await request(tagged, .lemma)
-            await request(tagged, .lexicalClass)
+            for scheme in Self.schemes {
+                await request(tagged, scheme)
+            }
         }
     }
 }

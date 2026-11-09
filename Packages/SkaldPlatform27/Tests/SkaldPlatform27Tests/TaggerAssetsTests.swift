@@ -37,6 +37,19 @@ private final class Recorder: @unchecked Sendable { // reason: the lists are onl
         #expect(recorder.requests.isEmpty)
     }
 
+    @Test("A language listed for only one scheme counts as missing")
+    func oneSchemeIsNotEnough() {
+        #expect(!TaggerAssets.covers([.lexicalClass]))
+        #expect(!TaggerAssets.covers([.lemma]))
+        #expect(TaggerAssets.covers([.lemma, .lexicalClass, .tokenType]))
+    }
+
+    @Test("English has a tagger and Dutch does not", .tags(.requiresSystem))
+    func englishIsInstalledAndDutchIsNot() {
+        #expect(TaggerAssets.isInstalled(.english))
+        #expect(!TaggerAssets.isInstalled(.dutch))
+    }
+
     @Test("Dutch has no tagger to ask for")
     func dutchHasNoTagger() {
         let recorder = Recorder()
