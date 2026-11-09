@@ -1,3 +1,4 @@
+#if DEBUG
 import Darwin
 import Foundation
 import Testing
@@ -11,8 +12,9 @@ private func childrenCPUNanoseconds() -> UInt64 {
     return nanoseconds(usage.ru_utime) + nanoseconds(usage.ru_stime)
 }
 
-/// Load-independent: whatever share of a core the busy child gets, the CPU time a sample reads for it matches
-/// the kernel's within 20 %, so a sample left in Mach ticks (about 2.4 % of the nanoseconds) fails.
+/// Load-independent: the child runs until it has used 50 ms of CPU, waiting up to 30 s of wall time for a loaded
+/// machine to give it that, and the CPU time a sample reads for it matches the kernel's within 20 %, so a sample left in Mach
+/// ticks (about 2.4 % of the nanoseconds) fails.
 @Test func aSampleReadsAChildsCPUTimeAsTheKernelCountsIt() async throws {
     let before = childrenCPUNanoseconds()
     let child = Process()
@@ -27,7 +29,10 @@ private func childrenCPUNanoseconds() -> UInt64 {
             child.waitUntilExit()
         }
     }
-    try await ContinuousClock().sleep(for: .milliseconds(400))
+    let deadline = ContinuousClock.now + .seconds(30)
+    while (CPUSample.take(tree: pid).nanoseconds[pid] ?? 0) < 50_000_000, ContinuousClock.now < deadline {
+        try await ContinuousClock().sleep(for: .milliseconds(20))
+    }
     kill(pid, SIGSTOP)
     let sampled = try #require(CPUSample.take(tree: pid).nanoseconds[pid])
     kill(pid, SIGKILL)
@@ -43,3 +48,4 @@ private func childrenCPUNanoseconds() -> UInt64 {
     #expect(ProcessTree.members(of: getpid()).first == getpid())
     #expect(ProcessTree.members(of: getppid()).contains(getpid()))
 }
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Testing
 @testable import SkaldPlatform27
@@ -58,3 +59,4 @@ private func pasted() -> WriteStart {
 @Test func aSessionWithoutAWriteHasNothingToRemember() {
     #expect(FieldObservation(app: "org.mozilla.zen", reading: markerReading()).priorWrite == nil)
 }
+#endif

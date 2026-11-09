@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 struct FieldObservation {
@@ -142,3 +143,4 @@ struct FieldObservation {
         return FormattingFingerprint.kept(before: before.value, after: after.value)
     }
 }
+#endif

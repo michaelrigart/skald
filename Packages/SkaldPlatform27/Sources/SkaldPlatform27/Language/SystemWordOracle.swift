@@ -4,17 +4,20 @@ import SkaldCore
 
 public final class SystemWordOracle: WordOracle {
     private let queue: SpellQueue
+    private let assets: TaggerAssets
 
     public convenience init() {
         self.init(queue: .shared)
     }
 
-    init(queue: SpellQueue) {
+    init(queue: SpellQueue, assets: TaggerAssets = .shared) {
         self.queue = queue
+        self.assets = assets
     }
 
     public func facts(for words: Set<String>, language: Language) async -> WordFacts {
         guard !words.isEmpty else { return WordFacts() }
+        assets.ensure(language)
         return await queue.run { Self.lookup(words, language) }
     }
 
@@ -29,8 +32,8 @@ public final class SystemWordOracle: WordOracle {
         }
 
         var facts = WordFacts()
-        let lemmaTagger = language == .nl ? nil : NLTagger(tagSchemes: [.lemma])
-        let classTagger = language == .nl ? nil : NLTagger(tagSchemes: [.lexicalClass])
+        let lemmaTagger = language.taggerLanguage == nil ? nil : NLTagger(tagSchemes: [.lemma])
+        let classTagger = language.taggerLanguage == nil ? nil : NLTagger(tagSchemes: [.lexicalClass])
         for word in words {
             let american = !flags(word, "en"), british = !flags(word, "en_GB")
             let misspelled = language == .en ? !american && !british : flags(word, language.rawValue)
@@ -51,8 +54,9 @@ public final class SystemWordOracle: WordOracle {
     }
 
     private static func tag(_ word: String, _ language: Language, _ scheme: NLTagScheme, _ tagger: NLTagger) -> String? {
+        guard let tagged = language.taggerLanguage else { return nil }
         tagger.string = word
-        tagger.setLanguage(language == .en ? .english : language == .fr ? .french : .dutch, range: word.startIndex..<word.endIndex)
+        tagger.setLanguage(tagged, range: word.startIndex..<word.endIndex)
         return tagger.tag(at: word.startIndex, unit: .word, scheme: scheme).0?.rawValue
     }
 

@@ -26,6 +26,7 @@ import Testing
     #expect(TextMarkerField.checkedCaret(offset: 5, length: nil, textLength: 193) == nil)
 }
 
+#if DEBUG
 @Test func theSelectionIsTheMarkerOnlyWhenItsStringIsExactlyTheMarker() {
     #expect(TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.tilde.pending, pair: .tilde))
     #expect(!TextMarkerField.isMarkerSelection(selectedString: ProbeMarker.tilde.pending + " ", pair: .tilde))
@@ -43,6 +44,8 @@ import Testing
     #expect(TextMarkerField.anchor(for: range(16), caret: caret(0), textLength: 40) == nil)
     #expect(TextMarkerField.anchor(for: range(16), caret: caret(16, 13), textLength: 40) == nil)
 }
+#endif
+
 @Test func theSourceThatPlacesTheMarkerWins() {
     func choose(ranges: Bool, markers: Bool, selected: Bool = true, failed: Bool = false, answer: Bool = true) -> FieldKind {
         FieldKind.choose(
@@ -60,16 +63,19 @@ import Testing
     #expect(choose(ranges: false, markers: false, failed: true, answer: false) == .ranges)
 }
 
+#if DEBUG
 @Test func aSourceSummaryHasOnlyBooleansAndNumbers() {
     let full = SourceSummary(name: "text markers", containsMarker: true, textLength: 174, caretLocation: 16, caretLength: 0)
     #expect(full.description == "text markers contains marker true, text length 174, caret 16,0")
     let empty = SourceSummary(name: "ranges", containsMarker: false, textLength: nil, caretLocation: nil, caretLength: nil)
     #expect(empty.description == "ranges contains marker false, text length -, caret none")
 }
+#endif
 
-
+#if DEBUG
 @Test func aMarkerSelectionMustBeThePendingMarkerOfItsOwnPair() {
     #expect(TextMarkerField.isMarkerSelection(selectedString: "[skald-probe]", pair: .bracket))
     #expect(!TextMarkerField.isMarkerSelection(selectedString: "[skald-probe]", pair: .tilde))
     #expect(!TextMarkerField.isMarkerSelection(selectedString: "~skald-probe~", pair: .bracket))
 }
+#endif

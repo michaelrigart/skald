@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 /// A write the probe made earlier in this run, carried into later sessions on the same field.
@@ -34,3 +35,4 @@ struct WrittenFields {
         entries.append(Entry(identity: identity, pid: pid, prior: prior))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import ApplicationServices
 import Foundation
 
@@ -61,3 +62,4 @@ struct FocusDiagnosis: Sendable, Equatable {
         Int((DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000)
     }
 }
+#endif

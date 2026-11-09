@@ -1,7 +1,9 @@
 # Skald Distribution Implementation Plan
 
-**Status:** Approved (not started). Runs on `feat/skald-distribution`, branched from
-`feat/skald-v1` once v1's tasks are done.
+**Status:** Implemented ([pull request #2](https://github.com/michaelrigart/skald/pull/2), merged into `feat/skald-v1` on 2026-11-10; it reaches
+`main` with [pull request #1](https://github.com/michaelrigart/skald/pull/1)). Do not run this plan again. Michael chose that merge over Task 10
+Step 4's rebase onto `main` and retarget, so that step does not run. Task 11 Step 5 remains for him
+after pull request #1 merges.
 
 **Execution notes:** one task at a time, in this order: 1, 5, 2, 3, 4, 8, 6, 7, 9 (most tasks
 build into `build/`, and Tasks 1 and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
@@ -71,18 +73,18 @@ spec it names and Hulder's scripts.
 **Files:**
 - Modify: `project.yml`
 
-- [ ] **Step 1:** In `settings.base` add `MARKETING_VERSION: dev`, `CURRENT_PROJECT_VERSION: "0"`;
+- [x] **Step 1:** In `settings.base` add `MARKETING_VERSION: dev`, `CURRENT_PROJECT_VERSION: "0"`;
   in `info.properties` set `CFBundleShortVersionString: $(MARKETING_VERSION)`,
   `CFBundleVersion: $(CURRENT_PROJECT_VERSION)` and `LSMinimumSystemVersion: "27.0"` (if
   XcodeGen doesn't already set it from the deployment target). Generate the project; build Debug
   and Release.
-- [ ] **Step 2: Check** with `codesign -dvvv` on the Release product: `TeamIdentifier=CX4MWR5579`,
+- [x] **Step 2: Check** with `codesign -dvvv` on the Release product: `TeamIdentifier=CX4MWR5579`,
   an `Apple Development` authority, `flags=…(runtime)`; `codesign -d -r-` shows a designated
   requirement naming the certificate and team, not a `cdhash`; `codesign -d --entitlements -`
   shows none or an empty dictionary (no `get-task-allow`); `lipo -archs` prints `arm64`;
   `PlistBuddy` shows `dev` and `0`. Then the ad-hoc override (`CODE_SIGN_IDENTITY=-
   DEVELOPMENT_TEAM=`) builds Release ad hoc.
-- [ ] **Step 3: Commit** "Version builds".
+- [x] **Step 3: Commit** "Version builds".
 
 ### Task 2: Keep the probe out of Release
 
@@ -93,13 +95,13 @@ spec it names and Hulder's scripts.
   helpers it alone uses (for example `Access/TextMarkerField.swift`, if nothing outside the probe
   uses it), `Skald/SkaldApp.swift`, and the probe's tests
 
-- [ ] **Step 1:** Wrap each probe source file's contents in `#if DEBUG … #endif`, and the app's
+- [x] **Step 1:** Wrap each probe source file's contents in `#if DEBUG … #endif`, and the app's
   `--probe` argument handling in `SkaldApp.swift` likewise. Probe tests get the same guard, so
   `swift test` (Debug) still runs them. Anything the shipping app needs (for example
   `AppAccessibilityMode`, `AXQueue`, `AXElement`) stays unguarded.
-- [ ] **Step 2: Build Release.** `grep -aF '~skald-probe~'` and `grep -aF -- '--probe'` on the
+- [x] **Step 2: Build Release.** `grep -aF '~skald-probe~'` and `grep -aF -- '--probe'` on the
   Release executable find nothing; on the Debug executable both are found. Both suites pass.
-- [ ] **Step 3: Commit** "Compile the probe only in Debug builds".
+- [x] **Step 3: Commit** "Compile the probe only in Debug builds".
 
 ### Task 3: Verify a built app
 
@@ -112,18 +114,18 @@ spec it names and Hulder's scripts.
 - Produces: `scripts/verify-app [--team <ID>] <Skald.app> [<version>]` — exit 0 when every check
   passes, otherwise each `FAIL: <reason>` and exit 1. Tasks 6 and 7 call it.
 
-- [ ] **Step 1: Port Hulder's `verify-app`** with Skald's bundle identifier, and the spec's checks:
+- [x] **Step 1: Port Hulder's `verify-app`** with Skald's bundle identifier, and the spec's checks:
   signature, Hardened Runtime flag, architectures exactly `arm64`, `LSMinimumSystemVersion` ≥ 27.0,
   empty entitlements, `LSUIElement` true, the probe strings (`~skald-probe~`, `--probe`; the log
   category word `probe` doesn't count), versions, and `--team`.
-- [ ] **Step 2: Port `test-verify-app`.** Each tampered copy fails with its reason: a changed bundle
+- [x] **Step 2: Port `test-verify-app`.** Each tampered copy fails with its reason: a changed bundle
   identifier; `LSUIElement` false; a wrong version; an added `get-task-allow` (re-signed ad hoc);
   re-signed without `--options=runtime`; a universal executable (`lipo -create` with an `x86_64`
   slice from any system binary); `LSMinimumSystemVersion` 26.0; the Debug build (the probe).
-- [ ] **Step 3: Run** `scripts/verify-app --team CX4MWR5579 build/Build/Products/Release/Skald.app`
+- [x] **Step 3: Run** `scripts/verify-app --team CX4MWR5579 build/Build/Products/Release/Skald.app`
   (passes) and `scripts/tests/test-verify-app <Release Skald.app> <Debug Skald.app>` (every
   tamper case fails as expected).
-- [ ] **Step 4: Commit** "Verify built apps".
+- [x] **Step 4: Commit** "Verify built apps".
 
 ### Task 4: Refuse to check outside /Applications
 
@@ -139,15 +141,15 @@ task only adds the tests that are missing and says so.
 - Produces: `public enum InstallLocation { public static func isSupported(bundlePath: String) -> Bool }`
   — true only when the bundle's standardized parent directory is exactly `/Applications`.
 
-- [ ] **Step 1: Failing tests:** `/Applications/Skald.app` → true;
+- [x] **Step 1: Failing tests:** `/Applications/Skald.app` → true;
   `/Applications/../Applications/Skald.app` → true; `/Applications/Utilities/Skald.app`,
   `/Users/x/Applications/Skald.app`, `/Users/x/Downloads/Skald.app` and
   `/Users/x/Code/skald/build/Build/Products/Release/Skald.app` → false.
-- [ ] **Step 2: Run; they fail.** **Step 3: Implement,** and in the app: when
+- [x] **Step 2: Run; they fail.** **Step 3: Implement,** and in the app: when
   `InstallLocation.isSupported(bundlePath: Bundle.main.bundlePath)` is false, start no pipeline
   and no text access, and show "Move Skald to the Applications folder, then open it again." (in
   the status menu, and once as an alert at launch). **Step 4:** both suites pass; build Debug.
-- [ ] **Step 5: Commit** "Refuse to check when Skald isn't in /Applications".
+- [x] **Step 5: Commit** "Refuse to check when Skald isn't in /Applications".
 
 ### Task 5: Changelog and its tool
 
@@ -156,15 +158,15 @@ task only adds the tests that are missing and says so.
 **Files:**
 - Create: `CHANGELOG.md`, `scripts/changelog.py`, `scripts/tests/test_changelog.py`
 
-- [ ] **Step 1: Port Hulder's `changelog.py` and its tests unchanged,** apart from the repository
+- [x] **Step 1: Port Hulder's `changelog.py` and its tests unchanged,** apart from the repository
   URL `https://github.com/michaelrigart/skald`.
-- [ ] **Step 2: Write `CHANGELOG.md`** in Hulder's format and preamble. `## [Unreleased]` holds,
+- [x] **Step 2: Write `CHANGELOG.md`** in Hulder's format and preamble. `## [Unreleased]` holds,
   under `### Added`: Skald v1 (spelling and grammar checking on device in English, Dutch and
   French, underlines or a badge and cards, the panel, the optional remote engines — worded from
   what v1 shipped), the Homebrew cask, signed releases that keep the Accessibility grant, and the
   move notice outside `/Applications`; plus the `[Unreleased]` link definition.
-- [ ] **Step 3: Run** `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'`. Passes.
-- [ ] **Step 4: Commit** "Add the changelog and its tool".
+- [x] **Step 3: Run** `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'`. Passes.
+- [x] **Step 4: Commit** "Add the changelog and its tool".
 
 ### Task 6: Release script and cask template
 
@@ -173,10 +175,10 @@ task only adds the tests that are missing and says so.
 **Files:**
 - Create: `scripts/release`, `scripts/skald.rb.template`, `scripts/tests/test-release-dry-run`
 
-- [ ] **Step 1: Port Hulder's `scripts/release` and `test-release-dry-run`** with Skald's names,
+- [x] **Step 1: Port Hulder's `scripts/release` and `test-release-dry-run`** with Skald's names,
   project, scheme, asset name, cask file and `verify-app --team`. Keep Hulder's recovery rules for
   an unpushed release commit unchanged.
-- [ ] **Step 2: Write `skald.rb.template`** from Hulder's: `name "Skald"`, `desc "Spelling and
+- [x] **Step 2: Write `skald.rb.template`** from Hulder's: `name "Skald"`, `desc "Spelling and
   grammar checker for the menu bar"`, the repository as `homepage`, `livecheck`, `depends_on arch:
   :arm64` and Hulder's macOS 27 symbol, `app "Skald.app", target: "/Applications/Skald.app"`,
   `uninstall quit: "com.michaelrigart.skald"`, `zap trash:` the paths v1 writes (at least
@@ -184,9 +186,9 @@ task only adds the tests that are missing and says so.
   `caveats`: "Open Anyway" on first launch, allowing Skald under Accessibility, Apple Intelligence
   on for model checks, and that `zap` keeps the Keychain item with the Claude API key (README says
   how to delete it).
-- [ ] **Step 3: Commit** "Add the release script and the cask template" (the script refuses a
+- [x] **Step 3: Commit** "Add the release script and the cask template" (the script refuses a
   dirty tree, even for a dry run).
-- [ ] **Step 4: Run** `scripts/tests/test-release-dry-run`, then `scripts/release --dry-run` on
+- [x] **Step 4: Run** `scripts/tests/test-release-dry-run`, then `scripts/release --dry-run` on
   this branch: it builds team-signed, passes `verify-app` with the version, writes
   `Skald-<version>.zip` and prints the changelog section. Delete the zip. A failure is fixed in a
   follow-up commit and Step 4 runs again.
@@ -200,18 +202,18 @@ task only adds the tests that are missing and says so.
 - Modify: `mise.toml` (add `actionlint` at Hulder's pin); any test that depends on the machine
 - Test: `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/ProcessCPUTests.swift`
 
-- [ ] **Step 1: Port Hulder's `ci.yml`** (`runs-on: xcode-27`, the same explicit Xcode selection,
+- [x] **Step 1: Port Hulder's `ci.yml`** (`runs-on: xcode-27`, the same explicit Xcode selection,
   the same pinned action SHAs if they still exist): changelog tests, both `swift test` suites,
   `xcodegen generate`, Release and Debug builds with `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`,
   `verify-app` on Release, `test-verify-app` on both. `mise exec -- actionlint` passes.
-- [ ] **Step 2: Harden machine-dependent tests.** `busyChildReadsAsAboutOneCore` failed once on
+- [x] **Step 2: Harden machine-dependent tests.** `busyChildReadsAsAboutOneCore` failed once on
   2026-11-05 while the Mac was busy: assert a lower bound that a loaded runner meets (the busy
   child gets measurably more than 0 % and at most about one core), and run it 20 times under load
   (while a Release build runs) without a failure. Tests needing Foundation Models stay gated on
   `SystemLanguageModel.default.isAvailable`; check every test touching the spell server, the
   Keychain or Accessibility passes without them, or fix it so it does.
-- [ ] **Step 3: Run locally** what CI will run, with the ad-hoc override. All pass.
-- [ ] **Step 4: Commit** "Run CI on the Xcode 27 image". CI itself runs once the pull request
+- [x] **Step 3: Run locally** what CI will run, with the ad-hoc override. All pass.
+- [x] **Step 4: Commit** "Run CI on the Xcode 27 image". CI itself runs once the pull request
   exists (Task 10); the controller watches that run and fixes failures in new commits.
 
 ### Task 8: Artwork
@@ -227,19 +229,19 @@ task only adds the tests that are missing and says so.
 - Modify: `project.yml` (`ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon`), the status item (v1's
   app shell) to use `NSImage(named: "SkaldMenuBar")` as a template image, `.gitignore` if needed
 
-- [ ] **Step 1: Port Muninn's `design/render`:** it renders `design/app-icon.svg` into every PNG
+- [x] **Step 1: Port Muninn's `design/render`:** it renders `design/app-icon.svg` into every PNG
   listed in `AppIcon.appiconset/Contents.json` at its pixel size, and `design/menubar.svg` into
   `SkaldMenuBar@1x.png` (18 px) and `@2x.png` (36 px), with `rsvg-convert`; it checks
   `rsvg-convert` is installed and says to install Homebrew `librsvg` if not.
-- [ ] **Step 2:** Copy the four SVGs into `design/`. Write the asset catalog: `AppIcon.appiconset`
+- [x] **Step 2:** Copy the four SVGs into `design/`. Write the asset catalog: `AppIcon.appiconset`
   with Hulder's `Contents.json` (filenames `icon_<size>x<size>[@2x].png`), and
   `SkaldMenuBar.imageset` with Hulder's `Contents.json` shape (`template-rendering-intent:
   template`). Run `design/render`, and check each PNG's pixel size against its slot
   (`sips -g pixelWidth`). The delivered PNGs and `.icns` are not committed.
-- [ ] **Step 3:** Point the status item at `SkaldMenuBar` (template), set the app icon name, build
+- [x] **Step 3:** Point the status item at `SkaldMenuBar` (template), set the app icon name, build
   Debug. Finder shows the icon for the built app (`mdls -name kMDItemDisplayName` is not enough:
   check `Contents/Resources/Assets.car` exists and `CFBundleIconName` is `AppIcon`).
-- [ ] **Step 4: Commit** "Add the app icon and the menu bar glyph".
+- [x] **Step 4: Commit** "Add the app icon and the menu bar glyph".
 
 ### Task 9: README and AGENTS.md
 
@@ -249,29 +251,29 @@ task only adds the tests that are missing and says so.
 - Create: `README.md`
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: Write `README.md`:** what Skald does; that it needs macOS 27 on Apple silicon,
+- [x] **Step 1: Write `README.md`:** what Skald does; that it needs macOS 27 on Apple silicon,
   must run from `/Applications`, and needs Apple Intelligence for model checks; the Homebrew
   install with its first-run steps (the cask's caveats); building from source with the ad-hoc
   override, and the probe (Debug only); what each app supports, from the feasibility check's
   finding 7 in the v1 spec; how to delete the Keychain item with the Claude API key (`security
   delete-generic-password -s com.michaelrigart.skald -a claude-api-key`); a pointer to the specs.
   No machine details.
-- [ ] **Step 2: Update `AGENTS.md`:** the release command, `verify-app`, `design/render`; CI on
+- [x] **Step 2: Update `AGENTS.md`:** the release command, `verify-app`, `design/render`; CI on
   `xcode-27`, signed ad hoc; user-visible changes add a `CHANGELOG.md` entry under `Unreleased`.
-- [ ] **Step 3: Commit** "Document installing, building and releasing".
+- [x] **Step 3: Commit** "Document installing, building and releasing".
 
 ### Task 10: Publish the repository (with Michael)
 
 **Depends on:** Tasks 1–9, and v1's pull request being ready.
 
-- [ ] **Step 1: Audit the whole history** of every branch to be pushed: `gitleaks git` finds
+- [x] **Step 1: Audit the whole history** of every branch to be pushed: `gitleaks git` finds
   nothing; no machine details in tracked docs (hardware models, local paths beyond the
   repository's own); no real company names or customer text in `Eval/` or the fixtures; nothing
   under `.superpowers/` tracked. Report findings to Michael before any push.
-- [ ] **Step 2:** With Michael's go for this step: `gh repo create michaelrigart/skald --public`,
+- [x] **Step 2:** With Michael's go for this step: `gh repo create michaelrigart/skald --public`,
   add it as `origin`, push `main`, then `feat/skald-v1` and `feat/skald-distribution`. Open v1's
   draft pull request against `main`, then this one (its description notes it is stacked on v1).
-- [ ] **Step 3:** Watch CI on both; fix failures in new commits.
+- [x] **Step 3:** Watch CI on both; fix failures in new commits.
 - [ ] **Step 4, after v1's pull request merges:** rebase `feat/skald-distribution` onto `main`
   (dropping v1's commits if v1 was squash-merged), force-push it with a lease, check the pull
   request now shows only this plan's commits, let CI pass again, and run the pre-merge review on
@@ -281,7 +283,7 @@ task only adds the tests that are missing and says so.
 
 **Depends on:** Task 10. Needs Michael at the Mac.
 
-- [ ] **Step 1: Grant retention, on this branch's final builds.** With the grant Skald already
+- [x] **Step 1: Grant retention, on this branch's final builds.** With the grant Skald already
   holds (no new grant): quit Skald and confirm it has exited (`pgrep -x Skald` prints nothing),
   reinstall a team-signed Debug rebuild of this branch's head in `/Applications` (`rm -rf` then
   `ditto`), launch it with `open`, and check that the new process (a new PID, and a "Skald
@@ -290,13 +292,13 @@ task only adds the tests that are missing and says so.
   the exit again, for the Release product of `scripts/release --dry-run`. Record both
   results, and the one grant at the switch from ad hoc (from v1's probe runs), under Signing in
   the spec as "Measured on <date>".
-- [ ] **Step 2:** Update every place that states the grant behaviour — README, AGENTS.md,
+- [x] **Step 2:** Update every place that states the grant behaviour — README, AGENTS.md,
   `CHANGELOG.md`, the cask caveats — from Step 1's results only, dropping the "should survive"
   hedge only where Step 1 measured it.
-- [ ] **Step 3:** Quit the installed copy and confirm it has exited (`pgrep -x Skald` prints
+- [x] **Step 3:** Quit the installed copy and confirm it has exited (`pgrep -x Skald` prints
   nothing), then run the Release product from outside `/Applications`: the move notice shows,
   nothing is checked. Quit it and delete that copy afterwards.
-- [ ] **Step 4:** The menu bar glyph in a light and a dark menu bar, and the icon in Finder and the
+- [x] **Step 4:** The menu bar glyph in a light and a dark menu bar, and the icon in Finder and the
   Dock.
 - [ ] **Step 5, after both pull requests merge:** Michael runs `scripts/release`; then
   `brew install --cask michaelrigart/tap/skald` and "Open Anyway". Record whether macOS asked

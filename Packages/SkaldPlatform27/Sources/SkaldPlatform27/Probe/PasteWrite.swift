@@ -1,3 +1,4 @@
+#if DEBUG
 import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
@@ -79,3 +80,4 @@ enum PasteWrite {
         }
     }
 }
+#endif

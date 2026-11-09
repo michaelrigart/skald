@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-05
 **Owner:** Michael Rigart
-**Status:** Approved. Signed off by Michael on 2026-11-06 after Codex's spec review (round 2,
-`xr-1793919517-ca7c3e9d`). The work runs on `feat/skald-distribution` after v1's tasks.
+**Status:** Implemented ([pull request #2](https://github.com/michaelrigart/skald/pull/2), merged into `feat/skald-v1` on 2026-11-10; it reaches `main` with [pull request #1](https://github.com/michaelrigart/skald/pull/1)). Signed
+off by Michael on 2026-11-06 after Codex's spec review (round 2, `xr-1793919517-ca7c3e9d`). The work runs on `feat/skald-distribution` after v1's tasks.
 **Template:** Hulder's distribution design (`michaelrigart/hulder`,
 `docs/superpowers/specs/2026-11-03-hulder-distribution-design.md`), which follows Linger's, and
 Muninn's for the menu bar glyph. Michael asked for the same here (2026-11-05). This document
@@ -57,6 +57,10 @@ only, macOS 27 only.
   the cask goes to the existing `michaelrigart/homebrew-tap`.
 - **Timing** (2026-11-05): this design and its plan now; the work runs after v1's remaining
   tasks, and the first real release follows v1's merge.
+- **Word tagger models** (2026-11-09): the v1 spec's anti-goal "downloads or compiles a model on
+  the Mac" concerns checking engines, not Apple's word taggers. When a Mac lacks the English or
+  French tagger, Skald asks macOS for it, once per launch, and a check never waits for it. No
+  text leaves the Mac.
 
 ## How it works
 
@@ -75,8 +79,10 @@ v1's Settings window exists.
 - Manual signing with the identity `Apple Development` and `DEVELOPMENT_TEAM: CX4MWR5579`
   (Michael's Personal Team, as for Hulder and Linger), for Debug and Release, Hardened Runtime on,
   `ARCHS: arm64`, and `CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO` for Release so it has no
-  `get-task-allow`. This part is done on `feat/skald-v1` (see Decisions); the result of the first
-  rebuild with the grant is recorded here when measured.
+  `get-task-allow`. This part is done on `feat/skald-v1` (see Decisions). Measured on 2026-11-08: a
+  team-signed Debug rebuild and the Release package from the dry run, each reinstalled over the
+  team-signed v1 build, kept the grant without a new one. The one grant at the switch from ad hoc
+  (2026-11-05) was not recorded at the time.
 - Skald has no entitlements: it is not sandboxed, reaches the network for the optional remote
   engines without one, and keeps the Claude API key as a generic Keychain item.
 - Anyone without the certificate (CI, contributors) builds ad hoc with
@@ -120,7 +126,10 @@ The runner has no Accessibility grant and no Apple Intelligence. Tests that need
 Models are already gated on `SystemLanguageModel.default.isAvailable`; any other test that
 depends on the machine (the system spell server, CPU timing under load) is a defect to fix so it
 passes there, not a test to skip. The CPU sampling test that failed once under load on
-2026-11-05 is one to harden.
+2026-11-05 is one to harden. The one exception is the guard against real company names in
+`Eval/` and in every tracked text file: it reads a private list that never enters the
+repository or CI, so it runs whenever the suites run on Michael's Mac, and in the history audit
+before the first push, and skips in CI (Michael's decision, 2026-11-06).
 
 ### Changelog
 
@@ -168,13 +177,16 @@ build folder. If v1's app shell already does this, the plan reuses it.
   on the mark's own view box, for a template image, with a thin gap masked out of the bars
   around the check, which otherwise merges with the middle bar in one colour. The designer
   delivered no menu bar glyph, so this is derived. Michael chose this version, with the gap, from
-  the rendered previews (2026-11-06).
+  the rendered previews (2026-11-06). That file was lost before it was committed; the file in
+  `design/` was rebuilt from this description (the check stroked 8 units wide in the mask, a gap
+  of about 1 px at 18 px), and Michael approved the rebuilt version from its previews the same day.
 - `design/render` (Muninn's variant) regenerates `Skald/Assets.xcassets/AppIcon.appiconset` from
   `app-icon.svg` at every size in its `Contents.json`, and `SkaldMenuBar.imageset` (18 and 36 px,
   `template-rendering-intent: template`) from `menubar.svg`. It needs `rsvg-convert` (Homebrew
   `librsvg`) and says so when it is missing.
 - `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon`; the status item uses
-  `NSImage(named: "SkaldMenuBar")` instead of the system symbol.
+  `NSImage(named: "SkaldMenuBar")` instead of the system symbol, in every state; the state is in
+  its tooltip and menu (Michael's decision, 2026-11-06).
 
 ### Documentation
 

@@ -1,3 +1,4 @@
+#if DEBUG
 enum EvaluationTrigger: String, Sendable {
     case keystroke, notification, retry, write
     case quietPeriod = "quiet period"
@@ -60,3 +61,4 @@ struct EvaluationDiagnosis: Sendable, Equatable {
             + "text markers on resolved: \(resolvedMarkers.summary); on focused: \(focusedMarkers.summary)"
     }
 }
+#endif

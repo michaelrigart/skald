@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -12,3 +13,4 @@ import Testing
     #expect(MarkerRetry.maxAttempts == 5)
     #expect(MarkerRetry.interval == .milliseconds(300))
 }
+#endif

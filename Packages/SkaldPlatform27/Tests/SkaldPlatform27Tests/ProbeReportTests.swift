@@ -1,3 +1,4 @@
+#if DEBUG
 import Testing
 @testable import SkaldPlatform27
 
@@ -67,3 +68,4 @@ private func fullLine() -> ProbeLine {
     unknownFormatting.formattingKept = nil
     #expect(unknownFormatting.cleanWrite)
 }
+#endif

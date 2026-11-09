@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Testing
 @testable import SkaldPlatform27
@@ -322,3 +323,4 @@ private let baseline = BoundsBaseline(
     #expect(observation.line.undoExact)
     #expect(observation.writeCheck(bracketed)?.contains("has ok marker false, has probe marker true") == true)
 }
+#endif

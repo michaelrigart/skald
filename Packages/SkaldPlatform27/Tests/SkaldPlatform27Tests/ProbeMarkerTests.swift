@@ -1,3 +1,4 @@
+#if DEBUG
 import ApplicationServices
 import Foundation
 import Testing
@@ -118,3 +119,4 @@ private func found(_ value: String, _ caret: CFRange?) -> (location: Int, length
     #expect(ProbeMarker.caretSummary(of: "Hi [skald-probe] tail", caret: caret(0), characterCount: nil)
         == "caret 0,0, last marker ends at 16, value 21 units, characters none")
 }
+#endif

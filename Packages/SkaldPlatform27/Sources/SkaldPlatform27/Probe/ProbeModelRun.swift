@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import FoundationModels
 import SkaldCore
@@ -70,3 +71,4 @@ enum ProbeModelRun {
         }
     }
 }
+#endif

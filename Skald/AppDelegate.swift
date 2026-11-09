@@ -1,10 +1,13 @@
 import AppKit
+import SkaldCore
 import SkaldPlatform27
 
-/// Builds the composition root on a normal launch. In a Debug build the `--probe` launch runs the feasibility
-/// probe instead, and a test host builds nothing, so unit tests never start text access or show onboarding.
+/// A test host builds nothing, so unit tests never start text access or show onboarding. Every other launch
+/// from anywhere but `/Applications` shows only the move notice. From `/Applications` a normal launch builds
+/// the composition root, and in a Debug build `--probe` runs the feasibility probe instead.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var root: CompositionRoot?
+    private var wrongPlace: WrongPlace?
     #if DEBUG
     private var probe: Probe?
     private var probeItem: NSStatusItem?
@@ -16,19 +19,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        if CommandLine.arguments.contains("--probe") {
-            startProbe()
-            return
-        }
+        let probeRequested = CommandLine.arguments.contains("--probe")
+        #else
+        let probeRequested = false
         #endif
-        if Self.isTestHost {
+        switch LaunchMode.resolve(isTestHost: Self.isTestHost, probeRequested: probeRequested, bundlePath: Bundle.main.bundlePath) {
+        case .testHost:
             Log.app.notice("Skald started as a test host")
-        } else {
-            NSApp.mainMenu = Self.editMenu()
-            let root = CompositionRoot()
-            self.root = root
-            root.start()
+        case .wrongPlace:
+            Log.app.notice("Skald is outside /Applications and checks nothing")
+            let wrongPlace = WrongPlace()
+            self.wrongPlace = wrongPlace
+            wrongPlace.showAlert()
+        case .probe:
+            #if DEBUG
+            startProbe()
+            #else
+            startNormally()
+            #endif
+        case .normal:
+            startNormally()
         }
+    }
+
+    private func startNormally() {
+        NSApp.mainMenu = Self.editMenu()
+        let root = CompositionRoot()
+        self.root = root
+        root.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -73,4 +91,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     #endif
+}
+
+enum LaunchMode: Equatable {
+    case testHost, wrongPlace, probe, normal
+
+    static func resolve(isTestHost: Bool, probeRequested: Bool, bundlePath: String) -> LaunchMode {
+        if isTestHost { return .testHost }
+        if !InstallLocation.isSupported(bundlePath: bundlePath) { return .wrongPlace }
+        return probeRequested ? .probe : .normal
+    }
 }
