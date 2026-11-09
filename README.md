@@ -109,7 +109,8 @@ swift test --package-path Packages/SkaldPlatform27
 /usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 ```
 
-The tests that use the on-device model run only on a Mac with Apple Intelligence turned on.
+The tests that use the on-device model run only on a Mac with Apple Intelligence turned on, and
+those that need Apple's French word tagger only on a Mac that has it.
 
 ## Probe
 

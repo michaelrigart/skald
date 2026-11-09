@@ -57,6 +57,10 @@ only, macOS 27 only.
   the cask goes to the existing `michaelrigart/homebrew-tap`.
 - **Timing** (2026-11-05): this design and its plan now; the work runs after v1's remaining
   tasks, and the first real release follows v1's merge.
+- **Word tagger models** (2026-11-09): the v1 spec's anti-goal "downloads or compiles a model on
+  the Mac" concerns checking engines, not Apple's word taggers. When a Mac lacks the English or
+  French tagger, Skald asks macOS for it, once per launch, and a check never waits for it. No
+  text leaves the Mac.
 
 ## How it works
 
