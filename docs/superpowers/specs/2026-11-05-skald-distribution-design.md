@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-05
 **Owner:** Michael Rigart
-**Status:** In progress (branch `feat/skald-distribution`, [pull request #2](https://github.com/michaelrigart/skald/pull/2)). Signed
+**Status:** Implemented ([pull request #2](https://github.com/michaelrigart/skald/pull/2), merged into `feat/skald-v1` on 2026-11-10; it reaches `main` with [pull request #1](https://github.com/michaelrigart/skald/pull/1)). Signed
 off by Michael on 2026-11-06 after Codex's spec review (round 2, `xr-1793919517-ca7c3e9d`). The work runs on `feat/skald-distribution` after v1's tasks.
 **Template:** Hulder's distribution design (`michaelrigart/hulder`,
 `docs/superpowers/specs/2026-11-03-hulder-distribution-design.md`), which follows Linger's, and

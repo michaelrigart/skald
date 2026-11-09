@@ -1,8 +1,9 @@
 # Skald Distribution Implementation Plan
 
-**Status:** In progress (branch `feat/skald-distribution`, stacked on `feat/skald-v1`,
-[pull request #2](https://github.com/michaelrigart/skald/pull/2)). Tasks 1–9 (2026-11-06), Task 10 Steps 1–2 and Task 11 Steps 1–4
-(2026-11-08) are done: do not run them again. Task 10 Steps 3–4 and Task 11 Step 5 remain.
+**Status:** Implemented ([pull request #2](https://github.com/michaelrigart/skald/pull/2), merged into `feat/skald-v1` on 2026-11-10; it reaches
+`main` with [pull request #1](https://github.com/michaelrigart/skald/pull/1)). Do not run this plan again. Michael chose that merge over Task 10
+Step 4's rebase onto `main` and retarget, so that step does not run. Task 11 Step 5 remains for him
+after pull request #1 merges.
 
 **Execution notes:** one task at a time, in this order: 1, 5, 2, 3, 4, 8, 6, 7, 9 (most tasks
 build into `build/`, and Tasks 1 and 8 both edit `project.yml`); Tasks 10 and 11 with Michael.
@@ -272,7 +273,7 @@ task only adds the tests that are missing and says so.
 - [x] **Step 2:** With Michael's go for this step: `gh repo create michaelrigart/skald --public`,
   add it as `origin`, push `main`, then `feat/skald-v1` and `feat/skald-distribution`. Open v1's
   draft pull request against `main`, then this one (its description notes it is stacked on v1).
-- [ ] **Step 3:** Watch CI on both; fix failures in new commits.
+- [x] **Step 3:** Watch CI on both; fix failures in new commits.
 - [ ] **Step 4, after v1's pull request merges:** rebase `feat/skald-distribution` onto `main`
   (dropping v1's commits if v1 was squash-merged), force-push it with a lease, check the pull
   request now shows only this plan's commits, let CI pass again, and run the pre-merge review on
