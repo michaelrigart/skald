@@ -216,16 +216,18 @@ enum TextAccessRules {
         TextRange(location: replaced.location + replacementLength, length: 0)
     }
 
-    /// What a write left selected, from the selection observed after it: the caret right after the replacement
-    /// or the replacement itself selected, the two selections a write produces. Any other observed selection is
-    /// the user's, so nil: nothing to restore over it.
+    /// What a write left selected, from the selection observed after it: the caret right after the replacement,
+    /// the replacement itself selected, or the range Skald selected before the write (a write that changed
+    /// nothing, or a read that is stale). Any other observed selection is the user's, so nil: nothing to
+    /// restore over it.
     static func selectionLeft(byWriting replacementLength: Int, over replaced: TextRange, observed: TextRange?) -> TextRange? {
         guard let observed else { return nil }
-        let produced = [
+        let left = [
             caretAfter(replacing: replaced, replacementLength: replacementLength),
             TextRange(location: replaced.location, length: replacementLength),
+            replaced,
         ]
-        return produced.contains(observed) ? observed : nil
+        return left.contains(observed) ? observed : nil
     }
 
     /// A position before the range stays, one after it moves by the length change, one inside stays within the replacement.
