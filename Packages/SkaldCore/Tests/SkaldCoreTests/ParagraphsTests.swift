@@ -1,0 +1,227 @@
+import Foundation
+import Testing
+@testable import SkaldCore
+import struct SkaldCore.TextRange
+
+private let field = FieldID(app: "app", token: "a")
+
+private func substring(_ text: String, _ range: TextRange) -> String {
+    (text as NSString).substring(with: NSRange(location: range.location, length: range.length))
+}
+
+private let composedLine = "caf\u{E9}"
+private let decomposedLine = "cafe\u{301}"
+
+private func wholeField(_ text: String) -> FieldSnapshot {
+    FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 0, length: 0), totalLength: text.utf16.count)
+}
+
+@Test func linesThatDifferOnlyInEncodingCountTheirOccurrencesSeparately() {
+    #expect(composedLine == decomposedLine)
+    let both = ParagraphKeys.keyed(wholeField(composedLine + "\n" + decomposedLine))
+    #expect(both.map(\.0.position) == [.occurrence(0), .occurrence(0)])
+    let afterDeletingTheFirst = ParagraphKeys.keyed(wholeField(decomposedLine))
+    #expect(afterDeletingTheFirst[0].0 == both[1].0)
+    #expect(afterDeletingTheFirst[0].0 != both[0].0)
+}
+
+@Test func linesWithTheSameUnitsStillCountTheirOccurrences() {
+    let keys = ParagraphKeys.keyed(wholeField(composedLine + "\n" + composedLine)).map(\.0.position)
+    #expect(keys == [.occurrence(0), .occurrence(1)])
+}
+
+@Test func paragraphsAndExpectedTextTellEncodingsApart() {
+    let range = TextRange(location: 0, length: 4)
+    let composed = Paragraph(range: range, text: composedLine)
+    let decomposed = Paragraph(range: range, text: decomposedLine)
+    #expect(composed == Paragraph(range: range, text: composedLine))
+    #expect(composed != decomposed)
+    #expect(Set([composed, decomposed, composed]).count == 2)
+    #expect(ExpectedText(range: range, text: composedLine) == ExpectedText(range: range, text: composedLine))
+    #expect(ExpectedText(range: range, text: composedLine) != ExpectedText(range: range, text: decomposedLine))
+}
+
+private func longParagraph() -> String {
+    (0..<10).map { _ in String(repeating: "x", count: 298) + ". " }.joined()
+}
+
+@Test func caretInSecondLineReturnsThatLineWithItsFieldRange() {
+    let text = "first line\nsecond line\nthird line"
+    let p = Paragraphs.around(caret: 14, in: text, offset: 0)
+    #expect(p == Paragraph(range: TextRange(location: 11, length: 11), text: "second line"))
+}
+
+@Test func caretAtTheEndOfALineBelongsToIt() {
+    let text = "first line\nsecond line"
+    #expect(Paragraphs.around(caret: 10, in: text, offset: 0)?.text == "first line")
+}
+
+/// Notes keeps the caret on the blank line after a paragraph; no check ran there until the caret moved into text.
+@Test func caretOnABlankLineBelongsToTheParagraphAbove() {
+    let text = "first line\n\nsecond line\n\n"
+    #expect(Paragraphs.around(caret: 11, in: text, offset: 0)?.text == "first line")
+    #expect(Paragraphs.around(caret: 25, in: text, offset: 0)?.text == "second line")
+}
+
+@Test func caretOnABlankLineBeforeAnyTextBelongsToTheParagraphBelow() {
+    #expect(Paragraphs.around(caret: 0, in: "\n\nfirst line", offset: 0)?.text == "first line")
+    #expect(Paragraphs.around(caret: 1, in: "\n\nfirst line", offset: 0)?.text == "first line")
+}
+
+@Test func aFieldWithoutTextHasNoCaretParagraph() {
+    #expect(Paragraphs.around(caret: 1, in: "\n\n", offset: 0) == nil)
+}
+
+/// A line of spaces is a blank line: the caret resting on one checked the whitespace and missed the text above it.
+@Test func aWhitespaceOnlyLineIsNotAParagraph() {
+    let text = "first\n  \n\t \u{00A0}\nsecond"
+    #expect(Paragraphs.all(in: text, offset: 0).map(\.text) == ["first", "second"])
+    #expect(Paragraphs.all(in: "  \n\t", offset: 0).isEmpty)
+}
+
+@Test func aLineWithTextBesideWhitespaceStaysAParagraph() {
+    #expect(Paragraphs.all(in: "  indented", offset: 0).map(\.text) == ["  indented"])
+}
+
+@Test func caretAfterAWhitespaceLineBelongsToTheParagraphAbove() {
+    let text = "We flew to teh office yesterday\n  \n"
+    #expect(Paragraphs.around(caret: text.utf16.count, in: text, offset: 0)?.text == "We flew to teh office yesterday")
+    let tabs = "first\n\t\t\nsecond\n\t\n"
+    #expect(Paragraphs.around(caret: tabs.utf16.count, in: tabs, offset: 0)?.text == "second")
+}
+
+@Test func caretInsideAWhitespaceLineBelongsToTheParagraphAbove() {
+    let text = "first\n    \nsecond"
+    #expect(Paragraphs.around(caret: 8, in: text, offset: 0)?.text == "first")
+}
+
+@Test func caretInAWhitespaceLineBeforeAnyTextBelongsToTheParagraphBelow() {
+    #expect(Paragraphs.around(caret: 1, in: "   \nfirst", offset: 0)?.text == "first")
+}
+
+@Test func aFieldOfWhitespaceHasNoCaretParagraph() {
+    #expect(Paragraphs.around(caret: 2, in: "  \n \t", offset: 0) == nil)
+}
+
+@Test func chunkKeysFollowTheCaretOntoABlankLine() {
+    let text = "first line\n\nsecond line\n\n"
+    let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 25, length: 0), totalLength: text.utf16.count)
+    #expect(ParagraphKeys.chunkKeys(snapshot, caret: 25).map(\.parent.text) == ["second line"])
+}
+
+@Test func rangesAreShiftedByTheWindowOffset() {
+    let all = Paragraphs.all(in: "one\ntwo", offset: 100)
+    #expect(all.map(\.range) == [TextRange(location: 100, length: 3), TextRange(location: 104, length: 3)])
+}
+
+@Test func crlfAndParagraphSeparatorsBreakParagraphs() {
+    let text = "one\r\ntwo\u{2029}three\u{2028}four\rfive\nsix"
+    let all = Paragraphs.all(in: text, offset: 0)
+    #expect(all.map(\.text) == ["one", "two", "three", "four", "five", "six"])
+    #expect(all.allSatisfy { substring(text, $0.range) == $0.text })
+}
+
+@Test func emojiParagraphKeepsUTF16Ranges() {
+    let line = "👍🏽 Ik heb dit gedownloaded"
+    let text = "intro\n" + line + "\nlast"
+    let all = Paragraphs.all(in: text, offset: 0)
+    #expect(all[1].range == TextRange(location: 6, length: line.utf16.count))
+    #expect(all[1].range.length != line.count)
+    #expect(substring(text, all[1].range) == line)
+    #expect(all[2].range.location == all[1].range.end + 1)
+}
+
+@Test func shortParagraphIsOneChunk() {
+    let p = Paragraph(range: TextRange(location: 5, length: 3), text: "abc")
+    #expect(Paragraphs.chunks(p) == [p])
+}
+
+@Test func longParagraphChunksAtSentenceEnds() {
+    let text = longParagraph()
+    #expect(text.utf16.count == 3000)
+    let p = Paragraph(range: TextRange(location: 50, length: 3000), text: text)
+    let chunks = Paragraphs.chunks(p)
+    #expect(chunks.count == 3)
+    #expect(chunks.allSatisfy { $0.range.length <= 1200 && $0.text.utf16.count == $0.range.length })
+    #expect(chunks.map(\.text).joined() == text)
+    #expect(chunks.map(\.range.location) == [50, 1250, 2450])
+}
+
+@Test func aSingleSentenceOverTheLimitIsItsOwnChunk() {
+    let big = String(repeating: "y", count: 1500) + ". "
+    let text = "Short one. " + big + "Short two."
+    let p = Paragraph(range: TextRange(location: 0, length: text.utf16.count), text: text)
+    let chunks = Paragraphs.chunks(p)
+    #expect(chunks.map(\.text) == ["Short one. ", big, "Short two."])
+}
+
+@Test func keyedCountsIdenticalParagraphsAsOccurrences() {
+    let text = "They is ready\nok\nThey is ready"
+    let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 0, length: 0), totalLength: text.utf16.count)
+    let keyed = ParagraphKeys.keyed(snapshot)
+    #expect(keyed.map(\.0.position) == [.occurrence(0), .occurrence(0), .occurrence(1)])
+    #expect(keyed.map(\.0.chunk) == [0, 0, 0])
+    #expect(keyed[0].0 != keyed[2].0)
+}
+
+@Test func keyedInAWindowUsesLocations() {
+    let text = "They is ready\nok\nThey is ready"
+    let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 0, length: 0), totalLength: 60_000)
+    let keyed = ParagraphKeys.keyed(snapshot)
+    #expect(keyed.map(\.0.position) == [.location(0), .location(14), .location(17)])
+}
+
+@Test func chunkKeysCoverEveryChunkOfTheCaretParagraph() {
+    let long = longParagraph()
+    let text = "short\n" + long
+    let snapshot = FieldSnapshot(field: field, text: text, offset: 0, selection: TextRange(location: 100, length: 0), totalLength: text.utf16.count)
+    let keys = ParagraphKeys.chunkKeys(snapshot, caret: 100)
+    #expect(keys.map(\.0.chunk) == [0, 1, 2])
+    #expect(keys.allSatisfy { $0.0.text == long && $0.parent.text == long })
+    #expect(keys.map(\.chunk.text).joined() == long)
+    #expect(keys[1].chunk.range.location == 6 + 1200)
+}
+
+@Test func paragraphsBreakAtExactlyFourUnits() {
+    let breaks = (0...UInt16.max).filter(Paragraphs.isLineBreak)
+    #expect(breaks == [0x0A, 0x0D, 0x2028, 0x2029])
+    #expect(PanelText.paragraphs("a\u{2028}b\rc").map(\.text) == ["a", "b", "c"])
+}
+
+// MARK: Language of a paragraph
+
+private let english = "Thanks for the review of the doc."
+private let dutch = "Ik heb de nieuwe versie gedownloaded."
+
+/// The language of the paragraph at `index` in `text`, read around in `text` unless `reading` is false.
+private func language(of index: Int, in text: String, field: Language? = nil, reading: Bool = true) -> Language? {
+    let paragraphs = Paragraphs.all(in: text, offset: 0)
+    return FakeLanguageDetector().language(
+        of: paragraphs[index], field: field, read: reading ? (paragraphs: paragraphs, text: text) : nil
+    )
+}
+
+@Test func aParagraphThatDetectsKeepsItsOwnLanguageOverTheFieldsAndItsNeighbours() {
+    #expect(language(of: 1, in: "\(english)\n\n\(dutch)\n\n\(english)", field: .en) == .nl)
+}
+
+@Test func aParagraphItCantPlaceTakesTheFieldsLanguageBeforeAnyNeighbours() {
+    #expect(language(of: 1, in: "\(english)\n\nhi\n\n\(dutch)", field: .nl) == .nl)
+}
+
+@Test func withoutAFieldLanguageTheNearestDetectingParagraphAboveWinsOverOneBelow() {
+    #expect(language(of: 2, in: "\(dutch)\n\n\(english)\n\nhi\n\n\(dutch)") == .en)
+}
+
+@Test func aParagraphWithNothingDetectingAboveTakesTheNearestBelow() {
+    #expect(language(of: 0, in: "hi\n\n\(english)\n\n\(dutch)") == .en)
+}
+
+@Test func whenNoParagraphDetectsTheWholeTextReadIsTheLastResort() {
+    #expect(language(of: 2, in: "Hi Jan,\n\nIk heb\n\ntot morgn") == .nl)
+}
+
+@Test func withNothingToDetectOrInheritTheLanguageIsNil() {
+    #expect(language(of: 1, in: "\(english)\n\nhi", reading: false) == nil)
+    #expect(language(of: 1, in: "Hi Jan,\n\nmorgen") == nil)
+}

@@ -1,0 +1,966 @@
+{
+ "en": {
+  "a": {
+   "english": true,
+   "function": true,
+   "lemma": "a",
+   "misspelled": false
+  },
+  "allthough": {
+   "english": false,
+   "misspelled": true
+  },
+  "alot": {
+   "english": false,
+   "misspelled": true
+  },
+  "also": {
+   "english": true,
+   "lemma": "also",
+   "misspelled": false
+  },
+  "although": {
+   "english": true,
+   "function": true,
+   "lemma": "although",
+   "misspelled": false
+  },
+  "back": {
+   "english": true,
+   "lemma": "back",
+   "misspelled": false
+  },
+  "behavior": {
+   "english": true,
+   "lemma": "behavior",
+   "misspelled": false,
+   "only": "en"
+  },
+  "behaviour": {
+   "english": true,
+   "misspelled": false,
+   "only": "en_GB"
+  },
+  "behavour": {
+   "english": false,
+   "misspelled": true
+  },
+  "book": {
+   "english": true,
+   "lemma": "book",
+   "misspelled": false
+  },
+  "can": {
+   "english": true,
+   "lemma": "can",
+   "misspelled": false
+  },
+  "cant": {
+   "english": true,
+   "lemma": "cant",
+   "misspelled": false
+  },
+  "center": {
+   "english": true,
+   "lemma": "center",
+   "misspelled": false,
+   "only": "en"
+  },
+  "centre": {
+   "english": true,
+   "misspelled": false
+  },
+  "color": {
+   "english": true,
+   "lemma": "color",
+   "misspelled": false,
+   "only": "en"
+  },
+  "colour": {
+   "english": true,
+   "misspelled": false,
+   "only": "en_GB"
+  },
+  "deploy_app": {
+   "english": true,
+   "misspelled": false
+  },
+  "deploy_apps": {
+   "english": true,
+   "misspelled": false
+  },
+  "did": {
+   "english": true,
+   "function": true,
+   "lemma": "do",
+   "misspelled": false
+  },
+  "didn": {
+   "english": false,
+   "function": true,
+   "misspelled": true
+  },
+  "fall": {
+   "english": true,
+   "lemma": "fall",
+   "misspelled": false
+  },
+  "fallback": {
+   "english": true,
+   "lemma": "fallback",
+   "misspelled": false
+  },
+  "final": {
+   "english": true,
+   "lemma": "final",
+   "misspelled": false
+  },
+  "fixd": {
+   "english": false,
+   "misspelled": true
+  },
+  "fixed": {
+   "english": true,
+   "lemma": "fix",
+   "misspelled": false
+  },
+  "fnl": {
+   "english": false,
+   "misspelled": true
+  },
+  "friday": {
+   "english": false,
+   "lemma": "friday",
+   "misspelled": true
+  },
+  "frm": {
+   "english": false,
+   "misspelled": true
+  },
+  "from": {
+   "english": true,
+   "function": true,
+   "lemma": "from",
+   "misspelled": false
+  },
+  "getusername": {
+   "english": false,
+   "misspelled": true
+  },
+  "gone": {
+   "english": true,
+   "lemma": "go",
+   "misspelled": false
+  },
+  "has": {
+   "english": true,
+   "lemma": "have",
+   "misspelled": false
+  },
+  "have": {
+   "english": true,
+   "lemma": "have",
+   "misspelled": false
+  },
+  "hello": {
+   "english": true,
+   "lemma": "hello",
+   "misspelled": false
+  },
+  "in": {
+   "english": true,
+   "function": true,
+   "lemma": "in",
+   "misspelled": false
+  },
+  "it": {
+   "english": true,
+   "function": true,
+   "lemma": "it",
+   "misspelled": false
+  },
+  "its": {
+   "english": true,
+   "function": true,
+   "lemma": "its",
+   "misspelled": false
+  },
+  "js": {
+   "english": false,
+   "misspelled": true
+  },
+  "just": {
+   "english": true,
+   "lemma": "just",
+   "misspelled": false
+  },
+  "let": {
+   "english": true,
+   "lemma": "let",
+   "misspelled": false
+  },
+  "lets": {
+   "english": true,
+   "lemma": "let",
+   "misspelled": false
+  },
+  "loose": {
+   "english": true,
+   "lemma": "loose",
+   "misspelled": false
+  },
+  "lose": {
+   "english": true,
+   "lemma": "lose",
+   "misspelled": false
+  },
+  "lot": {
+   "english": true,
+   "lemma": "lot",
+   "misspelled": false
+  },
+  "make": {
+   "english": true,
+   "lemma": "make",
+   "misspelled": false
+  },
+  "makes": {
+   "english": true,
+   "lemma": "make",
+   "misspelled": false
+  },
+  "monday": {
+   "english": false,
+   "lemma": "monday",
+   "misspelled": true
+  },
+  "not": {
+   "english": true,
+   "lemma": "not",
+   "misspelled": false
+  },
+  "of": {
+   "english": true,
+   "function": true,
+   "lemma": "of",
+   "misspelled": false
+  },
+  "off": {
+   "english": true,
+   "function": true,
+   "lemma": "off",
+   "misspelled": false
+  },
+  "on": {
+   "english": true,
+   "function": true,
+   "lemma": "on",
+   "misspelled": false
+  },
+  "paris": {
+   "english": false,
+   "lemma": "paris",
+   "misspelled": true
+  },
+  "peter": {
+   "english": true,
+   "lemma": "peter",
+   "misspelled": false
+  },
+  "pieter": {
+   "english": false,
+   "misspelled": true
+  },
+  "ping": {
+   "english": true,
+   "lemma": "ping",
+   "misspelled": false
+  },
+  "please": {
+   "english": true,
+   "lemma": "please",
+   "misspelled": false
+  },
+  "pls": {
+   "english": true,
+   "misspelled": false
+  },
+  "prem": {
+   "english": false,
+   "misspelled": true
+  },
+  "premise": {
+   "english": true,
+   "lemma": "premise",
+   "misspelled": false
+  },
+  "receive": {
+   "english": true,
+   "lemma": "receive",
+   "misspelled": false
+  },
+  "received": {
+   "english": true,
+   "lemma": "receive",
+   "misspelled": false
+  },
+  "recieve": {
+   "english": false,
+   "misspelled": true
+  },
+  "recieved": {
+   "english": false,
+   "misspelled": true
+  },
+  "run": {
+   "english": true,
+   "lemma": "run",
+   "misspelled": false
+  },
+  "runbok": {
+   "english": false,
+   "misspelled": true
+  },
+  "runbook": {
+   "english": false,
+   "misspelled": true
+  },
+  "runs": {
+   "english": true,
+   "lemma": "run",
+   "misspelled": false
+  },
+  "s": {
+   "english": true,
+   "misspelled": false
+  },
+  "seem": {
+   "english": true,
+   "lemma": "seem",
+   "misspelled": false
+  },
+  "seems": {
+   "english": true,
+   "lemma": "seem",
+   "misspelled": false
+  },
+  "suppose": {
+   "english": true,
+   "lemma": "suppose",
+   "misspelled": false
+  },
+  "supposed": {
+   "english": true,
+   "lemma": "suppose",
+   "misspelled": false
+  },
+  "sure": {
+   "english": true,
+   "lemma": "sure",
+   "misspelled": false
+  },
+  "t": {
+   "english": true,
+   "misspelled": false
+  },
+  "tacos": {
+   "english": true,
+   "lemma": "taco",
+   "misspelled": false
+  },
+  "talos": {
+   "english": false,
+   "misspelled": true
+  },
+  "teh": {
+   "english": false,
+   "misspelled": true
+  },
+  "th": {
+   "english": false,
+   "misspelled": true
+  },
+  "than": {
+   "english": true,
+   "function": true,
+   "lemma": "than",
+   "misspelled": false
+  },
+  "thanks": {
+   "english": true,
+   "lemma": "thanks",
+   "misspelled": false
+  },
+  "the": {
+   "english": true,
+   "function": true,
+   "lemma": "the",
+   "misspelled": false
+  },
+  "their": {
+   "english": true,
+   "function": true,
+   "lemma": "their",
+   "misspelled": false
+  },
+  "then": {
+   "english": true,
+   "lemma": "then",
+   "misspelled": false
+  },
+  "there": {
+   "english": true,
+   "function": true,
+   "lemma": "there",
+   "misspelled": false
+  },
+  "thx": {
+   "english": true,
+   "misspelled": false
+  },
+  "to": {
+   "english": true,
+   "function": true,
+   "lemma": "to",
+   "misspelled": false
+  },
+  "too": {
+   "english": true,
+   "lemma": "too",
+   "misspelled": false
+  },
+  "use": {
+   "english": true,
+   "lemma": "use",
+   "misspelled": false
+  },
+  "used": {
+   "english": true,
+   "lemma": "use",
+   "misspelled": false
+  },
+  "van": {
+   "english": true,
+   "lemma": "van",
+   "misspelled": false
+  },
+  "vpn": {
+   "english": false,
+   "misspelled": true
+  },
+  "walk": {
+   "english": true,
+   "lemma": "walk",
+   "misspelled": false
+  },
+  "walked": {
+   "english": true,
+   "lemma": "walk",
+   "misspelled": false
+  },
+  "we": {
+   "english": true,
+   "function": true,
+   "lemma": "i",
+   "misspelled": false
+  },
+  "went": {
+   "english": true,
+   "lemma": "go",
+   "misspelled": false
+  }
+ },
+ "fr": {
+  "a": {
+   "english": true,
+   "lemma": "avoir",
+   "misspelled": false
+  },
+  "ai": {
+   "english": true,
+   "lemma": "avoir",
+   "misspelled": false
+  },
+  "aujourd": {
+   "english": false,
+   "misspelled": true
+  },
+  "aujourdhui": {
+   "english": false,
+   "misspelled": true
+  },
+  "c": {
+   "english": true,
+   "misspelled": false
+  },
+  "ces": {
+   "english": false,
+   "function": true,
+   "lemma": "ce",
+   "misspelled": false
+  },
+  "correctement": {
+   "english": false,
+   "lemma": "correctement",
+   "misspelled": false
+  },
+  "dans": {
+   "english": true,
+   "function": true,
+   "lemma": "dans",
+   "misspelled": false
+  },
+  "dc": {
+   "english": true,
+   "misspelled": true
+  },
+  "deja": {
+   "english": true,
+   "function": true,
+   "misspelled": true
+  },
+  "donc": {
+   "english": false,
+   "function": true,
+   "lemma": "donc",
+   "misspelled": false
+  },
+  "ds": {
+   "english": false,
+   "misspelled": false
+  },
+  "déjà": {
+   "english": true,
+   "lemma": "déjà",
+   "misspelled": false
+  },
+  "déroulent": {
+   "english": false,
+   "lemma": "dérouler",
+   "misspelled": false
+  },
+  "en": {
+   "english": true,
+   "function": true,
+   "lemma": "en",
+   "misspelled": false
+  },
+  "envoyé": {
+   "english": false,
+   "lemma": "envoyer",
+   "misspelled": false,
+   "stem": "envoy"
+  },
+  "envoyée": {
+   "english": false,
+   "lemma": "envoyer",
+   "misspelled": false,
+   "stem": "envoy"
+  },
+  "est": {
+   "english": false,
+   "lemma": "être",
+   "misspelled": false
+  },
+  "fusionné": {
+   "english": false,
+   "lemma": "fusionner",
+   "misspelled": false
+  },
+  "hergé": {
+   "english": false,
+   "lemma": "hergé",
+   "misspelled": true
+  },
+  "hui": {
+   "english": true,
+   "misspelled": false
+  },
+  "il": {
+   "english": true,
+   "function": true,
+   "lemma": "il",
+   "misspelled": false
+  },
+  "jamais": {
+   "english": false,
+   "lemma": "jamais",
+   "misspelled": false
+  },
+  "lente": {
+   "english": false,
+   "function": true,
+   "lemma": "lente",
+   "misspelled": false
+  },
+  "lentes": {
+   "english": false,
+   "lemma": "lent",
+   "misspelled": false
+  },
+  "les": {
+   "english": true,
+   "function": true,
+   "lemma": "le",
+   "misspelled": false
+  },
+  "lundi": {
+   "english": false,
+   "lemma": "lundi",
+   "misspelled": false
+  },
+  "marge": {
+   "english": true,
+   "lemma": "marge",
+   "misspelled": false
+  },
+  "margé": {
+   "english": false,
+   "lemma": "marger",
+   "misspelled": false,
+   "stem": "marg"
+  },
+  "mergé": {
+   "english": false,
+   "misspelled": true,
+   "stem": "merge"
+  },
+  "merle": {
+   "english": true,
+   "lemma": "merle",
+   "misspelled": false
+  },
+  "operation": {
+   "english": true,
+   "misspelled": true
+  },
+  "opération": {
+   "english": false,
+   "lemma": "opération",
+   "misspelled": false
+  },
+  "ou": {
+   "english": false,
+   "function": true,
+   "lemma": "ou",
+   "misspelled": false
+  },
+  "où": {
+   "english": false,
+   "function": true,
+   "lemma": "où",
+   "misspelled": false
+  },
+  "passent": {
+   "english": false,
+   "lemma": "passer",
+   "misspelled": false
+  },
+  "plus": {
+   "english": true,
+   "lemma": "plus",
+   "misspelled": false
+  },
+  "pour": {
+   "english": true,
+   "function": true,
+   "lemma": "pour",
+   "misspelled": false
+  },
+  "pr": {
+   "english": true,
+   "misspelled": false
+  },
+  "prends": {
+   "english": false,
+   "lemma": "prendre",
+   "misspelled": false
+  },
+  "probleme": {
+   "english": false,
+   "misspelled": true
+  },
+  "problème": {
+   "english": false,
+   "lemma": "problème",
+   "misspelled": false
+  },
+  "proprement": {
+   "english": false,
+   "lemma": "proprement",
+   "misspelled": false
+  },
+  "regarderai": {
+   "english": false,
+   "lemma": "regarder",
+   "misspelled": false
+  },
+  "regarderais": {
+   "english": false,
+   "lemma": "regarder",
+   "misspelled": false
+  },
+  "se": {
+   "english": true,
+   "function": true,
+   "lemma": "il",
+   "misspelled": false
+  },
+  "septante": {
+   "english": false,
+   "lemma": "septante",
+   "misspelled": false
+  },
+  "serge": {
+   "english": true,
+   "lemma": "serge",
+   "misspelled": false
+  },
+  "sers": {
+   "english": false,
+   "lemma": "servir",
+   "misspelled": false
+  },
+  "serveur": {
+   "english": false,
+   "lemma": "serveur",
+   "misspelled": false
+  },
+  "serveurs": {
+   "english": false,
+   "lemma": "serveur",
+   "misspelled": false
+  },
+  "soixante": {
+   "english": false,
+   "misspelled": false
+  },
+  "sont": {
+   "english": false,
+   "lemma": "être",
+   "misspelled": false
+  },
+  "tiendrai": {
+   "english": false,
+   "lemma": "tenir",
+   "misspelled": false
+  },
+  "tiens": {
+   "english": false,
+   "lemma": "tenir",
+   "misspelled": false
+  },
+  "toi": {
+   "english": false,
+   "function": true,
+   "lemma": "tu",
+   "misspelled": false
+  },
+  "tout": {
+   "english": true,
+   "lemma": "tout",
+   "misspelled": false
+  },
+  "tt": {
+   "english": false,
+   "lemma": "tout",
+   "misspelled": false
+  },
+  "version": {
+   "english": true,
+   "lemma": "version",
+   "misspelled": false
+  },
+  "versions": {
+   "english": true,
+   "lemma": "version",
+   "misspelled": false
+  },
+  "à": {
+   "english": true,
+   "function": true,
+   "lemma": "à",
+   "misspelled": false
+  }
+ },
+ "nl": {
+  "14e": {
+   "english": true,
+   "misspelled": false
+  },
+  "15e": {
+   "english": true,
+   "misspelled": false
+  },
+  "als": {
+   "english": false,
+   "misspelled": false
+  },
+  "bug": {
+   "english": true,
+   "misspelled": false
+  },
+  "bugs": {
+   "english": true,
+   "misspelled": false
+  },
+  "dan": {
+   "english": true,
+   "misspelled": false
+  },
+  "door": {
+   "english": true,
+   "misspelled": false
+  },
+  "eigelijk": {
+   "english": false,
+   "misspelled": false
+  },
+  "eigenlijk": {
+   "english": false,
+   "misspelled": false
+  },
+  "gebeurd": {
+   "english": false,
+   "misspelled": false
+  },
+  "gebeurt": {
+   "english": false,
+   "misspelled": false
+  },
+  "gedownload": {
+   "english": false,
+   "misspelled": false
+  },
+  "gedownloaded": {
+   "english": false,
+   "misspelled": true
+  },
+  "geintereseerd": {
+   "english": false,
+   "misspelled": true
+  },
+  "gemerged": {
+   "english": false,
+   "misspelled": false,
+   "stem": "merge"
+  },
+  "gemerkt": {
+   "english": false,
+   "misspelled": false
+  },
+  "geïnteresseerd": {
+   "english": false,
+   "misspelled": false
+  },
+  "hun": {
+   "english": true,
+   "misspelled": false
+  },
+  "jobs": {
+   "english": true,
+   "misspelled": false
+  },
+  "maandag": {
+   "english": false,
+   "misspelled": false
+  },
+  "niet": {
+   "english": false,
+   "misspelled": false
+  },
+  "om": {
+   "english": false,
+   "function": true,
+   "misspelled": false
+  },
+  "onmiddelijk": {
+   "english": false,
+   "misspelled": true
+  },
+  "onmiddellijk": {
+   "english": false,
+   "misspelled": false
+  },
+  "op": {
+   "english": true,
+   "function": true,
+   "misspelled": false
+  },
+  "opkuisen": {
+   "english": false,
+   "misspelled": false
+  },
+  "opruimen": {
+   "english": false,
+   "misspelled": false
+  },
+  "previewt": {
+   "english": false,
+   "misspelled": true,
+   "stem": "preview"
+  },
+  "reviert": {
+   "english": false,
+   "misspelled": false
+  },
+  "review": {
+   "english": true,
+   "misspelled": false
+  },
+  "reviews": {
+   "english": true,
+   "misspelled": false
+  },
+  "reviewt": {
+   "english": false,
+   "misspelled": true,
+   "stem": "review"
+  },
+  "sidekiq": {
+   "english": false,
+   "misspelled": true
+  },
+  "sidekiq-jobs": {
+   "english": false,
+   "misspelled": true
+  },
+  "tegen": {
+   "english": false,
+   "misspelled": false
+  },
+  "uitgesteld": {
+   "english": false,
+   "misspelled": false
+  },
+  "voor": {
+   "english": false,
+   "misspelled": false
+  },
+  "voorkomen": {
+   "english": false,
+   "misspelled": false
+  },
+  "voorvallen": {
+   "english": false,
+   "misspelled": false
+  },
+  "wel": {
+   "english": false,
+   "misspelled": false
+  },
+  "word": {
+   "english": true,
+   "misspelled": false
+  },
+  "wordt": {
+   "english": false,
+   "misspelled": false,
+   "stem": "word"
+  },
+  "zij": {
+   "english": false,
+   "misspelled": false
+  }
+ }
+}

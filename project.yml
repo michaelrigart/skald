@@ -1,0 +1,67 @@
+name: Skald
+options:
+  bundleIdPrefix: com.michaelrigart
+  deploymentTarget:
+    macOS: "27.0"
+packages:
+  SkaldCore:
+    path: Packages/SkaldCore
+  SkaldPlatform27:
+    path: Packages/SkaldPlatform27
+targets:
+  Skald:
+    type: application
+    platform: macOS
+    sources: [Skald]
+    dependencies:
+      - package: SkaldCore
+      - package: SkaldPlatform27
+    scheme:
+      testTargets: [SkaldTests]
+    info:
+      path: Skald/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleDisplayName: Skald
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "27.0"
+    entitlements:
+      path: Skald/Skald.entitlements
+      properties: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michaelrigart.skald
+        MARKETING_VERSION: dev
+        CURRENT_PROJECT_VERSION: "0"
+        ARCHS: arm64
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: CX4MWR5579
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_DEBUG_DYLIB: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        OTHER_CODE_SIGN_FLAGS: "--options=runtime"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+      configs:
+        Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  SkaldTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [SkaldTests]
+    dependencies:
+      - target: Skald
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.michaelrigart.skald.tests
+        GENERATE_INFOPLIST_FILE: YES
+        ARCHS: arm64
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: CX4MWR5579
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

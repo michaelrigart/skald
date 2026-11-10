@@ -2,8 +2,7 @@
 
 **Date:** 2026-11-02
 **Owner:** Michael Rigart
-**Status:** In progress (branch `feat/skald-v1`; no merge request yet, because the repository
-has no remote).
+**Status:** In progress (branch `feat/skald-v1`, [PR #1](https://github.com/michaelrigart/skald/pull/1)).
 **Sign-off:** not yet given by Michael. On 2026-11-02 he asked for the work to continue without
 him overnight. Codex approved the spec in round 4 (`xr-1793578392-bfc59cef`). The calls marked
 as Claude's under Decisions are his to check.
@@ -98,9 +97,68 @@ running macOS 27.2, with a typical development workload running in the backgroun
      same-lemma test falls back to the near-homophone rule.
    - Language detection constrained to the three languages is reliable on a sentence, but its
      hypotheses for a word or two ("ok") are noise. Only the three languages are considered,
-     and short paragraphs inherit the field's last confident language.
+     and short paragraphs inherit the field's last confident language (fallbacks under
+     Languages).
    - The spell server is unreachable from inside an agent sandbox; these lookups run outside
      it.
+7. **Text access per app, and the model inside the signed app** (the plan's feasibility probe,
+   2026-11-05 and 2026-11-06, a signed build run from `/Applications` with Michael at the
+   Mac). This answers finding 5's open question.
+
+   | App and field | Read through | Range bounds | Clean write | ⌘Z | Class |
+   |---|---|---|---|---|---|
+   | Notes | ranges | yes | Accessibility, formatting kept | exact; earlier history survives | full |
+   | TextEdit | ranges | yes | Accessibility, formatting kept | exact; earlier history survives | full |
+   | Zen: a textarea, GitLab's comment box | ranges | yes, stable through scrolling | paste | exact; earlier history survives | full |
+   | Zen: Basecamp's editor (Trix) | ranges | yes | paste | exact; earlier history survives | full |
+   | Slack | ranges | no; field frame | paste | exact | badge |
+   | Signal | ranges | no; field frame | paste | exact | badge |
+   | Obsidian | ranges | no; field frame | paste | exact | badge |
+   | Proton Mail | ranges; the caret reads 0 after a paste | no; field frame | none: a paste adds a line break | exact | badge, Copy only |
+   | Mail (compose) | text markers | not measured; field frame | paste | exact | badge |
+
+   - **Accessibility writes** are clean only in Notes and TextEdit. Elsewhere the app accepts
+     the call and then ignores it (Signal, Obsidian), inserts the text one unit off
+     without removing the old text (Zen's text areas, the open Firefox bug 1866621), or applies
+     it some time later (Zen's plain input). A paste of the same replacement landed exactly
+     within about 25 ms in Zen's text areas (including GitLab's comment box), Signal, Obsidian
+     and Slack.
+   - **Undo.** Slack merges edits made within about a second into one undo step: a paste that
+     follows the user's own edit too closely is undone together with it, hence the paste
+     write's quiet period. With it, the first ⌘Z after a paste restored the text exactly in
+     every paste app. A second ⌘Z removed the user's own previous edit wherever it was
+     measured (Notes, TextEdit, Zen's text areas, Basecamp), so the app's earlier history
+     survives; a paste is an ordinary edit in the app's own undo stack.
+   - **Electron apps** need `AXManualAccessibility`; Obsidian's focused element appears about
+     1 s after it is set. They give the field's frame but no bounds for a character range, so
+     they get the badge. Zen's fields give range bounds; its textarea's stayed correct through
+     scrolling.
+   - **Change notifications** (value, selection, focus) arrived within 2 s of a keystroke in
+     every text field probed.
+   - **Text markers.** Mail's compose area is a web area that is its own editable element; it
+     answers text-marker reads (the text, and the caret as marker-range lengths), not
+     character ranges. WebKit doesn't answer `AXStartTextMarkerForTextMarkerRange` or
+     `AXIndexForTextMarker`; the public `AXTextMarkerRangeCopyStartMarker` and marker-range
+     lengths do the job. Mail's focused element appears about 1 s after the app is
+     activated. Proton Mail's composer reads through ranges while typing, but after a paste
+     its caret reads 0 until the next keystroke, and its text-marker selection comes and
+     goes.
+   - **Editors that format as you type.** Basecamp's Trix turns `~text~` into
+     strikethrough, so the probe's marker needed a form without tildes there. Zen's
+     rich-text editors are ordinary text areas to Accessibility once focused; no browser
+     extension is needed.
+   - **Cost of asking for the tree.** The probe couldn't take a clean before-and-after pair:
+     an Electron app has no focused element until accessibility is on. While the probe was
+     reading them, Signal used 10–17 % of a core and Obsidian 7–14 %. Left on afterwards,
+     with nothing reading them, Signal and Slack idled at 1–2 %. Firefox answers
+     `AXEnhancedUserInterface` with an error and builds its tree for any client that asks,
+     so Zen's cost is the cost of being read at all; its samples during the probe (40–94 %)
+     were taken while Michael browsed. Ten minutes of `powermetrics` at acceptance measure
+     the cost while typing.
+   - **Apple's model inside the signed app,** on the seed set with the spike's prompt and
+     scorer: recall 0.97 (34/35), precision 0.83, 3 of 12 clean paragraphs flagged, 0.47 s /
+     0.57 s per paragraph (p50 / p90). The one difference from the spike's run is a new Dutch
+     false alarm, "reviewt" → "beoordeelt", a translated anglicism the edit guard drops.
 
 ## Success
 
@@ -118,7 +176,8 @@ running macOS 27.2, with a typical development workload running in the backgroun
 ## Goals (v1)
 
 1. **Check while typing.** After a pause, Skald checks the paragraph around the caret in the
-   focused text field, underlines issues in place, and offers a correction on click.
+   focused text field and spell-checks the rest of the field, underlines issues in place, and
+   offers a correction on click.
 2. **Proofread or rewrite on demand.** A global hotkey opens a panel for the selection, or the
    current paragraph when nothing is selected. It offers Fix (proofread), and rewrites: Clearer,
    Shorter, More formal, Friendlier. It shows the changes, and Replace puts the result back in
@@ -151,7 +210,12 @@ Skald has failed, even if it works, if it:
 - nags: flags correct text, Belgian usage, or English technical words in Dutch and French;
 - rewrites, rephrases or translates when the user asked for a fix, or while checking as they
   type;
-- changes any text the user didn't accept, or replaces text that changed since it was checked;
+- changes any text the user didn't accept, or replaces text that changed since it was checked
+  (with one accepted exception: a paste that lands in the instant after Skald's last check,
+  see the text access contract);
+- leaves the clipboard different from how it found it after a paste write, unless the user
+  or another app copied something meanwhile, or the paste was never confirmed (then the
+  clipboard holds the fix, and Skald says so);
 - sends text off the Mac unless the user chose a remote engine for that action or made one the
   panel's default;
 - writes user text to disk, logs it, or collects telemetry. Only the never-touch list is stored;
@@ -175,7 +239,9 @@ Skald has failed, even if it works, if it:
 - **Install location.** `/Applications`, launched with `open`, so the Accessibility grant goes
   to Skald and not to a terminal.
 - **Identity.** Bundle identifier `com.michaelrigart.skald`.
-- **Signing.** Ad-hoc, like Linger and Hulder. Every rebuild needs Accessibility granted again.
+- **Signing.** Michael's Apple Development certificate (his Personal Team), so the
+  Accessibility grant survives rebuilds. A builder without it signs ad hoc and grants
+  Accessibility again after every rebuild. (Ad hoc until 2026-11-05.)
 - **Toolchain.** The same as Hulder:
   - Xcode through `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` per command.
   - XcodeGen, pinned in the repository's `mise.toml`; the generated project is not tracked.
@@ -222,20 +288,83 @@ Three parts, as in Hulder, so that a macOS change or a new engine touches one la
 
 Names are left to the builder.
 
-- **Capabilities per app,** decided by the feasibility check and probed at run time: read,
-  range bounds, the field's frame, a clean write, or nothing. A write is clean only if ⌘Z
-  undoes exactly that change and the formatting around it survives. An app without a clean
-  write is read-only: Copy instead of Accept. Skald does only what an app supports and says
-  what it can't do there.
+- **Capabilities per app,** decided by the feasibility check (finding 7) and probed at run
+  time: read, range bounds, the field's frame, a clean write, or nothing. A write is clean only
+  if ⌘Z undoes exactly that change and the formatting around it survives. An app without a
+  clean write is read-only: Copy instead of Accept. Skald does only what an app supports and
+  says what it can't do there.
+- **Two ways to read a field.** Most fields answer Accessibility's character ranges (value,
+  selection, a string and bounds for a range). Some answer only through text markers, such as
+  Mail's compose area (WebKit). Skald reads those through text markers: the field's text, and the selection as UTF-16 offsets measured as
+  the lengths of marker ranges from the field's start. It decides per field which source
+  places the caret, and keeps that source while the field lives. Text markers give no cheap
+  way to read a window around the caret, so a text-marker field longer than the read limit
+  isn't read at all (a reply above a long quoted thread, for example).
+- **Web areas.** When the focused element is a web area, it is a field only if the element
+  at its selection's start marker has an editable ancestor; the field is that ancestor
+  (Mail's compose area is its own). A page being read is never a field. Zen's rich-text
+  editors need no special route: focused, they are ordinary text areas (finding 7).
+- **Two ways to write a clean replacement,** per app, each enabled only where the feasibility
+  check measured it as clean:
+  - **Accessibility:** select the range, then set the selected text (Notes, TextEdit).
+  - **Paste,** where an app reads but ignores or misplaces Accessibility writes (Electron
+    apps, Firefox), and in fields read through text markers (Mail): select the range
+    through Accessibility and verify the selection; put the replacement on the clipboard,
+    marked transient and concealed so clipboard managers skip it; post ⌘V to that app alone;
+    wait until the field holds the paragraph with the replacement applied. Right before ⌘V,
+    in the one Accessibility job that posts it, Skald checks again, in this order: the app is
+    still frontmost, the focused element is the same one, the whole paragraph is unchanged,
+    the selection still covers the range, and last, the clipboard still holds Skald's
+    replacement. Any change aborts before anything is pasted. A clipboard that changed
+    meanwhile holds a newer copy: it is left alone and the write fails.
+    It pastes only after watching the whole field for 1.5 s without a change (its length,
+    the text Skald reads from it and its selection are the same at the start and at the end
+    of that interval, and no change notification arrived in between), so the paste gets an
+    undo step of its own in apps that merge edits made close together (Slack).
+    Notifications can arrive late, so the comparison, not the absence of a notification, is
+    the proof; in a field longer than the read limit Skald can't compare the whole field, so
+    it offers Copy instead of pasting. It doesn't paste when the clipboard holds content it can't put back
+    faithfully (concealed or promised data), or when the clipboard changed since Skald saved
+    it; the suggestion then offers Copy.
+  - **The clipboard after a paste.** An abort before ⌘V is posted restores the clipboard at
+    once: nothing can paste. Once ⌘V is posted, the clipboard goes back to what it held only
+    once the field shows the replacement, which proves the app consumed the paste, and only
+    while the clipboard still holds Skald's replacement: if the user or another app copied
+    something meanwhile, that newer content stays. While the field still shows the original
+    paragraph, Skald keeps waiting; when it shows a paragraph that is neither the original
+    nor the expected one, or still the original after 3 s, the accept is reported as
+    unconfirmed and the card says the clipboard now holds the fix. Skald keeps watching that field and puts the old content back if the replacement
+    appears; otherwise the old content is not restored, neither after a deadline nor when
+    Skald quits, so a paste the app handles late inserts the fix, never the old clipboard
+    (which may hold a password).
+  - **A paste can land on changed text.** If the user clicks or types in the target app in
+    the instant between Skald's last check and the app handling ⌘V (about 25 ms in the
+    probe), the paste can land somewhere else in the field or app. Skald can't prevent
+    this. It sees the field show something other than the expected paragraph and reports
+    the accept as unconfirmed, as above; ⌘Z undoes the paste like any other edit. Michael
+    accepted this risk (2026-11-06).
+  - **The caret.** After a confirmed write, Skald puts the caret back where the user had it
+    (shifted by the length change when it was after the range); after an abort that had
+    already moved the selection, it puts it back unshifted; while a paste is unconfirmed it
+    never moves the selection, so a late paste still lands on the range. Each time only
+    while the field is still focused and its selection is still the one Skald left; if the
+    user moved it meanwhile, Skald leaves it alone.
+  - **Typing right after an accept** in an app that merges edits made close together
+    (Slack) may join the accept's undo step: Skald can't mark where a step ends. The ⌘Z
+    right after an accept still undoes exactly the fix. Michael decided (2026-11-06) that
+    Slack keeps paste writes even if acceptance shows the merge; it is then a recorded
+    limitation, like the app's own merging of his typing.
 - **Snapshots** of the focused field: its text, selection and an identity stable while the
   field lives. Reads are bounded: a field longer than a limit is checked only around the caret.
 - **Bounds** for a character range, in screen coordinates, used to draw underlines.
 - **Replace** a range only if it is still the same field and the whole paragraph the issue was
   computed from is unchanged, not just the flagged words; otherwise the replacement is refused
   and the issue dropped. ("They is ready" → "are" must not apply after "They" became "He".)
-- **Change events** from Accessibility notifications where the app sends them, with a light
-  poll of the focused field otherwise.
-- **Never:** secure text fields, excluded apps, synthetic keyboard or mouse events.
+- **Change events** from Accessibility notifications. Every probed app sends them (finding
+  7), so there is no poll; an app that sends none is checked only when its field gains
+  focus.
+- **Never:** secure text fields, excluded apps, synthetic mouse events, or any synthetic
+  keystroke except a paste write's single ⌘V, posted to the target app only.
 
 A fake implementation drives the core's tests.
 
@@ -272,10 +401,18 @@ A fake implementation drives the core's tests.
 1. Skald follows the focused text field of the frontmost app, unless the app is excluded or the
    field is secure.
 2. After a pause in typing (builder's value, starting near 700 ms), the scheduler picks the
-   paragraph around the caret. Unchanged paragraphs are not checked again.
+   paragraph around the caret. A blank or whitespace-only line has no paragraph of its own: the
+   caret there picks the nearest paragraph above, else the first below. In a field read whole
+   (up to 20,000 UTF-16 units), every other paragraph is spell-checked in the background, one
+   paragraph at a time, nearest the caret first, so the whole field has spelling underlines
+   after focus, launch and resume, and after a paste or an edit away from the caret. A paragraph
+   that becomes the caret's is spelled again in its own language. A longer field, read only
+   around the caret, keeps to the caret's paragraph. Unchanged paragraphs are not checked again.
 3. **Spelling** comes first and immediately, from `NSSpellChecker` in the paragraph's language.
    Spelling flags go through the same edit guard as model edits. Once the model's result for the
-   paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn.
+   paragraph arrives, a spelling flag on a word the model left unchanged is withdrawn. Only the
+   caret's paragraph gets the model check, so a paragraph spell-checked in the background keeps
+   its spelling flags until the caret visits it.
 4. **The model check** runs next: one request at a time; a newer pause cancels an older request.
    The instruction is short and names the paragraph's language (finding 2).
 5. **The result** goes through the diff and the edit guard. Surviving edits become issues,
@@ -286,8 +423,11 @@ A fake implementation drives the core's tests.
    range bounds are missing or unreliable but whose field frame is known, a small badge at the
    field's corner shows the number of issues and opens them as a list of cards. Without either,
    the app gets the panel only.
-7. **A card** opens from an underline: the change with context, and Accept (↩), Ignore, and
-   Never flag this word. Accept replaces exactly the flagged range through text access.
+7. **A card** opens from an underline: the change with context, and Accept, Ignore, and
+   Never flag this word. Accept replaces exactly the flagged range through text access. The
+   card never takes keyboard focus from the field, so it has no ↩ shortcut: Return would also
+   reach the app, and catching it would mean intercepting the user's typing (decided
+   2026-11-06, Task 16).
 
 Paragraphs are bounded by line breaks. Very long fields are checked only around the caret.
 
@@ -326,6 +466,9 @@ of thumb and a row disagree, the row wins.
 | spelling flag on "Sidekiq-jobs" | "de Sidekiq-jobs lopen weer" | drop |
 | spelling flag on "mergé" | "J'ai mergé le correctif" | drop |
 | spelling flag on "Talos", "Pieter" | names | drop |
+| "colour" → "color", "behaviour" → "behavior" | correct British spelling | drop |
+| "color" → "colour" | correct American spelling | drop |
+| spelling flag on "behavour" | a misspelling | keep, proposing "behaviour" (British first) |
 | any edit touching a never-touch word, a number, a URL or code | — | drop |
 
 **Whole results.** A result whose language differs from the input's, or that changes more than a
@@ -347,8 +490,10 @@ finding 3.
 
 ### The panel
 
-- **Opens** with a global hotkey on the selection, or the current paragraph. It never steals the
-  field's text: it works on a copy and writes back only on Replace.
+- **Opens** with a global hotkey on the selection, or the current paragraph (with the caret on a
+  blank or whitespace-only line, the nearest paragraph above, else the first below: the same rule
+  as checking while typing). It never steals the field's text: it works on a copy and writes back
+  only on Replace.
 - **Actions:**
   - **Fix** splits the selection into paragraphs, checks each one in its own language exactly as
     checking while typing does (same request, same guard), and puts the result back together
@@ -363,8 +508,17 @@ finding 3.
 
 ### Languages
 
-- Detected per paragraph with Natural Language, constrained to English, Dutch and French. Very
-  short paragraphs inherit the field's last confident language.
+- Detected per paragraph with Natural Language, constrained to English, Dutch and French. A
+  paragraph the detector can't place (very short, or low-confidence) takes, in order: the
+  field's last confident language; for a field with none yet (just focused, or after a
+  relaunch), the language of the nearest paragraph above that detects, then below, then of the
+  whole text read. If none detects, the paragraph is left unchecked; a language is never assumed.
+  The field's last confident language is the language being typed: only the caret's paragraph
+  reads and sets it. A paragraph spell-checked in the background takes the order without that
+  step, so a language elsewhere in the field never decides the language of the line being typed.
+  The same order, in the same code, applies to typing checks and to each paragraph of a panel
+  selection (read within the selection, the whole text being the captured lines); when none
+  detects there, the panel asks the user to pick a language.
 - Belgian usage is correct: the instruction says so, and the evaluation set includes it.
 - English: British spelling is the default and American spelling is accepted too. A word counts
   as misspelled only if both dictionaries reject it.
@@ -403,7 +557,9 @@ Never user text, never the never-touch list, never the API key.
 - **Core unit tests** (Swift Testing) pin exact expected values:
   - **The scheduler:** a check starts after the pause on the injected clock; typing restarts
     the wait; a caret move to another paragraph schedules that one; a newer request cancels the
-    older one; a result for changed text is dropped; pause stops everything.
+    older one; a result for changed text is dropped; pause stops everything; the other
+    paragraphs are spell-checked one at a time, nearest the caret first, and focus, pause and
+    recheck drop that queue.
   - **The diff:** exact edits for insertions, deletions, replacements and accents.
   - **The edit guard:** every row of its outcome table, plus the whole-result rules.
   - **Fix in the panel:** a selection with an English and a Dutch paragraph is checked as two
@@ -443,7 +599,9 @@ Never user text, never the never-touch list, never the API key.
 - **Manual acceptance on Michael's Mac:**
   - checking while typing in Notes, Mail, Zen (a plain field and Basecamp's editor), and each
     Electron app the feasibility check marked as supported;
-  - accepting, ignoring and never-flagging; ⌘Z after an accept;
+  - accepting, ignoring and never-flagging; ⌘Z after an accept, in an app written through
+    Accessibility and in one written by paste, with the clipboard unchanged afterwards and
+    the caret back where it was; in Slack, typing straight after an accept, then ⌘Z;
   - the panel's Fix and rewrites on This Mac and Claude, and on the Mac Studio once it is
     available (until then its client is tested against a stub server);
   - `powermetrics` during ten minutes of normal writing: GPU at idle level, no sustained CPU
@@ -483,6 +641,17 @@ Never user text, never the never-touch list, never the API key.
   - Proton Mail, Signal or Slack get neither underlines nor the badge (panel only), which would
     break Michael's decision that Electron apps are covered;
   - forcing accessibility on costs noticeable CPU in an app he keeps open all day.
+- **At the stop gate (2026-11-05)** the probe showed Electron apps and Zen's text areas
+  reading but not taking Accessibility writes, and Zen's rich-text editors not readable as
+  fields. Michael chose paste writes for the first and an investigation of Firefox's text
+  markers for the second (see Decisions). The text access contract above records the result.
+- **The gate on 2026-11-06,** after the probe's last runs (finding 7): nothing on the list
+  triggers. Zen's rich-text editors turned out to be ordinary text areas once focused, read and
+  written like its textareas, so the choice between text markers, the panel only and an
+  extension didn't arise. Slack and Signal take paste writes; Proton Mail gets the badge with
+  Copy only. Apple's model inside the app stays within the bounds (recall 0.97, precision 0.83,
+  3 of 12 clean paragraphs flagged). Electron apps with accessibility on idle at 1–2 % of a
+  core; the cost while typing is measured at acceptance.
 
 ## Left to the builder
 
@@ -512,6 +681,36 @@ Never user text, never the never-touch list, never the API key.
 - A throwaway spike before this spec (its results are in "Measured on macOS 27.2").
 - Continue the work overnight without him (2026-11-02, 01:00).
 
+**Michael decided at the feasibility stop gate (2026-11-05):**
+
+- Apps without a clean Accessibility write (the Electron apps, Zen's text areas) get Accept
+  through a synthetic paste: select through Accessibility, verify the selection, put the fix
+  on the clipboard marked so clipboard managers skip it, post ⌘V, restore the clipboard. Each
+  app gets it only where the probe shows that the paste replaces exactly and ⌘Z undoes
+  exactly; the others get Copy only.
+- Zen's rich-text editors (Basecamp, GitLab): the probe first tries Firefox's text-marker
+  interface, the one VoiceOver uses; he then chooses between that, the panel only and a
+  browser extension.
+- Builds are signed with his Apple Development certificate, so the Accessibility grant
+  survives rebuilds.
+- Distribution (release script, verification, cask, CI) gets its own spec and plan, released
+  only after v1's remaining tasks.
+
+**Michael decided on the paste write's limits (2026-11-06):**
+
+- The risk of a paste landing in the wrong place, when he clicks or types in the instant after
+  Skald's last check, is accepted: it is reported and undone with ⌘Z.
+- His old clipboard comes back only once the paste is seen in the field; an unconfirmed paste
+  leaves the fix on the clipboard for good, with no deadline and no restore at quit.
+- Slack keeps paste writes even if typing straight after an accept joins its undo step.
+
+**Michael decided during acceptance (2026-11-06 and 2026-11-07):**
+
+- Check the whole note, not only the caret's paragraph: the rest of the field is spell-checked
+  in the background on focus, launch and resume, and the model stays on the caret's paragraph.
+- Only a field read whole (up to 20,000 UTF-16 units) gets this; a longer one keeps to the
+  caret's paragraph.
+
 **Claude's calls, for Michael to check:**
 
 - Checking while typing always runs on This Mac; the remote engines serve the panel only.
@@ -539,6 +738,7 @@ Never user text, never the never-touch list, never the API key.
   Studio.
 - The evaluation data uses fictional company names and the spec names no machine details,
   because the repository will be public.
+- After an accept, the caret goes back to where Michael had it, when he hasn't moved it.
 
 ## Appendix: seed evaluation set
 
