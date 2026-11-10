@@ -267,12 +267,13 @@ enum AccessibilityWrite {
             _ = reader.select(target)
         }
 
+        // Before the write, the selection Skald left is the range it asked for, never what is selected by now.
         guard reader.select(range), reader.selection() == range else {
-            finish(.abortedAfterSelecting, left: reader.selection())
+            finish(.abortedAfterSelecting, left: range)
             return .failed
         }
         guard setSelectedText(text) else {
-            finish(.abortedAfterSelecting, left: reader.selection())
+            finish(.abortedAfterSelecting, left: range)
             return .failed
         }
         let left = reader.selection()

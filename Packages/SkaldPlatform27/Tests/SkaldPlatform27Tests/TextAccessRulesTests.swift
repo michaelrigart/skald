@@ -13,6 +13,8 @@ private final class FakeField: FieldReader, @unchecked Sendable { // reason: eac
     var rangedReads = true
     var acceptsSelection = true
     var appliesWrites = true
+    /// Where the selection is by the time anyone reads it after `select`: the user moved the caret in between.
+    var userMovesSelectionTo: TextRange?
     private(set) var valueReads = 0
 
     init(_ text: String, selected: TextRange? = TextRange(location: 0, length: 0)) {
@@ -39,7 +41,8 @@ private final class FakeField: FieldReader, @unchecked Sendable { // reason: eac
 
     func select(_ range: TextRange) -> Bool {
         guard acceptsSelection else { return false }
-        selected = range
+        selected = userMovesSelectionTo ?? range
+        userMovesSelectionTo = nil
         return true
     }
 
@@ -483,6 +486,36 @@ private let replaced = TextRange(location: 10, length: 4)
     )
     #expect(outcome == .failed)
     #expect(field.selected == TextRange(location: 20, length: 0))
+}
+
+@Test func anAccessibilityWriteLeavesACaretTheUserMovedBeforeTheSelectionWasVerified() {
+    let moved = TextRange(location: 12, length: 0)
+    let field = FakeField("They is ready. More text", selected: TextRange(location: 20, length: 0))
+    field.userMovesSelectionTo = moved
+    let expected = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
+    let outcome = AccessibilityWrite.perform(
+        TextRange(location: 5, length: 2), with: "are", expected: expected, reader: field,
+        setSelectedText: field.setSelectedText, isFocused: { true }
+    )
+    #expect(outcome == .failed)
+    #expect(field.text == "They is ready. More text")
+    #expect(field.selected == moved)
+}
+
+@Test func anAccessibilityWriteLeavesACaretTheUserMovedBeforeTheWriteFailed() {
+    let moved = TextRange(location: 12, length: 0)
+    let field = FakeField("They is ready. More text", selected: TextRange(location: 20, length: 0))
+    let expected = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
+    let outcome = AccessibilityWrite.perform(
+        TextRange(location: 5, length: 2), with: "are", expected: expected, reader: field,
+        setSelectedText: { _ in
+            field.selected = moved
+            return false
+        },
+        isFocused: { true }
+    )
+    #expect(outcome == .failed)
+    #expect(field.selected == moved)
 }
 
 @Test func anAccessibilityWriteTheFieldDoesNotShowFails() {
