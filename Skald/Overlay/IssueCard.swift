@@ -15,8 +15,12 @@ final class OverlayPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        collectionBehavior = [.ignoresCycle, .fullScreenAuxiliary]
+        collectionBehavior = Self.spaces
     }
+
+    /// On every Space, like the underline windows: the field's app can be focused on any of them, and a panel
+    /// tied to the Space it first appeared on would not come forward on another.
+    static let spaces: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
 
     /// Above the underline windows, which sit at `.floating`.
     static let level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)

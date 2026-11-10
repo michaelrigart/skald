@@ -5,6 +5,34 @@ import Testing
 @testable import Skald
 import struct SkaldCore.Issue
 
+/// The badge and the cards follow the focused editor onto any Space, as the underline windows do; a window with
+/// no collection behaviour stays on the Space it first appeared on.
+struct OverlaySpacesTests {
+    private static let overlaySources = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appending(path: "Skald/Overlay")
+
+    @MainActor @Test func theBadgeAndCardPanelsJoinEverySpace() {
+        let panel = OverlayPanel(size: CGSize(width: 10, height: 10))
+        #expect(panel.collectionBehavior.contains(.canJoinAllSpaces))
+        #expect(!panel.collectionBehavior.contains(.moveToActiveSpace))
+    }
+
+    @Test func everyOverlayWindowClassChoosesItsSpaceBehaviour() throws {
+        let files = try FileManager.default.contentsOfDirectory(at: Self.overlaySources, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+        var windowClasses = 0
+        var missing: [String] = []
+        for url in files {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            let classes = source.split(separator: "\n")
+                .filter { $0.range(of: #"class\s+\w+\s*:\s*(NSPanel|NSWindow)\b"#, options: .regularExpression) != nil }.count
+            windowClasses += classes
+            if classes > 0, !source.contains("collectionBehavior") { missing.append(url.lastPathComponent) }
+        }
+        #expect(windowClasses >= 2)
+        #expect(missing.isEmpty, "overlay windows with no collection behaviour: \(missing)")
+    }
+}
+
 struct OverlayGeometryTests {
     /// Accessibility measures from the primary screen's top-left corner, AppKit from its bottom-left.
     @Test func theUnderlineIsTwoPointsAlongTheBottomOfTheBoundsInAppKitCoordinates() {
