@@ -465,6 +465,48 @@ private let replaced = TextRange(location: 10, length: 4)
     #expect(!TextAccessRules.restoresCaret(stillFocused: true, current: nil, left: left))
 }
 
+@Test func onlyTheTwoSelectionsAWriteProducesCountAsWhatItLeft() {
+    func left(_ observed: TextRange?, length: Int = 7) -> TextRange? {
+        TextAccessRules.selectionLeft(byWriting: length, over: replaced, observed: observed)
+    }
+    let caretAfter = TextRange(location: 17, length: 0)
+    let replacementSelected = TextRange(location: 10, length: 7)
+    #expect(left(caretAfter) == caretAfter)
+    #expect(left(replacementSelected) == replacementSelected)
+    #expect(left(nil) == nil)
+    #expect(left(TextRange(location: 18, length: 0)) == nil)
+    #expect(left(TextRange(location: 10, length: 0)) == nil)
+    #expect(left(TextRange(location: 3, length: 0)) == nil)
+    #expect(left(TextRange(location: 10, length: 4)) == nil)
+    #expect(left(TextRange(location: 11, length: 7)) == nil)
+    #expect(left(TextRange(location: 17, length: 1)) == nil)
+}
+
+@Test func theSelectionsAWriteLeavesAreMeasuredInUTF16Units() {
+    let emoji = "\u{1F600}"
+    #expect(emoji.utf16.count == 2)
+    let caretAfter = TextRange(location: 12, length: 0)
+    #expect(TextAccessRules.selectionLeft(byWriting: emoji.utf16.count, over: replaced, observed: caretAfter) == caretAfter)
+    #expect(TextAccessRules.selectionLeft(byWriting: emoji.utf16.count, over: replaced, observed: TextRange(location: 11, length: 0)) == nil)
+}
+
+@Test func aWriteWithNothingToInsertLeavesTheCaretAtTheStartOfTheRange() {
+    let start = TextRange(location: 10, length: 0)
+    #expect(TextAccessRules.selectionLeft(byWriting: 0, over: replaced, observed: start) == start)
+    #expect(TextAccessRules.selectionLeft(byWriting: 0, over: replaced, observed: TextRange(location: 14, length: 0)) == nil)
+}
+
+@Test func theSelectionAPasteLeavesIsOneOfTheSelectionsAnAccessibilityWriteLeaves() {
+    let afterPaste = TextRange(location: 17, length: 0)
+    #expect(TextAccessRules.selectionLeft(byWriting: 7, over: replaced, observed: afterPaste) == afterPaste)
+    #expect(
+        TextAccessRules.pasteCaret(
+            user: TextRange(location: 30, length: 0), replaced: replaced, replacementLength: 7, end: .confirmed,
+            current: afterPaste, stillFocused: true
+        ) == TextRange(location: 33, length: 0)
+    )
+}
+
 @Test func anAccessibilityWriteReplacesTheRangeAndPutsTheCaretBackShifted() {
     let field = FakeField("They is ready. More text", selected: TextRange(location: 20, length: 0))
     let expected = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
@@ -511,6 +553,42 @@ private let replaced = TextRange(location: 10, length: 4)
         setSelectedText: { _ in
             field.selected = moved
             return false
+        },
+        isFocused: { true }
+    )
+    #expect(outcome == .failed)
+    #expect(field.selected == moved)
+}
+
+@Test func anAccessibilityWriteLeavesACaretTheUserMovedAfterTheWrite() {
+    let moved = TextRange(location: 12, length: 0)
+    let field = FakeField("They is ready. More text", selected: TextRange(location: 20, length: 0))
+    let expected = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
+    let outcome = AccessibilityWrite.perform(
+        TextRange(location: 5, length: 2), with: "are", expected: expected, reader: field,
+        setSelectedText: { text in
+            let wrote = field.setSelectedText(text)
+            field.selected = moved
+            return wrote
+        },
+        isFocused: { true }
+    )
+    #expect(outcome == .replaced)
+    #expect(field.text == "They are ready. More text")
+    #expect(field.selected == moved)
+}
+
+@Test func anAccessibilityWriteTheFieldDoesNotShowLeavesACaretTheUserMoved() {
+    let moved = TextRange(location: 12, length: 0)
+    let field = FakeField("They is ready. More text", selected: TextRange(location: 20, length: 0))
+    field.appliesWrites = false
+    let expected = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
+    let outcome = AccessibilityWrite.perform(
+        TextRange(location: 5, length: 2), with: "are", expected: expected, reader: field,
+        setSelectedText: { text in
+            let wrote = field.setSelectedText(text)
+            field.selected = moved
+            return wrote
         },
         isFocused: { true }
     )

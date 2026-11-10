@@ -276,7 +276,8 @@ enum AccessibilityWrite {
             finish(.abortedAfterSelecting, left: range)
             return .failed
         }
-        let left = reader.selection()
+        // After the write, the observed selection is Skald's only when it is one a write produces.
+        let left = TextAccessRules.selectionLeft(byWriting: text.utf16.count, over: range, observed: reader.selection())
         let revised = TextAccessRules.applying(text, at: range, to: expected)
         guard reader.string(for: revised.range) == revised.text else {
             finish(.abortedAfterSelecting, left: left)

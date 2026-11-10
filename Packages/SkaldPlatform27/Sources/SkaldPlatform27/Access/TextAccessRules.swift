@@ -211,6 +211,23 @@ enum TextAccessRules {
         return current == left
     }
 
+    /// The caret right after a replacement of `replacementLength` UTF-16 units written over `replaced`.
+    static func caretAfter(replacing replaced: TextRange, replacementLength: Int) -> TextRange {
+        TextRange(location: replaced.location + replacementLength, length: 0)
+    }
+
+    /// What a write left selected, from the selection observed after it: the caret right after the replacement
+    /// or the replacement itself selected, the two selections a write produces. Any other observed selection is
+    /// the user's, so nil: nothing to restore over it.
+    static func selectionLeft(byWriting replacementLength: Int, over replaced: TextRange, observed: TextRange?) -> TextRange? {
+        guard let observed else { return nil }
+        let produced = [
+            caretAfter(replacing: replaced, replacementLength: replacementLength),
+            TextRange(location: replaced.location, length: replacementLength),
+        ]
+        return produced.contains(observed) ? observed : nil
+    }
+
     /// A position before the range stays, one after it moves by the length change, one inside stays within the replacement.
     private static func shifted(_ position: Int, replaced: TextRange, replacementLength: Int) -> Int {
         if position >= replaced.end {
@@ -243,7 +260,7 @@ enum TextAccessRules {
         user: TextRange, replaced: TextRange, replacementLength: Int, end: WriteEnd, current: TextRange?, stillFocused: Bool
     ) -> TextRange? {
         guard let target = caretTarget(user: user, replaced: replaced, replacementLength: replacementLength, end: end) else { return nil }
-        let left = end == .confirmed ? TextRange(location: replaced.location + replacementLength, length: 0) : replaced
+        let left = end == .confirmed ? caretAfter(replacing: replaced, replacementLength: replacementLength) : replaced
         guard restoresCaret(stillFocused: stillFocused, current: current, left: left), current != target else { return nil }
         return target
     }
