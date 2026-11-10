@@ -2,28 +2,51 @@ import Dispatch
 import Synchronization
 
 public final class AXQueue: Sendable {
-    /// Jobs started on any `AXQueue`, and text writes inside them, so a reader can keep what it read until
-    /// the job ends or writes.
-    private static let jobs = Atomic<Int>(0)
+    /// The jobs started on one queue, and text writes inside them, so a reader can keep what it read until the
+    /// job ends or writes. Each queue has its own, found from inside its jobs, so another queue's jobs never
+    /// end this queue's.
+    private final class Jobs: Sendable {
+        let count = Atomic<Int>(0)
+        let timeouts = Atomic<Int>(0)
+
+        func next() {
+            count.wrappingAdd(1, ordering: .relaxed)
+        }
+    }
+
+    private static let jobsKey = DispatchSpecificKey<Jobs>()
 
     private let queue = DispatchQueue(label: "com.michaelrigart.skald.accessibility")
+    private let jobs = Jobs()
 
-    public init() {}
+    public init() {
+        queue.setSpecific(key: Self.jobsKey, value: jobs)
+    }
 
-    /// The job running now, read from inside one; a text write inside the job moves it on.
-    static var currentJob: Int {
-        jobs.load(ordering: .relaxed)
+    /// The job running now on the queue this code runs on, read from inside one; a text write inside the job
+    /// moves it on. Nil off any `AXQueue`.
+    static var currentJob: Int? {
+        DispatchQueue.getSpecific(key: jobsKey)?.count.load(ordering: .relaxed)
     }
 
     /// A field's text was written: what a reader kept earlier in this job is stale.
     static func textWritten() {
-        jobs.wrappingAdd(1, ordering: .relaxed)
+        DispatchQueue.getSpecific(key: jobsKey)?.next()
+    }
+
+    /// Accessibility calls that timed out on the queue this code runs on; 0 off any `AXQueue`.
+    static var timeouts: Int {
+        DispatchQueue.getSpecific(key: jobsKey)?.timeouts.load(ordering: .relaxed) ?? 0
+    }
+
+    static func timedOut() {
+        DispatchQueue.getSpecific(key: jobsKey)?.timeouts.wrappingAdd(1, ordering: .relaxed)
     }
 
     public func run<T: Sendable>(_ body: @Sendable @escaping () -> T) async -> T {
         await withCheckedContinuation { continuation in
             queue.async {
-                Self.jobs.wrappingAdd(1, ordering: .relaxed)
+                self.jobs.next()
                 continuation.resume(returning: body())
             }
         }
@@ -40,7 +63,7 @@ public final class AXQueue: Sendable {
     /// Runs `body` after everything already queued, in submission order; for callbacks that must not wait.
     public func enqueue(_ body: @Sendable @escaping () -> Void) {
         queue.async {
-            Self.jobs.wrappingAdd(1, ordering: .relaxed)
+            self.jobs.next()
             body()
         }
     }
@@ -53,7 +76,7 @@ final class PerJob<Value>: @unchecked Sendable { // reason: only touched inside 
     private var cached: (job: Int, value: Value)?
 
     func value(_ read: () -> Value) -> Value {
-        let job = AXQueue.currentJob
+        guard let job = AXQueue.currentJob else { return read() }
         if let cached, cached.job == job { return cached.value }
         let value = read()
         cached = (job, value)

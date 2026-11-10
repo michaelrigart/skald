@@ -36,6 +36,87 @@ private final class Reads: @unchecked Sendable { // reason: only touched inside 
     #expect(texts == ["text 1", "text 2", "text 2"])
 }
 
+/// Returns once `semaphore` is signalled, without blocking the cooperative pool.
+private func signalled(_ semaphore: DispatchSemaphore) async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global().async {
+            semaphore.wait()
+            continuation.resume()
+        }
+    }
+}
+
+@Test func aJobOnAnotherQueueDoesNotEndThisQueuesJob() async {
+    let queue = AXQueue()
+    let other = AXQueue()
+    let reads = Reads()
+    let started = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    let job = Task {
+        await queue.run { () -> [String] in
+            let before = reads.read()
+            started.signal()
+            proceed.wait()
+            return [before, reads.read()]
+        }
+    }
+    await signalled(started)
+    await other.run {}
+    await other.run {}
+    proceed.signal()
+    #expect(await job.value == ["text 1", "text 1"])
+}
+
+@Test func aTextWriteOnAnotherQueueDoesNotMakeThisQueuesJobReadAgain() async {
+    let queue = AXQueue()
+    let other = AXQueue()
+    let reads = Reads()
+    let started = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    let job = Task {
+        await queue.run { () -> [String] in
+            let before = reads.read()
+            started.signal()
+            proceed.wait()
+            return [before, reads.read()]
+        }
+    }
+    await signalled(started)
+    await other.run { AXQueue.textWritten() }
+    proceed.signal()
+    #expect(await job.value == ["text 1", "text 1"])
+}
+
+@Test func aTimeoutInAJobIsCountedInThatJob() async {
+    let queue = AXQueue()
+    let counted = await queue.run { () -> Int in
+        let before = AXTimeouts.count
+        AXTimeouts.record(.cannotComplete)
+        AXTimeouts.record(.success)
+        return AXTimeouts.count - before
+    }
+    #expect(counted == 1)
+}
+
+@Test func aTimeoutOnAnotherQueueIsNotCountedInThisQueuesJob() async {
+    let queue = AXQueue()
+    let other = AXQueue()
+    let started = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    let job = Task {
+        await queue.run { () -> Int in
+            let before = AXTimeouts.count
+            started.signal()
+            proceed.wait()
+            return AXTimeouts.count - before
+        }
+    }
+    await signalled(started)
+    await other.run { AXTimeouts.record(.cannotComplete) }
+    proceed.signal()
+    #expect(await job.value == 0)
+}
+
 /// An app's switch, and whether it was asked while another job still held the queue.
 private final class QueuedSwitch: @unchecked Sendable { // reason: state is only touched under the lock
     private let lock = NSLock()
