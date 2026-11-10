@@ -23,10 +23,16 @@ public final class AXQueue: Sendable {
         queue.setSpecific(key: Self.jobsKey, value: jobs)
     }
 
+    /// One job of one queue: job numbers count per queue, so the queue is part of the identity.
+    struct JobID: Equatable {
+        fileprivate let queue: ObjectIdentifier
+        fileprivate let number: Int
+    }
+
     /// The job running now on the queue this code runs on, read from inside one; a text write inside the job
     /// moves it on. Nil off any `AXQueue`.
-    static var currentJob: Int? {
-        DispatchQueue.getSpecific(key: jobsKey)?.count.load(ordering: .relaxed)
+    static var currentJob: JobID? {
+        DispatchQueue.getSpecific(key: jobsKey).map { JobID(queue: ObjectIdentifier($0), number: $0.count.load(ordering: .relaxed)) }
     }
 
     /// A field's text was written: what a reader kept earlier in this job is stale.
@@ -73,7 +79,7 @@ public final class AXQueue: Sendable {
 /// returns the earlier text, so a write through Accessibility calls `AXQueue.textWritten()` (as
 /// `AXElement.setSelectedText` does) before anything reads back. Used on `AXQueue` only.
 final class PerJob<Value>: @unchecked Sendable { // reason: only touched inside AXQueue jobs, which run one at a time
-    private var cached: (job: Int, value: Value)?
+    private var cached: (job: AXQueue.JobID, value: Value)?
 
     func value(_ read: () -> Value) -> Value {
         guard let job = AXQueue.currentJob else { return read() }

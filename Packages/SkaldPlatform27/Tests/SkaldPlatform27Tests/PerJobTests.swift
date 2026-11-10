@@ -87,6 +87,14 @@ private func signalled(_ semaphore: DispatchSemaphore) async {
     #expect(await job.value == ["text 1", "text 1"])
 }
 
+@Test func theFirstJobOfTwoQueuesIsNotTheSameJob() async {
+    let first = AXQueue()
+    let second = AXQueue()
+    let reads = Reads()
+    #expect(await first.run { reads.read() } == "text 1")
+    #expect(await second.run { reads.read() } == "text 2")
+}
+
 @Test func aTimeoutInAJobIsCountedInThatJob() async {
     let queue = AXQueue()
     let counted = await queue.run { () -> Int in
