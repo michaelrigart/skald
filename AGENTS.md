@@ -33,8 +33,9 @@ sandbox too.
   `CFBundleShortVersionString` and `CFBundleVersion`; with `--team` it checks `TeamIdentifier`.
   Give it a Release build: a Debug build contains the probe.
 - Release: `scripts/release [--dry-run] [--version <YYYYMMDD-HHMM>]`, on Michael's Mac only (it
-  needs the signing certificate and pushes). Use `--dry-run` to check it; never run it for real
-  unless Michael asks. `--version` resumes a failed release.
+  needs the signing certificate and a `gh` login that can merge as admin; it pushes a release
+  branch and merges its pull request, never `main`). Use `--dry-run` to check it; never run it
+  for real unless Michael asks. `--version` resumes a failed release.
 - Regenerate the app icon and menu bar PNGs from `design/app-icon.svg` and
   `design/menubar.svg`: `design/render` (needs `rsvg-convert`, Homebrew `librsvg`)
 
@@ -46,6 +47,9 @@ sandbox too.
   stays on Michael's Mac. It builds with `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`, as anyone
   without the certificate does.
 - Distribution design: `docs/superpowers/specs/2026-11-05-skald-distribution-design.md`.
+- Release flow: `docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md`, which
+  ports Muninn's design
+  (https://github.com/michaelrigart/muninn/blob/main/docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md).
 
 ## Rules an agent gets wrong
 
