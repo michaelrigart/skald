@@ -1,6 +1,6 @@
 # Releasing Through a Pull Request (Skald Port) Implementation Plan
 
-**Status:** Approved. Codex approved the plan in round 1 (`xr-1794862861-42887a52`).
+**Status:** Implemented ([pull request #3](https://github.com/michaelrigart/skald/pull/3)). Completed: do not run this plan again. Codex approved it in round 1 (`xr-1794862861-42887a52`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

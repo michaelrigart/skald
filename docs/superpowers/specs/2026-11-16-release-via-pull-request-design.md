@@ -1,7 +1,7 @@
 # Releasing through a pull request (Skald port) — design
 
 **Date:** 2026-11-16
-**Status:** Approved
+**Status:** Implemented ([pull request #3](https://github.com/michaelrigart/skald/pull/3), into `feat/skald-v1`; it reaches `main` with [pull request #1](https://github.com/michaelrigart/skald/pull/1))
 **Canonical design:** Muninn's
 ([`michaelrigart/muninn`, `docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md`](https://github.com/michaelrigart/muninn/blob/main/docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md)),
 signed off by Michael on 2026-11-16; its "Ports" section names Skald (Muninn's
