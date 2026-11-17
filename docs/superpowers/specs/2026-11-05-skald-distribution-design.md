@@ -8,6 +8,9 @@ off by Michael on 2026-11-06 after Codex's spec review (round 2, `xr-1793919517-
 `docs/superpowers/specs/2026-11-03-hulder-distribution-design.md`), which follows Linger's, and
 Muninn's for the menu bar glyph. Michael asked for the same here (2026-11-05). This document
 repeats what applies to Skald, so it can be planned on its own, and states where Skald differs.
+**Release flow:** superseded in part on 2026-11-16 by
+docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md (the release commit lands
+through a pull request).
 
 ## Why
 
