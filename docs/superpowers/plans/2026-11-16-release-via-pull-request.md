@@ -12,7 +12,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md` (Skald's differences). It names the canonical design, Muninn's `docs/superpowers/specs/2026-11-16-release-via-pull-request-design.md`, which holds the behaviour. Read both.
 
-**Source (`M`):** `092d5f8d2d083a789b2f5545543febbd68b14878` on Muninn's `fix/release-via-pr` ("Report a local main that is ahead of origin when tidying up"), approved by Codex's pre-merge review (`xr-1794905228-ba53f276`, Muninn PR #8). Muninn's release suite passes 475 of 475 at `M`, so Skald's expects 471 of 471. Every command below reads two shell variables the implementer sets first: `M`, that full SHA, and `MUNINN`, the path of a Muninn checkout that has it (the driver gives both in each brief). `git -C "$MUNINN" cat-file -e "$M^{commit}"` must succeed before any step runs.
+**Source (`M`):** `ee810a9aa04404599715aac48158e2a2d20f5059` on Muninn's `fix/release-via-pr` ("Say which stopped releases the README's resume covers"), approved by Codex's pre-merge review (`xr-1794908533-fc04b075`, Muninn PR #8). Muninn's release suite passes 475 of 475 at `M`, so Skald's expects 471 of 471. The first port took `092d5f8d2d083a789b2f5545543febbd68b14878` (`xr-1794905228-ba53f276`); "Re-port" below took this one. Every command below reads two shell variables the implementer sets first: `M`, that full SHA, and `MUNINN`, the path of a Muninn checkout that has it (the driver gives both in each brief). `git -C "$MUNINN" cat-file -e "$M^{commit}"` must succeed before any step runs.
 
 **Base:** `feat/skald-v1` at `c88dfad`; the pull request targets `feat/skald-v1`, not `main` (spec, "Base branch").
 
