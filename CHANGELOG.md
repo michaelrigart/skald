@@ -31,5 +31,7 @@ whether it is compatible with the one before. Each section says what changed.
   other time.
 - A word that spelling and Apple's model both flag, with the same fix, shows once in the badge's
   list and its count instead of twice.
+- Launch at login now adds Skald to the login items. It never did on a Mac that had not seen
+  Skald before, and Settings said it couldn't.
 
 [Unreleased]: https://github.com/michaelrigart/skald/commits/main

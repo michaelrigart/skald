@@ -301,10 +301,10 @@ final class CompositionRoot {
     private func syncLoginItem(launchAtLogin: Bool, changed: Bool) {
         let service = SMAppService.mainApp
         do {
-            if launchAtLogin, changed || service.status == .notRegistered {
-                if service.status != .enabled { try service.register() }
-            } else if !launchAtLogin, changed, service.status != .notRegistered {
-                try service.unregister()
+            switch LoginItemRule.action(enabled: launchAtLogin, status: LoginItemStatus(service.status), changed: changed) {
+            case .register: try service.register()
+            case .unregister: try service.unregister()
+            case .none: break
             }
         } catch {
             Log.app.notice("login item not changed: \(String(describing: error), privacy: .private)")
@@ -379,5 +379,17 @@ nonisolated final class AppSwitches: Sendable {
 
     func isEnabled(_ app: String) -> Bool {
         settings.withLock { $0.isEnabled(app: app) }
+    }
+}
+
+private extension LoginItemStatus {
+    init(_ status: SMAppService.Status) {
+        switch status {
+        case .notRegistered: self = .notRegistered
+        case .enabled: self = .enabled
+        case .requiresApproval: self = .requiresApproval
+        case .notFound: self = .notFound
+        @unknown default: self = .notRegistered
+        }
     }
 }
