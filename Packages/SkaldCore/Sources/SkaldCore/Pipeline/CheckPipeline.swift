@@ -198,7 +198,7 @@ public actor CheckPipeline {
             with: issue.edit.writeText,
             in: issue.key.field
         )
-        tracker.removeAll { $0.id == id }
+        tracker.remove(id)
         publish()
         return outcome
     }

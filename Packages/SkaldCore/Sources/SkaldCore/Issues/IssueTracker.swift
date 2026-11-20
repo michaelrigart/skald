@@ -90,8 +90,14 @@ public struct IssueTracker: Sendable {
 
     public mutating func ignore(_ id: UUID) {
         guard let issue = issue(id) else { return }
+        ignored.insert(Ignored(key: issue.key, edit: issue.edit))
+        remove(id)
+    }
+
+    /// Drops the issue and its twin, the same fix on the same word from the other source.
+    public mutating func remove(_ id: UUID) {
+        guard let issue = issue(id) else { return }
         let entry = Ignored(key: issue.key, edit: issue.edit)
-        ignored.insert(entry)
         issues.removeAll { Ignored(key: $0.key, edit: $0.edit) == entry }
     }
 

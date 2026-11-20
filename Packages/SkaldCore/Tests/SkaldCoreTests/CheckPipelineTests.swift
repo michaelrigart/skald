@@ -1017,6 +1017,17 @@ struct CheckPipelineTests {
         #expect(await rig.visible().isEmpty)
     }
 
+    @Test func aRefusedAcceptOnAWordBothChecksFixedTheSameWayLeavesNoTwinBehind() async throws {
+        let rig = Rig(makeSettings())
+        await rig.access.answerReplacements(with: .refusedChanged)
+        await rig.focus(flew)
+        await rig.check()
+        let issue = try #require(await rig.visible().first)
+
+        #expect(await rig.pipeline.accept(issue.id) == .refusedChanged)
+        #expect(await rig.visible().isEmpty)
+    }
+
     // MARK: Every dropped model check is reported as failed, so the next pause runs it again
 
     @Test func aRouteChangeDuringTheModelCheckDropsItAndTheNextPauseRetriesIt() async {

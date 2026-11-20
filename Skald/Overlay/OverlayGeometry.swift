@@ -56,6 +56,17 @@ enum OverlayGeometry {
         return CGRect(origin: cardOrigin(size: bounded, anchor: anchor, within: screen), size: bounded)
     }
 
+    /// The issues without a model twin: when spelling and the model fix a word the same way, the spelling issue
+    /// stands for both, as it is already on screen when the model's result arrives.
+    static func distinct(_ issues: [Issue]) -> [Issue] {
+        struct Fix: Hashable {
+            let key: ParagraphKey
+            let edit: Edit
+        }
+        let spelled = Set(issues.filter { $0.source == .spelling }.map { Fix(key: $0.key, edit: $0.edit) })
+        return issues.filter { $0.source == .spelling || !spelled.contains(Fix(key: $0.key, edit: $0.edit)) }
+    }
+
     /// The issues whose underline range meets the field's visible range; all of them without one.
     static func issues(_ issues: [Issue], meeting visible: TextRange?) -> [Issue] {
         issues.filter { meets(underlineRange(for: $0), visible: visible) }

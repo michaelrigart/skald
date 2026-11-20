@@ -29,5 +29,7 @@ whether it is compatible with the one before. Each section says what changed.
 
 - A card or the badge's list no longer opens at zero size, which showed nothing, about every
   other time.
+- A word that spelling and Apple's model both flag, with the same fix, shows once in the badge's
+  list and its count instead of twice.
 
 [Unreleased]: https://github.com/michaelrigart/skald/commits/main

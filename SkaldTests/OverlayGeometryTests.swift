@@ -16,6 +16,19 @@ struct OverlaySpacesTests {
 }
 
 struct OverlayGeometryTests {
+    /// Spelling and the model both fixing a word the same way is one issue to the person, shown as the spelling one.
+    @Test func theSameFixFromSpellingAndTheModelIsShownOnce() {
+        let spelling = issue(in: "They is ready", revised: "They are ready", source: .spelling)
+        let model = issue(in: "They is ready", revised: "They are ready", source: .model)
+        #expect(OverlayGeometry.distinct([model, spelling]) == [spelling])
+    }
+
+    @Test func aDifferentFixOnTheSameWordFromTheModelIsStillShown() {
+        let spelling = issue(in: "They is ready", revised: "They are ready", source: .spelling)
+        let model = issue(in: "They is ready", revised: "They was ready", source: .model)
+        #expect(OverlayGeometry.distinct([spelling, model]) == [spelling, model])
+    }
+
     /// Accessibility measures from the primary screen's top-left corner, AppKit from its bottom-left.
     @Test func theUnderlineIsTwoPointsAlongTheBottomOfTheBoundsInAppKitCoordinates() {
         let bounds = CGRect(x: 100, y: 200, width: 50, height: 18)

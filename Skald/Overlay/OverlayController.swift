@@ -97,14 +97,14 @@ final class OverlayController {
         generation += 1
         let fieldChanged = new.field != snapshot.field
         if fieldChanged { capabilities = nil }
-        snapshot = new
-        let visible = Set(new.issues.map(\.id))
+        snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues))
+        let visible = Set(snapshot.issues.map(\.id))
         cards.retain { $0.survives(visible: visible, in: new.field) }
-        if let parked = parking.received(new), !cards.isOpen {
+        if let parked = parking.received(snapshot), !cards.isOpen {
             cards.show([parked.card], anchor: parked.anchor, screen: parked.screen)
             cardAnchor = nil
         }
-        if fieldChanged || new.issues.isEmpty { hideMarks() }
+        if fieldChanged || snapshot.issues.isEmpty { hideMarks() }
         requestRedraw()
     }
 
