@@ -54,6 +54,9 @@ final class CardPanel {
     private let panel = OverlayPanel(size: CGSize(width: CardPanel.width, height: 100))
     private(set) var anchor: CGRect = .zero
     private(set) var screen: CGRect = .zero
+    /// The cards' size as the view last laid them out. A hidden window is not laid out, so a panel shown again with
+    /// the same cards gets no new size from the view; this is the size it keeps.
+    private var contentSize: CGSize?
     static let width: CGFloat = 320
 
     var onEmpty: (() -> Void)?
@@ -77,8 +80,7 @@ final class CardPanel {
         self.anchor = anchor
         self.screen = screen
         stack.set(cards)
-        let size = panel.contentView?.fittingSize ?? CGSize(width: Self.width, height: 100)
-        place(size)
+        place(contentSize ?? panel.contentView?.fittingSize ?? CGSize(width: Self.width, height: 100))
         panel.orderFrontRegardless()
     }
 
@@ -99,12 +101,17 @@ final class CardPanel {
         if stack.cards.isEmpty { close() }
     }
 
-    /// `size` is the cards' own size, before the screen bounds it.
+    /// `size` is the cards' own size, before the screen bounds it. It arrives during the view's layout, which
+    /// a resize of the panel must not re-enter, so the panel follows on the next turn of the main loop.
     private func fit(_ size: CGSize) {
-        guard panel.isVisible, size.height > 0 else { return }
-        let frame = OverlayGeometry.cardFrame(fitting: size, anchor: anchor, within: screen)
-        guard panel.frame != frame else { return }
-        panel.setFrame(frame, display: true)
+        guard size.height > 0 else { return }
+        contentSize = size
+        Task { @MainActor [weak self] in
+            guard let self, let size = contentSize else { return }
+            let frame = OverlayGeometry.cardFrame(fitting: size, anchor: anchor, within: screen)
+            guard panel.frame != frame else { return }
+            panel.setFrame(frame, display: true)
+        }
     }
 
     private func place(_ size: CGSize) {

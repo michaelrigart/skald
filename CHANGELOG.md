@@ -25,4 +25,9 @@ whether it is compatible with the one before. Each section says what changed.
 - If your Mac lacks Apple's language data for English or French, Skald asks macOS to download
   it the first time it checks that language.
 
+### Fixed
+
+- A card or the badge's list no longer opens at zero size, which showed nothing, about every
+  other time.
+
 [Unreleased]: https://github.com/michaelrigart/skald/commits/main
