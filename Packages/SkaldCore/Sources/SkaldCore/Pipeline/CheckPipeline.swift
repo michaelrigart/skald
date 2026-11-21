@@ -117,6 +117,9 @@ public actor CheckPipeline {
     private var latest: LatestRead?
     private var appleUnavailable: UnavailableReason?
     private var backoff = ClaudeBackoff()
+    /// The caret's paragraph that Claude was not asked about because it failed before, with why. The status shows
+    /// it while the caret stays in that text.
+    private var refusal: (key: ParagraphKey, trouble: ClaudeTrouble)?
     /// The value last yielded on `claudeStatus`.
     private(set) var lastClaudeStatus = ClaudeStatus.quiet
 
@@ -184,6 +187,7 @@ public actor CheckPipeline {
     /// Call when the Claude key changes: the failures remembered so far were for another key.
     public func resetClaude() {
         backoff = ClaudeBackoff()
+        refusal = nil
         refreshClaudeStatus()
     }
 
@@ -258,6 +262,7 @@ public actor CheckPipeline {
         switch event {
         case .focused(let field):
             currentField = field
+            if refusal?.key.field != field { refusal = nil }
             epoch += 1
             readRevision += 1
             refreshClaudeStatus()
@@ -312,6 +317,9 @@ public actor CheckPipeline {
         case .revalidate(let snapshot):
             let read = LatestRead(snapshot)
             latest = read
+            if let refused = refusal?.key, !ParagraphKeys.chunkKeys(snapshot, caret: snapshot.selection.location).contains(where: { $0.0 == refused }) {
+                refusal = nil
+            }
             detections.prune(keeping: Set(read.paragraphs.map(\.text)).union([snapshot.text]))
             let dropped = tracker.revalidate(snapshot)
             if !dropped.isEmpty { send(.forget(dropped)) }
@@ -447,10 +455,12 @@ public actor CheckPipeline {
             guard let makeEngine = claude else { return .dropped }
             guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
                 if let trouble = backoff.trouble(forFailedText: chunk.text), !backoff.isSuspended(at: timing.elapsed()) {
+                    refusal = (key, trouble)
                     publishClaudeStatus(ClaudeStatus(sending: true, trouble: trouble))
                 }
                 return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
             }
+            if refusal?.key.field == key.field { refusal = nil }
             let status = ClaudeStatus(sending: true, trouble: backoff.trouble)
             publishClaudeStatus(status)
             if let showClaude {
@@ -467,6 +477,7 @@ public actor CheckPipeline {
             switch result {
             case .success:
                 backoff.succeeded()
+                refusal = nil
                 await updateClaudeStatus()
                 return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .claude)
             case .failure(let failure):
@@ -644,7 +655,7 @@ public actor CheckPipeline {
         guard claude != nil else { return }
         let routed = currentField.flatMap { field in fieldLanguages[field].map { router.typing($0, app: field.app) == .claude } } ?? false
         let suspended = backoff.isSuspended(at: timing.elapsed())
-        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: backoff.trouble, suspended: suspended))
+        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: backoff.trouble ?? refusal?.trouble, suspended: suspended))
     }
 
     private func publishClaudeStatus(_ status: ClaudeStatus) {

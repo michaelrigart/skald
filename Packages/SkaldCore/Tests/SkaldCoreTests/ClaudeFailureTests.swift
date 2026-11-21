@@ -191,9 +191,40 @@ struct ClaudeFailureTests {
         #expect(await rig.engine.texts == [dutch, dutch])
         #expect(await rig.modelIssues().map(\.engine) == [.thisMac])
 
+        var refreshed = onDevice
+        refreshed.launchAtLogin = false
+        await rig.update(refreshed)
+        await rig.pipeline.drain()
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: .unreachable))
+
         await type(variant(2), in: rig)
         #expect(await claude.requests.count == 3)
         #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
+    }
+
+    @Test func aRefusedTextsTroubleGoesWhenTheCaretLeavesItsText() async {
+        let claude = FakeEngine { request, _ in
+            request.text == dutch ? .failure(.failed) : .success(replacingWords(in: request.text, corrections))
+        }
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch + "\n" + flew, caret: 3)
+        await rig.check()
+        await type(variant(1) + "\n" + flew, in: rig)
+        await type(dutch + "\n" + flew, in: rig)
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: .unreachable))
+
+        await rig.access.moveCaret(to: dutch.utf16.count + 1 + 3, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.requests.count == 2)
+        #expect(await status(rig).trouble == nil)
+
+        await type(dutch + "\n" + flew, in: rig)
+        await rig.access.moveCaret(to: 3, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await status(rig).trouble == .unreachable)
+        await rig.focus(flew, caret: 3, in: PipelineRig.fieldB)
+        await rig.check()
+        #expect(await status(rig).trouble == nil)
     }
 
     @Test func aTimeoutIsAFailure() async {
