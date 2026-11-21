@@ -18,10 +18,10 @@ field instead.
 - A panel, opened with a hotkey (Control-Option-G by default), to fix or rewrite the selection
   or the current paragraph.
 - Checks while you type stay on your Mac, unless you turn on Claude for Dutch and French in
-  Settings > Languages: then the paragraph you are typing in goes to Anthropic's Claude API,
-  the menu bar icon shows a cloud, and apps you keep on This Mac only still send nothing. The
-  panel can also use a Mac Studio (Settings > Engines > Mac Studio, which takes any Ollama or
-  OpenAI-compatible server), or Claude, if you set one up in Settings.
+  Settings > Languages: then the paragraph your caret is in (typing, or just clicking into it)
+  goes to Anthropic's Claude API, the menu bar icon shows a cloud, and apps you keep on This Mac
+  only still send nothing. The panel can also use a Mac Studio (Settings > Engines > Mac Studio,
+  which takes any Ollama or OpenAI-compatible server), or Claude, if you set one up in Settings.
 - Terminals, code editors and password managers are off by default. Secure text fields are
   never read.
 - Launches at login (you can turn this off in Settings).

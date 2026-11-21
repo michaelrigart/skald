@@ -19,13 +19,14 @@ whether it is compatible with the one before. Each section says what changed.
   Checking while you type stays on your Mac unless you turn on Claude for Dutch and French.
 - Dutch and French can be checked by Claude while you type: turn on Settings > Languages >
   Check Dutch and French with Claude while typing, with your own Claude API key. Only the
-  paragraph you are typing in is sent, English always stays on your Mac, and the menu bar icon
-  shows a cloud while checks go to Claude. A card says when Claude found the issue. When Claude
+  paragraph your caret is in is sent, whether you type in it or just click into it. Text Skald
+  detects as English stays on your Mac, and a very short paragraph is treated as the field's
+  language. The menu bar icon shows a cloud while checks go to Claude. A card says when Claude found the issue. When Claude
   can't answer, Skald falls back to your on-device settings and the menu says why. Removing the
   key turns the switch off.
 - Each app can be On, This Mac only or Off, in Settings > Apps or with the menu's Keep on This
   Mac. Nothing you type in an app kept on this Mac goes to Claude, and the panel offers only
-  This Mac only there. The menu's Turn On sets an app to This Mac only when it is off by
+  This Mac there. The menu's Turn On sets an app to This Mac only when it is off by
   default or Claude checks while typing are on; untick Keep on This Mac to let it use Claude.
 - Install with Homebrew: `brew install --cask michaelrigart/tap/skald`.
 - Releases are signed with a stable certificate, so the Accessibility permission you give Skald

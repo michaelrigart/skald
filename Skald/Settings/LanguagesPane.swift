@@ -50,7 +50,7 @@ private struct ClaudeTypingSection: View {
                 .disabled(!isOn.wrappedValue)
             Toggle(Language.fr.displayName, isOn: model.claudeLanguage(.fr))
                 .disabled(!isOn.wrappedValue)
-            Text("While you type Dutch or French, Skald sends the paragraph you are typing in, and nothing else, to Anthropic's Claude API with your key. English stays on this Mac, and so does every app kept on This Mac only. The menu bar icon shows a cloud while checks go to Claude.")
+            Text("While you type Dutch or French, Skald sends the paragraph your caret is in, whether you type in it or just click into it, and nothing else, to Anthropic's Claude API with your key. Text Skald detects as English stays on this Mac, and so does every app kept on This Mac only. The menu bar icon shows a cloud while checks go to Claude.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
