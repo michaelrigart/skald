@@ -46,6 +46,16 @@ private let a = CGRect(x: 10, y: 100, width: 30, height: 14), b = a.offsetBy(dx:
     #expect(!late.isUnsettled)
     late.checkedFinally(b)
     #expect(late.isUnsettled)
+    var lost = ScrollLagTrace()
+    lost.scrolled(.wheel, at: .zero)
+    lost.sampled(a, at: .milliseconds(10))
+    lost.checkedFinally(nil)
+    #expect(lost.isUnsettled)
+    var steady = ScrollLagTrace()
+    steady.scrolled(.wheel, at: .zero)
+    steady.sampled(a, at: .milliseconds(10))
+    steady.checkedFinally(a)
+    #expect(!steady.isUnsettled)
 }
 
 @Test func theCeilingIsTheLargestLagRoundedUpAndNeedsTwentySettledGestures() {

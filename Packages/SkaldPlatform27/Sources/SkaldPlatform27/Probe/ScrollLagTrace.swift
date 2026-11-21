@@ -61,11 +61,11 @@ public struct ScrollLagTrace: Sendable {
     }
 
     public mutating func checkedFinally(_ bounds: CGRect?) {
-        guard let bounds, let previous, bounds != previous else { return }
+        guard let previous, bounds != previous else { return }
         caughtUpLate = true
     }
 
-    /// Gave up, or the final check differed.
+    /// Gave up, or the final check differed or could not be read.
     public var isUnsettled: Bool {
         caughtUpLate || gaveUp(at: latest)
     }
