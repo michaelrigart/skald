@@ -122,6 +122,13 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     #expect(mode.issuesChanged([c], checked: true) == [])             // the old list again
     #expect(mode.issuesChanged([], checked: false) == [])
     #expect(mode.issuesChanged([c], checked: true) == [.show(c.id)])
+    var early = open([a, b, c])                                       // the same, with a recheck that came while applying
+    _ = early.key(.accept, issues: [a, b, c], writes: true)
+    _ = early.issuesChanged([], checked: false)
+    _ = early.issuesChanged([b, c], checked: true)
+    #expect(early.finished(.replaced) == [.show(b.id)])
+    #expect(early.key(.accept, issues: [b, c], writes: true) == [.accept(b.id)])
+    #expect(early.finished(.replaced) == [.wait(b.id, .seconds(6))])  // not a show from the earlier recheck's list
 }
 
 @Test func theRecheckFindingNothingEndsTheModeAndAnEarlierIssueIsShownWhenNoneFollows() {
