@@ -6,7 +6,7 @@ struct ClaudeEngineTests {
     private static let request = EngineRequest(action: .shorter, language: .fr, text: "Bonjour tout le monde, comment allez-vous aujourd'hui ?")
 
     private func engine(_ transport: StubTransport, key: String? = "sk-test-key") -> ClaudeEngine {
-        ClaudeEngine(model: "claude-opus-5-5", apiKey: { key }, transport: transport)
+        ClaudeEngine(model: "claude-opus-5-5", apiKey: { key }, transport: transport, options: .panel)
     }
 
     private func reply(stop: String = "end_turn", content: String) -> String {
@@ -52,6 +52,31 @@ struct ClaudeEngineTests {
         #expect(decoded == expected)
     }
 
+    @Test("the typing request holds the paragraph and the check instruction, thinking disabled, and nothing else")
+    func typingRequestShape() async throws {
+        let request = EngineRequest(action: .check, language: .nl, text: "Ik heb de fix nagekeken en het word morgen uitgerold.")
+        let transport = StubTransport(json: reply(content: #"[{"type":"text","text":"Ik heb de fix nagekeken en het wordt morgen uitgerold."}]"#))
+        _ = try await ClaudeEngine(model: "claude-haiku-5-5", apiKey: { "sk-test-key" }, transport: transport, options: .typing).run(request)
+        let sent = try #require(await transport.requests.first)
+        #expect(sent.allHTTPHeaderFields == ["x-api-key": "sk-test-key", "anthropic-version": "2026-10-21", "Content-Type": "application/json"])
+        let body = try #require(sent.httpBody)
+        let decoded = try #require(try JSONSerialization.jsonObject(with: body) as? NSDictionary)
+        #expect(decoded == [
+            "model": "claude-haiku-5-5",
+            "max_tokens": 4096,
+            "system": Prompts.instructions(.check, .nl),
+            "messages": [["role": "user", "content": request.text]],
+            "output_config": ["effort": "low"],
+            "thinking": ["type": "disabled"],
+        ] as NSDictionary)
+    }
+
+    @Test("a rejected key and a rate limit are named", arguments: [(401, UnavailableReason.claudeKeyRejected), (403, .claudeKeyRejected), (429, .claudeRateLimited)])
+    func namedHTTPErrors(_ example: (Int, UnavailableReason)) async {
+        let transport = StubTransport(status: example.0, json: #"{"type":"error","error":{"type":"x","message":"y"}}"#)
+        #expect(await failure(engine(transport)) == .unavailable(example.1))
+    }
+
     @Test("joins every text block and ignores other block types; thinking blocks would otherwise leak into the answer")
     func joinsTextBlocks() async throws {
         let content = #"[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Bonjour "},{"type":"tool_use","id":"x"},{"type":"text","text":"à tous."}]"#
@@ -90,7 +115,7 @@ struct ClaudeEngineTests {
         #expect(await failure(engine(StubTransport(json: "not json"))) == .failed)
     }
 
-    @Test("a non-2xx status is failed", arguments: [400, 401, 429, 500, 529])
+    @Test("a non-2xx status is failed", arguments: [400, 500, 529])
     func httpErrors(status: Int) async {
         let transport = StubTransport(status: status, json: #"{"type":"error","error":{"type":"x","message":"y"}}"#)
         #expect(await failure(engine(transport)) == .failed)
@@ -116,7 +141,7 @@ struct ClaudeEngineTests {
     func keyReadPerRequest() async throws {
         let box = KeyBox()
         let transport = StubTransport(json: reply(content: #"[{"type":"text","text":"Bonjour."}]"#))
-        let engine = ClaudeEngine(model: "m", apiKey: { box.key }, transport: transport)
+        let engine = ClaudeEngine(model: "m", apiKey: { box.key }, transport: transport, options: .panel)
         do {
             _ = try await engine.run(Self.request)
             Issue.record("expected the missing key to fail")

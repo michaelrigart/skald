@@ -142,7 +142,7 @@ final class CompositionRoot {
         return [
             .thisMac: apple,
             .macStudio: StudioEngine(endpoint: settings.studio, transport: transport),
-            .claude: ClaudeEngine(model: settings.claudeModel, apiKey: { keychain.read() }, transport: transport),
+            .claude: ClaudeEngine(model: settings.claudeModel, apiKey: { keychain.read() }, transport: transport, options: .panel),
         ]
     }
 

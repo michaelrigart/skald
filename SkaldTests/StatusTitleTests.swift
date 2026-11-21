@@ -23,6 +23,7 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
     let reasons: [UnavailableReason] = [
         .appleIntelligenceOff, .deviceNotEligible, .modelNotReady, .thermalPause, .languageOff,
         .studioNotConfigured, .studioUnreachable, .claudeKeyMissing,
+        .claudeKeyRejected, .claudeRateLimited,
     ]
     let texts = reasons.map(\.explanation)
     #expect(Set(texts).count == reasons.count)

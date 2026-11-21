@@ -27,6 +27,7 @@ public struct EngineRequest: Sendable {
 public enum UnavailableReason: String, Equatable, Sendable {
     case appleIntelligenceOff, deviceNotEligible, modelNotReady, thermalPause, languageOff
     case studioNotConfigured, studioUnreachable, claudeKeyMissing
+    case claudeKeyRejected, claudeRateLimited
 }
 
 public enum EngineFailure: Error, Equatable, Sendable {

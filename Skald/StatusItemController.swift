@@ -53,6 +53,8 @@ extension UnavailableReason {
         case .studioNotConfigured: "the Mac Studio has no address yet"
         case .studioUnreachable: "the Mac Studio can't be reached"
         case .claudeKeyMissing: "no Claude API key is stored"
+        case .claudeKeyRejected: "Claude didn't accept the API key"
+        case .claudeRateLimited: "Claude is limiting requests"
         }
     }
 }

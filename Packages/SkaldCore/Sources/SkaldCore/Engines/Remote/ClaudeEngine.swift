@@ -6,13 +6,22 @@ public struct ClaudeEngine: Engine {
     private let model: String
     private let apiKey: @Sendable () -> String?
     private let transport: any HTTPTransport
+    private let options: ClaudeRequestOptions
+
+    public static let maxTokens = 4096
 
     public var kind: EngineKind { .claude }
 
-    public init(model: String, apiKey: @escaping @Sendable () -> String?, transport: any HTTPTransport) {
+    public init(
+        model: String,
+        apiKey: @escaping @Sendable () -> String?,
+        transport: any HTTPTransport,
+        options: ClaudeRequestOptions
+    ) {
         self.model = model
         self.apiKey = apiKey
         self.transport = transport
+        self.options = options
     }
 
     public func run(_ r: EngineRequest) async throws(EngineFailure) -> String {
@@ -20,19 +29,28 @@ public struct ClaudeEngine: Engine {
         let body = Body(
             model: model,
             system: Prompts.instructions(r.action, r.language),
-            messages: [Message(role: "user", content: Prompts.prompt(r))]
+            messages: [Message(role: "user", content: Prompts.prompt(r))],
+            thinking: options.thinking == .disabled ? Thinking() : nil,
+            fallbacks: options.serverFallbacks ? "default" : nil
         )
-        let request = try URLRequest.post(Self.endpoint, json: body, headers: [
+        var headers = [
             "x-api-key": key,
             "anthropic-version": "2026-10-21",
-            "anthropic-beta": "server-side-fallback-2026-07-01",
             "content-type": "application/json",
-        ])
-        let data = try await transport.body(of: request) { error in
+        ]
+        if options.serverFallbacks { headers["anthropic-beta"] = "server-side-fallback-2026-07-01" }
+        let request = try URLRequest.post(Self.endpoint, json: body, headers: headers)
+        let data = try await transport.body(of: request, mapping: { error in
             if error.isCancellation { return .cancelled }
             if (error as? URLError)?.code == .timedOut { return .timedOut }
             return .failed
-        }
+        }, status: { code in
+            switch code {
+            case 401, 403: .unavailable(.claudeKeyRejected)
+            case 429: .unavailable(.claudeRateLimited)
+            default: .failed
+            }
+        })
         return try Self.answer(from: data, input: r.text)
     }
 
@@ -54,20 +72,25 @@ public struct ClaudeEngine: Engine {
         let content: String
     }
 
+    private struct Thinking: Encodable {
+        let type = "disabled"
+    }
+
     private struct Body: Encodable {
         struct OutputConfig: Encodable {
             let effort = "low"
         }
 
         let model: String
-        let maxTokens = 4096
-        let fallbacks = "default"
+        let maxTokens = ClaudeEngine.maxTokens
         let system: String
         let messages: [Message]
         let outputConfig = OutputConfig()
+        let thinking: Thinking?
+        let fallbacks: String?
 
         private enum CodingKeys: String, CodingKey {
-            case model, system, messages, fallbacks
+            case model, system, messages, fallbacks, thinking
             case maxTokens = "max_tokens"
             case outputConfig = "output_config"
         }

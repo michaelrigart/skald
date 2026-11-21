@@ -25,7 +25,8 @@ public struct URLSessionTransport: HTTPTransport {
 extension HTTPTransport {
     func body(
         of request: URLRequest,
-        mapping failure: (any Error) -> EngineFailure
+        mapping failure: (any Error) -> EngineFailure,
+        status: (Int) -> EngineFailure = { _ in .failed }
     ) async throws(EngineFailure) -> Data {
         let data: Data
         let response: HTTPURLResponse
@@ -34,7 +35,7 @@ extension HTTPTransport {
         } catch {
             throw failure(error)
         }
-        guard (200..<300).contains(response.statusCode) else { throw .failed }
+        guard (200..<300).contains(response.statusCode) else { throw status(response.statusCode) }
         return data
     }
 }
