@@ -1,0 +1,807 @@
+import Foundation
+
+public struct IssueSnapshot: Sendable, Equatable {
+    public let field: FieldID?
+    public let issues: [Issue]
+    /// Whether Skald is not paused, a result is in for the caret's paragraph and no model check is running for it, so an
+    /// empty list means a clean field.
+    public let checked: Bool
+
+    public init(field: FieldID?, issues: [Issue], checked: Bool) {
+        self.field = field
+        self.issues = issues
+        self.checked = checked
+    }
+}
+
+/// What a route lookup is for: the on-device spelling switches, or the model check's engine.
+enum RouteLookup: Sendable {
+    case spelling, model
+}
+
+/// Turns field events into published issues: drives the scheduler on the injected clock, runs spelling and
+/// model checks by route, and publishes only results whose epoch, generation, paragraph and route still hold.
+public actor CheckPipeline {
+    private struct Timing: Sendable {
+        let elapsed: @Sendable () -> Duration
+        let sleep: @Sendable (Duration) async throws -> Void
+
+        static func starting<C: Clock<Duration>>(now clock: C) -> Timing {
+            let origin = clock.now
+            return Timing(
+                elapsed: { origin.duration(to: clock.now) },
+                sleep: { try await clock.sleep(until: origin.advanced(by: $0), tolerance: nil) }
+            )
+        }
+    }
+
+    private struct Timer {
+        let token: Int
+        let deadline: Duration
+        let task: Task<Void, Never>
+    }
+
+    /// The newest read of the focused field, parsed once for language detection and anchoring.
+    private struct LatestRead {
+        let snapshot: FieldSnapshot
+        let keyed: [(ParagraphKey, Paragraph)]
+        let paragraphs: [Paragraph]
+        let parents: [ParagraphKey: Paragraph]
+
+        init(_ snapshot: FieldSnapshot) {
+            let keyed = ParagraphKeys.keyed(snapshot)
+            self.snapshot = snapshot
+            self.keyed = keyed
+            paragraphs = keyed.map(\.1)
+            parents = ParagraphKeys.parents(keyed)
+        }
+    }
+
+    /// A kept edit with the guesses the guard also kept over its range.
+    private struct Found {
+        let edit: Edit
+        var alternatives: [Edit] = []
+    }
+
+    private struct BackgroundJob {
+        let key: ParagraphKey
+        let generation: Int
+    }
+
+    private struct ModelJob {
+        let task: Task<Void, Never>
+        let key: ParagraphKey
+    }
+
+    private enum ModelOutcome {
+        /// The engine answered and the answer was judged: the paragraph counts as checked.
+        case checked
+        /// Cancelled, failed, stale or no longer routed to the model: the next pause runs it again.
+        case dropped
+    }
+
+    public static let claudeTimeout: Duration = .seconds(5)
+    /// The most guesses an issue offers after its first.
+    public static let maxAlternatives = 2
+
+    public nonisolated let issues: AsyncStream<IssueSnapshot>
+    private let publisher: AsyncStream<IssueSnapshot>.Continuation
+    public nonisolated let claudeStatus: AsyncStream<ClaudeStatus>
+    private let statusPublisher: AsyncStream<ClaudeStatus>.Continuation
+    private let access: any TextAccess
+    private let apple: any Engine
+    private let claude: (@Sendable (_ model: String) -> any Engine)?
+    private let claudeOutcome: (@Sendable (ClaudeOutcome) -> Void)?
+    private let showClaude: (@Sendable (ClaudeStatus) async -> Void)?
+    private let spelling: any SpellingChecking
+    private let detector: any LanguageDetecting
+    private let detections: DetectionMemo
+    private let oracle: any WordOracle
+    private let confirmer: (any EditConfirming)?
+    private let clock: any Clock<Duration>
+    private let router: LiveRouter
+
+    private var settings: Settings
+    private var editGuard: EditGuard
+    private var scheduler = CheckScheduler()
+    private(set) var tracker = IssueTracker()
+    private(set) var lastPublished = IssueSnapshot(field: nil, issues: [], checked: false)
+    private var timing: Timing
+    private var events: Task<Void, Never>?
+    private var timer: Timer?
+    private var lastToken = 0
+    private var jobs: [UUID: Task<Void, Never>] = [:]
+    /// The job allowed to act for each key; a job that is no longer its key's ends silently.
+    private var spellingJobs: [ParagraphKey: UUID] = [:]
+    /// The background spelling job the scheduler is running, which is also its key's spelling job unless the caret's
+    /// visit superseded it.
+    private var backgroundJob: BackgroundJob?
+    /// Every background spelling job still running, including those the scheduler has dropped.
+    private var backgroundJobIDs: Set<UUID> = []
+    /// Called with the language and the kind of lookup before each route lookup; tests hold lookups here.
+    private var routeHook: (@Sendable (Language, RouteLookup) async -> Void)?
+    /// Called in a request's task after its cancellation check and before it is sent; tests hold requests here.
+    private var requestHook: (@Sendable () async -> Void)?
+    /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
+    /// cancels is removed without a report, since the scheduler has already let it go. A job knows its paragraph's key,
+    /// so a snapshot is not `checked` while the caret's paragraph still has one.
+    private var modelJobs: [Int: ModelJob] = [:]
+    private var epoch = 0
+    /// Advanced by every field event the scheduler acts on and every lifecycle change: pause, resume, update and
+    /// recheck. A read keeps its answer only while the revision it started at is current.
+    private var readRevision = 0
+    private var readsInFlight = 0
+    private var isPaused = false
+    private var currentField: FieldID?
+    private var fieldLanguages = FieldLanguages()
+    private var latest: LatestRead?
+    private var appleUnavailable: UnavailableReason?
+    private var backoff = ClaudeBackoff()
+    /// The value last yielded on `claudeStatus`.
+    private(set) var lastClaudeStatus = ClaudeStatus.quiet
+
+    public init(
+        access: any TextAccess,
+        apple: any Engine,
+        claude: (@Sendable (_ model: String) -> any Engine)? = nil,
+        onClaudeRequest: (@Sendable (ClaudeOutcome) -> Void)? = nil,
+        showClaude: (@Sendable (ClaudeStatus) async -> Void)? = nil,
+        spelling: any SpellingChecking,
+        detector: any LanguageDetecting,
+        oracle: any WordOracle,
+        confirmer: (any EditConfirming)?,
+        clock: any Clock<Duration>,
+        settings: Settings,
+        router: LiveRouter
+    ) {
+        (issues, publisher) = AsyncStream.makeStream(of: IssueSnapshot.self, bufferingPolicy: .bufferingNewest(1))
+        (claudeStatus, statusPublisher) = AsyncStream.makeStream(of: ClaudeStatus.self, bufferingPolicy: .bufferingNewest(1))
+        self.access = access
+        self.apple = apple
+        self.claude = claude
+        claudeOutcome = onClaudeRequest
+        self.showClaude = showClaude
+        self.spelling = spelling
+        self.detector = detector
+        detections = DetectionMemo(detector)
+        self.oracle = oracle
+        self.confirmer = confirmer
+        self.clock = clock
+        self.settings = settings
+        self.router = router
+        editGuard = EditGuard(neverTouch: Set(settings.neverTouch))
+        timing = Timing.starting(now: clock)
+    }
+
+    deinit {
+        events?.cancel()
+        publisher.finish()
+        statusPublisher.finish()
+    }
+
+    public func start() {
+        guard events == nil else { return }
+        let clock = self.clock
+        timing = Timing.starting(now: clock)
+        let stream = access.events
+        events = Task { [weak self] in
+            for await event in stream {
+                guard let self else { return }
+                await self.receive(event)
+            }
+        }
+    }
+
+    public func setPaused(_ p: Bool) {
+        guard p != isPaused else { return }
+        isPaused = p
+        epoch += 1
+        readRevision += 1
+        send(p ? .paused : .resumed)
+        refreshClaudeStatus()
+    }
+
+    /// Call when the Claude key changes: the failures remembered so far were for another key.
+    public func resetClaude() {
+        backoff = ClaudeBackoff()
+        refreshClaudeStatus()
+    }
+
+    /// Call after the `LiveRouter` holds the router for these settings. The new epoch dooms every check in
+    /// flight. When the caret's checks were running, the field is focused again in the scheduler: that cancels the
+    /// running model check without starting the next chunk, lets spelling run again and checks after the pause.
+    /// A running background check alone is forgotten and read for again, so its key is queued once it ends.
+    public func update(settings new: Settings) {
+        if Self.differsOnlyInDisplay(new, from: settings) {
+            settings = new
+            publish()
+            return
+        }
+        let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
+            || new.claudeTyping != settings.claudeTyping || new.claudeLanguages != settings.claudeLanguages
+            || new.appOverrides != settings.appOverrides
+        let background = backgroundJob
+        let discarded = spellingJobs.values.contains { !backgroundJobIDs.contains($0) } || !modelJobs.isEmpty
+        settings = new
+        editGuard = EditGuard(neverTouch: Set(new.neverTouch))
+        appleUnavailable = nil
+        epoch += 1
+        readRevision += 1
+        if switchesChanged {
+            send(.recheck)
+        } else if discarded, let currentField {
+            send(.field(.focused(currentField)))
+        } else if let background, background.key.field == currentField {
+            send(.forget([background.key]))
+            send(.reread)
+        } else if readsInFlight > 0 {
+            send(.reread)
+        }
+        let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
+        tracker.keepAlternatives { alternative, issue in !editGuard.touchesNeverTouch(alternative, in: issue.chunk.text) }
+        if !touching.isEmpty { send(.forget(touching)) }
+        publish()
+        refreshClaudeStatus()
+    }
+
+    /// Whether the settings differ at most in what is shown: the hidden kinds and the review shortcut. Such a change
+    /// republishes and does nothing else. Every other field takes part in the comparison, so a new one can't slip by.
+    private static func differsOnlyInDisplay(_ new: Settings, from old: Settings) -> Bool {
+        var aligned = new
+        aligned.restoreDisplay(from: old)
+        return aligned == old && new != old
+    }
+
+    /// The field's last confident language, kept for the newest fields across focus changes; the panel's
+    /// paragraphs too short to detect inherit it.
+    public func lastConfidentLanguage(for field: FieldID) -> Language? {
+        fieldLanguages[field]
+    }
+
+    /// Writes the issue's fix, or with `alternative` the guess whose replacement is that text, looked up among the
+    /// alternatives it has now: a guess the pipeline stripped since the caller saw it is refused.
+    public func accept(_ id: UUID, alternative: String? = nil) async -> ReplaceOutcome {
+        guard let issue = tracker.issue(id) else { return .failed }
+        let edit: Edit
+        if let alternative {
+            guard let guess = issue.alternatives.first(where: { $0.replacement == alternative }) else { return .failed }
+            edit = guess
+        } else {
+            edit = issue.edit
+        }
+        guard !edit.writeText.isEmpty else { return .failed }
+        let write = edit.writeRange
+        let outcome = await access.replace(
+            TextRange(location: issue.chunk.range.location + write.location, length: write.length),
+            expected: issue.expected,
+            with: edit.writeText,
+            in: issue.key.field
+        )
+        tracker.remove(id)
+        publish()
+        return outcome
+    }
+
+    public func ignore(_ id: UUID) {
+        tracker.ignore(id)
+        publish()
+    }
+
+    /// Returns the issue's word after removing every issue on it; the caller adds it to the never-touch list.
+    public func neverFlag(_ id: UUID) -> String? {
+        guard let word = tracker.issue(id)?.word else { return nil }
+        let dropped = tracker.removeAll(word: word)
+        if !dropped.isEmpty { send(.forget(dropped)) }
+        publish()
+        return word
+    }
+
+    // MARK: Events, and the hooks tests drive directly
+
+    func receive(_ event: FieldEvent) {
+        switch event {
+        case .focused(let field):
+            currentField = field
+            epoch += 1
+            readRevision += 1
+            refreshClaudeStatus()
+        case .edited(let field), .caretMoved(let field):
+            if field == currentField { readRevision += 1 }
+        }
+        send(.field(event))
+    }
+
+    func setRouteHook(_ hook: (@Sendable (Language, RouteLookup) async -> Void)?) {
+        routeHook = hook
+    }
+
+    func setRequestHook(_ hook: (@Sendable () async -> Void)?) {
+        requestHook = hook
+    }
+
+    /// Waits until no job is running and no due timer is left to fire; with `ignoringBackground`, background
+    /// spelling jobs may still be running.
+    func drain(ignoringBackground: Bool = false) async {
+        while !Task.isCancelled {
+            if let timer, timer.deadline <= timing.elapsed() {
+                await timer.task.value
+            } else if let job = jobs.first(where: { !ignoringBackground || !backgroundJobIDs.contains($0.key) })?.value {
+                await job.value
+            } else {
+                return
+            }
+        }
+    }
+
+    // MARK: Scheduler
+
+    private func send(_ event: SchedulerEvent) {
+        for effect in scheduler.handle(event, at: timing.elapsed()) {
+            apply(effect)
+        }
+        publish()
+    }
+
+    private func apply(_ effect: SchedulerEffect) {
+        switch effect {
+        case .armTimer(let deadline):
+            arm(deadline)
+        case .disarmTimer:
+            timer?.task.cancel()
+            timer = nil
+        case .read(let field):
+            track { await $0.read(field) }
+        case .suspendIssues(let field):
+            tracker.suspend(field)
+        case .revalidate(let snapshot):
+            let read = LatestRead(snapshot)
+            latest = read
+            refreshClaudeStatus()
+            detections.prune(keeping: Set(read.paragraphs.map(\.text)).union([snapshot.text]))
+            let dropped = tracker.revalidate(snapshot)
+            if !dropped.isEmpty { send(.forget(dropped)) }
+        case .clearIssues:
+            tracker.clear()
+        case .checkSpelling(let key, let chunk, let parent):
+            startSpelling(key, chunk: chunk, parent: parent)
+        case .spellBackground(let key, let chunk, let parent, let generation):
+            startBackgroundSpelling(key, chunk: chunk, parent: parent, generation: generation)
+        case .checkModel(let key, let chunk, let parent, let generation):
+            startModel(key, chunk: chunk, parent: parent, generation: generation)
+        case .cancelModel(let generation):
+            modelJobs.removeValue(forKey: generation)?.task.cancel()
+        }
+    }
+
+    private func arm(_ deadline: Duration) {
+        timer?.task.cancel()
+        lastToken += 1
+        let token = lastToken
+        let sleep = timing.sleep
+        let task = Task { [weak self] in
+            let fired = (try? await sleep(deadline)) != nil
+            await self?.timerEnded(token, fired: fired)
+        }
+        timer = Timer(token: token, deadline: deadline, task: task)
+    }
+
+    private func timerEnded(_ token: Int, fired: Bool) {
+        guard timer?.token == token else { return }
+        timer = nil
+        if fired { send(.timerFired) }
+    }
+
+    @discardableResult
+    private func track(_ id: UUID = UUID(), _ job: @escaping @Sendable (isolated CheckPipeline) async -> Void) -> Task<Void, Never> {
+        let task = Task {
+            await job(self)
+            self.jobs[id] = nil
+        }
+        jobs[id] = task
+        return task
+    }
+
+    /// A snapshot taken before a newer field event or lifecycle change is stale: that change scheduled its own read.
+    private func read(_ field: FieldID) async {
+        let revision = readRevision
+        readsInFlight += 1
+        let snapshot = await access.snapshot(of: field)
+        readsInFlight -= 1
+        guard let snapshot, revision == readRevision else { return }
+        send(.snapshot(snapshot))
+    }
+
+    // MARK: Spelling
+
+    private func startSpelling(_ key: ParagraphKey, chunk: Paragraph, parent: Paragraph) {
+        guard let language = detectLanguage(of: parent, in: key.field) else { return send(.forget([key])) }
+        let epoch = self.epoch
+        let id = UUID()
+        spellingJobs[key] = id
+        track(id) { pipeline in
+            await pipeline.spell(key, chunk: chunk, language: language, epoch: epoch, id: id)
+            if pipeline.spellingJobs[key] == id { pipeline.spellingJobs[key] = nil }
+        }
+    }
+
+    /// Spells a paragraph the caret is not in. The language is the paragraph's own, never the field's last one, and
+    /// the job sends its finish to the scheduler however it ends, from inside a tracked job.
+    private func startBackgroundSpelling(_ key: ParagraphKey, chunk: Paragraph, parent: Paragraph, generation: Int) {
+        let epoch = self.epoch
+        let id = UUID()
+        spellingJobs[key] = id
+        backgroundJob = BackgroundJob(key: key, generation: generation)
+        backgroundJobIDs.insert(id)
+        track(id) { pipeline in
+            if let language = pipeline.detectLanguage(of: parent, in: key.field, atCaret: false) {
+                await pipeline.spell(key, chunk: chunk, language: language, epoch: epoch, id: id, inBackground: true)
+            } else if pipeline.spellingJobs[key] == id {
+                pipeline.send(.forget([key]))
+            }
+            if pipeline.spellingJobs[key] == id { pipeline.spellingJobs[key] = nil }
+            if pipeline.backgroundJob?.generation == generation { pipeline.backgroundJob = nil }
+            pipeline.backgroundJobIDs.remove(id)
+            pipeline.send(.backgroundSpelled(generation: generation))
+        }
+    }
+
+    private func spell(_ key: ParagraphKey, chunk: Paragraph, language: Language, epoch: Int, id: UUID, inBackground: Bool = false) async {
+        guard await route(language, .spelling, app: key.field.app) != .off else {
+            let keepsClaudeResult = await route(language, .model, app: key.field.app) == .claude
+            guard spellingJobs[key] == id else { return }
+            if keepsClaudeResult { return }
+            if epoch == self.epoch { tracker.clear(key) }
+            if inBackground && epoch == self.epoch { return }
+            return send(.forget([key]))
+        }
+        let flags = await spelling.flags(in: chunk, language: language, neverTouch: Set(settings.neverTouch))
+        let editGuard = self.editGuard
+        let resolved = await editGuard.resolve(
+            flags.map(\.edit) + flags.flatMap(\.alternatives), in: chunk.text, language: language, source: .spelling, oracle: oracle, confirmer: nil
+        )
+        let kept = Set(resolved)
+        let found = flags.filter { kept.contains($0.edit) }.map {
+            Found(edit: $0.edit, alternatives: Array($0.alternatives.filter(kept.contains).prefix(Self.maxAlternatives)))
+        }
+        guard epoch == self.epoch, await route(language, .spelling, app: key.field.app) != .off, epoch == self.epoch, spellingJobs[key] == id,
+              let issues = anchored(found, key: key, source: .spelling, language: language, engine: nil, facts: WordFacts())
+        else {
+            guard spellingJobs[key] == id else { return }
+            return send(.forget([key]))
+        }
+        tracker.setSpelling(issues, for: key)
+        publish()
+    }
+
+    // MARK: Model
+
+    private func startModel(_ key: ParagraphKey, chunk: Paragraph, parent: Paragraph, generation: Int) {
+        guard let language = detectLanguage(of: parent, in: key.field) else { return send(.modelFailed(generation: generation)) }
+        let epoch = self.epoch
+        let spellingJob = spellingJobs[key].flatMap { jobs[$0] }
+        let task = track { pipeline in
+            await spellingJob?.value
+            let outcome = await pipeline.checkModel(key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+            pipeline.finishModel(generation, outcome)
+        }
+        modelJobs[generation] = ModelJob(task: task, key: key)
+    }
+
+    private func checkModel(_ key: ParagraphKey, chunk: Paragraph, language: Language, generation: Int, epoch: Int) async -> ModelOutcome {
+        let app = key.field.app
+        guard isCurrent(epoch, generation) else { return .dropped }
+        let route = await route(language, .model, app: app)
+        guard isCurrent(epoch, generation) else { return .dropped }
+        let request = EngineRequest(action: .check, language: language, text: chunk.text)
+        switch route {
+        case .claude:
+            guard let makeEngine = claude else { return .dropped }
+            guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+            }
+            let status = ClaudeStatus(sending: true, trouble: backoff.trouble)
+            publishClaudeStatus(status)
+            if let showClaude {
+                await showClaude(status)
+                let routed = await self.route(language, .model, app: app)
+                guard isCurrent(epoch, generation), routed == .claude else { return .dropped }
+                guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                    return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+                }
+            }
+            let engine = makeEngine(settings.claudeTypingModel)
+            let (result, sent) = await ask(engine, request)
+            if sent, let outcome = ClaudeOutcome(result) { claudeOutcome?(outcome) }
+            switch result {
+            case .success:
+                backoff.succeeded()
+                await updateClaudeStatus()
+                return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .claude)
+            case .failure(let failure):
+                guard let trouble = ClaudeTrouble(failure) else { return .dropped }
+                backoff.failed(trouble, text: chunk.text, at: timing.elapsed())
+                await updateClaudeStatus()
+                return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+            }
+        case .model:
+            let result = await runApple(request)
+            return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac)
+        case .spellingOnly, .off:
+            return .dropped
+        }
+    }
+
+    /// What the language's on-device switches say, for a chunk Claude was not asked about or could not answer. A key
+    /// names its paragraph's text, so Claude issues still shown for it are for this text and stay.
+    private func fallBack(
+        _ request: EngineRequest,
+        _ key: ParagraphKey,
+        chunk: Paragraph,
+        language: Language,
+        generation: Int,
+        epoch: Int
+    ) async -> ModelOutcome {
+        guard isCurrent(epoch, generation) else { return .dropped }
+        if tracker.hasModelIssues(for: key, from: .claude) { return .checked }
+        guard await onDeviceRoute(language) == .model, isCurrent(epoch, generation) else { return .dropped }
+        let result = await runApple(request)
+        return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac, fallingBack: true)
+    }
+
+    private func runApple(_ request: EngineRequest) async -> Result<String, EngineFailure> {
+        do throws(EngineFailure) {
+            return .success(try await apple.run(request))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Judges and publishes an engine's answer while the epoch, the generation and the route for that engine still hold.
+    private func judged(
+        _ result: Result<String, EngineFailure>,
+        _ key: ParagraphKey,
+        chunk: Paragraph,
+        language: Language,
+        generation: Int,
+        epoch: Int,
+        engine: EngineKind,
+        fallingBack: Bool = false
+    ) async -> ModelOutcome {
+        let output: String
+        switch result {
+        case .success(let text):
+            output = text
+        case .failure(let failure):
+            if case .unavailable(let reason) = failure, engine == .thisMac, epoch == self.epoch { appleUnavailable = reason }
+            return .dropped
+        }
+        guard isCurrent(epoch, generation) else { return .dropped }
+
+        let answered = await ModelAnswer.judge(
+            output, for: chunk.text, language: language, editGuard: editGuard, detector: detector, oracle: oracle, confirmer: confirmer
+        ) { [weak self] language in
+            await self?.mayConfirm(language, engine: engine, epoch: epoch, generation: generation) ?? false
+        }
+        let kept: [Edit]? = if case .kept(let edits) = answered { edits } else { nil }
+        // Awaited before the route lookup and the checks below, so a stale answer is still dropped.
+        let facts = if let kept, !kept.isEmpty { await oracle.facts(for: EditGuard.words(in: kept), language: language) } else { WordFacts() }
+        let expected: TypingRoute = engine == .claude ? .claude : .model
+        let current = fallingBack ? await onDeviceRoute(language) : await route(language, .model, app: key.field.app)
+        guard isCurrent(epoch, generation), current == expected, isCurrent(epoch, generation),
+              let issues = anchored((kept ?? []).map { Found(edit: $0) }, key: key, source: .model, language: language, engine: engine, facts: facts)
+        else { return .dropped }
+        guard kept != nil else { return .checked }
+        tracker.setModel(issues, for: key)
+        publish()
+        return .checked
+    }
+
+    /// Races the request against the deadline on the injected clock. At the deadline, or when the caller is
+    /// cancelled, the request's task is cancelled and its answer, if it comes, is never read. A caller already
+    /// cancelled sends nothing. `sent` is whether the engine was asked: the request's task and the caller settle it
+    /// once through `RequestMarker`, so the engine is entered exactly when `sent` is true.
+    private func ask(_ engine: any Engine, _ request: EngineRequest) async -> (result: Result<String, EngineFailure>, sent: Bool) {
+        guard !Task.isCancelled else { return (.failure(.cancelled), false) }
+        let (events, continuation) = AsyncStream.makeStream(of: Result<String, EngineFailure>.self)
+        let deadline = timing.elapsed() + Self.claudeTimeout
+        let sleep = timing.sleep
+        let hook = requestHook
+        let marker = RequestMarker()
+        let call = Task {
+            guard !Task.isCancelled else {
+                continuation.yield(.failure(.cancelled))
+                return
+            }
+            if let hook { await hook() }
+            guard marker.send() else {
+                continuation.yield(.failure(.cancelled))
+                return
+            }
+            do throws(EngineFailure) {
+                continuation.yield(.success(try await engine.run(request)))
+            } catch {
+                continuation.yield(.failure(error))
+            }
+        }
+        let timer = Task {
+            if (try? await sleep(deadline)) != nil { continuation.yield(.failure(.timedOut)) }
+        }
+        let result = await withTaskCancellationHandler {
+            for await result in events { return result }
+            return Result<String, EngineFailure>.failure(.cancelled)
+        } onCancel: {
+            call.cancel()
+            timer.cancel()
+            continuation.yield(.failure(.cancelled))
+        }
+        call.cancel()
+        timer.cancel()
+        continuation.finish()
+        return (result, marker.settle())
+    }
+
+    private func finishModel(_ generation: Int, _ outcome: ModelOutcome) {
+        guard modelJobs.removeValue(forKey: generation) != nil else { return }
+        switch outcome {
+        case .checked: send(.modelFinished(generation: generation))
+        case .dropped: send(.modelFailed(generation: generation))
+        }
+    }
+
+    private func isCurrent(_ epoch: Int, _ generation: Int) -> Bool {
+        epoch == self.epoch && modelJobs[generation] != nil && !Task.isCancelled
+    }
+
+    /// Apple's answer is confirmed while the language's on-device switches allow the model; Claude's is confirmed
+    /// whenever Apple is available, whatever those switches say.
+    private func mayConfirm(_ language: Language, engine: EngineKind, epoch: Int, generation: Int) async -> Bool {
+        guard isCurrent(epoch, generation) else { return false }
+        let allowed = engine == .claude ? await router.current.canConfirmOnDevice : await router.modelAllowed(language)
+        return allowed && appleUnavailable == nil && isCurrent(epoch, generation)
+    }
+
+    // MARK: Routing and publication
+
+    private func route(_ language: Language, _ lookup: RouteLookup, app: String) async -> TypingRoute {
+        await routeHook?(language, lookup)
+        let router = await router.current
+        updateClaudeStatus(router)
+        return withAppleAvailability(lookup == .model && claude != nil ? router.typing(language, app: app) : router.onDevice(language))
+    }
+
+    /// The route the language's on-device switches give, which is where a check falls back to.
+    private func onDeviceRoute(_ language: Language) async -> TypingRoute {
+        withAppleAvailability(await router.current.onDevice(language))
+    }
+
+    private func withAppleAvailability(_ route: TypingRoute) -> TypingRoute {
+        if route == .model, let appleUnavailable { return .spellingOnly(appleUnavailable) }
+        return route
+    }
+
+    // MARK: Claude status
+
+    private func refreshClaudeStatus() {
+        guard claude != nil else { return }
+        track { await $0.updateClaudeStatus() }
+    }
+
+    private func updateClaudeStatus() async {
+        updateClaudeStatus(await router.current)
+    }
+
+    private func updateClaudeStatus(_ router: EngineRouter) {
+        guard claude != nil else { return }
+        let routed = currentField.flatMap { field in fieldLanguages[field].map { router.typing($0, app: field.app) == .claude } } ?? false
+        let suspended = backoff.isSuspended(at: timing.elapsed())
+        let trouble = backoff.trouble ?? (routed ? currentField.flatMap(failedTrouble) : nil)
+        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: trouble, suspended: suspended))
+    }
+
+    /// Why Claude failed on the caret's text in `field` before, which is why it is not asked about it again.
+    private func failedTrouble(in field: FieldID) -> ClaudeTrouble? {
+        guard let snapshot = latest?.snapshot, snapshot.field == field else { return nil }
+        let backoff = self.backoff
+        return ParagraphKeys.chunkKeys(snapshot, caret: snapshot.selection.location).lazy
+            .compactMap { backoff.trouble(forFailedText: $0.chunk.text) }.first
+    }
+
+    private func publishClaudeStatus(_ status: ClaudeStatus) {
+        guard status != lastClaudeStatus else { return }
+        lastClaudeStatus = status
+        statusPublisher.yield(status)
+    }
+
+    /// The paragraph's language by `LanguageDetecting.language(of:field:read:)`, read around in the latest snapshot of
+    /// its field. Only the caret's paragraph reads and sets the field's last confident language.
+    private func detectLanguage(of paragraph: Paragraph, in field: FieldID, atCaret: Bool = true) -> Language? {
+        let read = latest.flatMap { latest in
+            latest.snapshot.field == field ? (paragraphs: latest.paragraphs, text: latest.snapshot.text) : nil
+        }
+        let language = detections.language(of: paragraph, field: atCaret ? fieldLanguages[field] : nil, read: read)
+        if atCaret, let language { fieldLanguages[field] = language }
+        return language
+    }
+
+    /// Anchors kept edits to the key's paragraph in the latest snapshot, or returns nil when it is gone.
+    private func anchored(
+        _ found: [Found], key: ParagraphKey, source: IssueSource, language: Language, engine: EngineKind?, facts: WordFacts
+    ) -> [Issue]? {
+        guard let latest, let (parent, chunk) = ParagraphKeys.locate(key, in: latest.parents) else { return nil }
+        return found
+            .filter { !editGuard.touchesNeverTouch($0.edit, in: chunk.text) }
+            .map {
+                Issue(
+                    key: key, parent: parent, chunk: chunk, edit: $0.edit, source: source, language: language, engine: engine,
+                    kind: IssueClassifier.kind(of: $0.edit, in: chunk.text, language: language, source: source, facts: facts),
+                    alternatives: $0.alternatives.filter { !editGuard.touchesNeverTouch($0, in: chunk.text) }
+                )
+            }
+    }
+
+    /// Every chunk of the paragraph holding the caret in the latest read of the field has a stored result and no model
+    /// check is running for one of them; with the caret in no paragraph, any result for the field counts.
+    private func hasCheckedCaretParagraph(in field: FieldID) -> Bool {
+        guard let latest, latest.snapshot.field == field,
+              let caret = Paragraphs.around(caret: latest.snapshot.selection.location, in: latest.paragraphs),
+              let key = latest.keyed.first(where: { $0.1 == caret })?.0
+        else { return tracker.hasResults(in: field) }
+        let keys = ParagraphKeys.chunkKeys(of: caret, key: key).map(\.0)
+        return tracker.hasResults(for: keys, in: field) && !modelJobs.values.contains { keys.contains($0.key) }
+    }
+
+    private func publish() {
+        let hidden = Set(settings.hiddenKinds)
+        let visible = isPaused ? [] : currentField.map { tracker.visible(in: $0).filter { !hidden.contains($0.kind) } } ?? []
+        let checked = !isPaused && (currentField.map(hasCheckedCaretParagraph) ?? false)
+        let snapshot = IssueSnapshot(field: currentField, issues: visible, checked: checked)
+        guard snapshot != lastPublished else { return }
+        lastPublished = snapshot
+        publisher.yield(snapshot)
+    }
+}
+
+/// Whether a request was sent, decided once by whichever of the request's task and its caller gets there first:
+/// the task sends only while the caller has not settled, and the caller's answer is whatever the task did by then.
+final class RequestMarker: @unchecked Sendable { // reason: the state is only touched under the lock
+    private enum State { case idle, sent, abandoned }
+
+    private let lock = NSLock()
+    private var state = State.idle
+
+    /// Whether the request's task may enter the engine.
+    func send() -> Bool {
+        lock.withLock {
+            guard state == .idle else { return false }
+            state = .sent
+            return true
+        }
+    }
+
+    /// Whether the request was sent; a request not yet sent never will be.
+    func settle() -> Bool {
+        lock.withLock {
+            if state == .idle { state = .abandoned }
+            return state == .sent
+        }
+    }
+}
+
+/// Each field's last confident language, for the newest fields set; the oldest goes first.
+struct FieldLanguages {
+    static let capacity = 20
+
+    private var languages: [FieldID: Language] = [:]
+    private var order: [FieldID] = []
+
+    subscript(field: FieldID) -> Language? {
+        get { languages[field] }
+        set {
+            order.removeAll { $0 == field }
+            languages[field] = newValue
+            guard newValue != nil else { return }
+            order.append(field)
+            if order.count > Self.capacity { languages[order.removeFirst()] = nil }
+        }
+    }
+}

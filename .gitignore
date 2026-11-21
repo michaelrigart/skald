@@ -1,0 +1,6 @@
+Skald.xcodeproj/
+build/
+.build/
+.superpowers/
+.claude/
+.DS_Store

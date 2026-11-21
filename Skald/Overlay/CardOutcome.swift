@@ -1,0 +1,321 @@
+import Foundation
+import Observation
+import SkaldCore
+
+/// What a card does once Accept has an outcome.
+enum CardOutcome: Equatable {
+    case close
+    /// The card stays with one line of reason, and Copy fix when the clipboard doesn't already hold it.
+    case keepOpen(reason: String, offersCopy: Bool)
+
+    /// `canCopy` is false for a fix with no text to copy (a deletion), so neither the button nor the reason offers one.
+    init(_ outcome: ReplaceOutcome, canCopy: Bool) {
+        switch outcome {
+        case .replaced: self = .close
+        case .unsupported:
+            self = .keepOpen(reason: "Skald can't write in this field." + (canCopy ? " Copy the fix instead." : ""), offersCopy: canCopy)
+        case .clipboardBusy:
+            self = .keepOpen(
+                reason: "Skald can't paste while the clipboard holds protected content or an earlier fix." + (canCopy ? " Copy the fix instead." : ""),
+                offersCopy: canCopy
+            )
+        case .failed: self = .keepOpen(reason: "The change didn't go through.", offersCopy: canCopy)
+        case .refusedChanged: self = .keepOpen(reason: "The text changed since Skald checked it.", offersCopy: canCopy)
+        case .refusedOtherField: self = .keepOpen(reason: "The field isn't focused any more.", offersCopy: canCopy)
+        case .unconfirmed:
+            self = .keepOpen(reason: "The app didn't show the change. The clipboard now holds the fix.", offersCopy: false)
+        }
+    }
+}
+
+/// Why the words may have moved on screen. A window move or a scroll moves them from under a ready card; a
+/// caret move only redraws, since typing and clicking end a ready card by themselves. An edit changed the
+/// field's text: it ends a clipboard notice.
+enum LayoutChange: Equatable {
+    case window, caret, scroll, edit
+}
+
+/// The flagged words and their surroundings, cut by UTF-16 units and widened to whole characters.
+struct CardContent: Equatable {
+    let before: String
+    let original: String
+    let replacement: String
+    let after: String
+
+    init(before: String, original: String, replacement: String, after: String) {
+        self.before = before
+        self.original = original
+        self.replacement = replacement
+        self.after = after
+    }
+
+    init(issue: Issue, context: Int = 30) {
+        let text = issue.chunk.text as NSString
+        let edit = issue.edit.range
+        let start = max(0, edit.location - context)
+        let end = min(text.length, edit.end + context)
+        let beforeRange = text.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: edit.location - start))
+        let afterRange = text.rangeOfComposedCharacterSequences(for: NSRange(location: edit.end, length: end - edit.end))
+        self.init(
+            before: (beforeRange.location > 0 ? "…" : "") + text.substring(with: beforeRange),
+            original: issue.edit.original,
+            replacement: issue.edit.replacement,
+            after: text.substring(with: afterRange) + (NSMaxRange(afterRange) < text.length ? "…" : "")
+        )
+    }
+}
+
+/// One card: its issue's fix, kept here because `accept` drops the issue whatever the outcome, and where the
+/// card is between Accept and its outcome. It writes the clipboard only when Copy fix is pressed.
+@Observable final class IssueCardModel: Identifiable {
+    struct Actions {
+        /// The guess is passed by its replacement text, which the pipeline looks up among the issue's current guesses.
+        let accept: (UUID, _ alternative: String?) async -> ReplaceOutcome
+        let dismiss: (UUID) -> Void
+        /// Still writes the never-touch list.
+        let addToDictionary: (UUID) -> Void
+        let hide: (IssueKind) -> Void
+    }
+
+    enum Phase: Equatable {
+        case ready
+        case working
+        case finished(reason: String, offersCopy: Bool)
+        /// Ruling R123: an unconfirmed card shown again once its field has focus again, with one line and no
+        /// choices.
+        case notice
+        case closed
+    }
+
+    static let clipboardNotice = "The last fix wasn't confirmed; the clipboard holds it."
+    static let reviewKeys = "↩ accept   ⌫ dismiss   ← → move   esc leave"
+
+    let id: UUID
+    let field: FieldID
+    let kind: IssueKind
+    let content: CardContent
+    /// The other guesses' replacements, in order.
+    let alternatives: [String]
+    /// Claude found the issue, so the card says so.
+    let byClaude: Bool
+    /// False in a read-only app, where Copy fix takes Accept's place.
+    let writes: Bool
+    private(set) var phase: Phase = .ready
+    private(set) var copied = false
+    /// The guess Copy last put on the clipboard, which the fix's own Copy fix doesn't change.
+    private(set) var copiedAlternative: String?
+    /// The write's outcome, once Accept has one.
+    private(set) var outcome: ReplaceOutcome?
+    /// Set by the controller while review mode shows this card.
+    var reviewing = false
+    /// Where the card's own buttons go while review mode shows it, so a mouse Accept or Dismiss is a review step
+    /// like ↩ and ⌫, not an edit that ends the mode.
+    struct ReviewRoute {
+        let accept: (String?) -> Void
+        let dismiss: () -> Void
+    }
+    @ObservationIgnored var reviewRoute: ReviewRoute?
+    @ObservationIgnored var onClose: (() -> Void)?
+    /// Called once Accept's outcome left the card open with its reason.
+    @ObservationIgnored var onFinish: (() -> Void)?
+
+    /// What Copy fix copies: the issue's fix, or the guess that was accepted.
+    @ObservationIgnored private var fix: String
+    @ObservationIgnored private let clipboard: any Clipboard
+    @ObservationIgnored private let actions: Actions
+
+    init(issue: Issue, writes: Bool, clipboard: any Clipboard, actions: Actions) {
+        id = issue.id
+        field = issue.key.field
+        kind = issue.kind
+        content = CardContent(issue: issue)
+        alternatives = issue.alternatives.map(\.replacement)
+        byClaude = issue.engine == .claude
+        fix = issue.edit.replacement
+        label = Self.label(for: issue)
+        self.writes = writes
+        self.clipboard = clipboard
+        self.actions = actions
+    }
+
+    var headline: String { kind.headline }
+
+    /// What VoiceOver says for the card, from the category and the change.
+    let label: String
+
+    static func label(for issue: Issue) -> String {
+        let edit = issue.edit
+        let change = switch (edit.original.isEmpty, edit.replacement.isEmpty) {
+        case (true, _): "add \(edit.replacement)"
+        case (_, true): "remove \(edit.original)"
+        default: "\(edit.original), change to \(edit.replacement)"
+        }
+        return "\(issue.kind.category.title): \(change)"
+    }
+
+    var offersAccept: Bool { phase == .ready && writes }
+
+    /// Why the card stays open after an accept that wasn't confirmed.
+    var reason: String? {
+        if case .finished(let reason, _) = phase { return reason }
+        return nil
+    }
+
+    /// Copy fix in the card's menu, whether or not the app also offers it as a button.
+    var canCopyFix: Bool { phase == .ready && !fix.isEmpty }
+
+    /// The guesses show while the card is ready, whether Skald writes or copies.
+    var offersAlternatives: Bool { phase == .ready && !alternatives.isEmpty }
+
+    var showsReviewKeys: Bool { reviewing && phase == .ready }
+
+    /// "Hide "Verb form" suggestions", for a kind that can be hidden.
+    var hideTitle: String? {
+        phase == .ready && kind.isHideable ? #"Hide "\#(kind.title)" suggestions"# : nil
+    }
+
+    /// "Add "word" to dictionary", or nil for an insertion, which has no word.
+    var dictionaryTitle: String? {
+        phase == .ready && !content.original.isEmpty ? #"Add "\#(content.original)" to dictionary"# : nil
+    }
+
+    var offersCopy: Bool {
+        switch phase {
+        case .ready: return !writes && !fix.isEmpty
+        case .finished(_, let offersCopy): return offersCopy
+        case .working, .notice, .closed: return false
+        }
+    }
+
+    func accept(alternative: String? = nil) async {
+        guard offersAccept else { return }
+        if let alternative {
+            guard alternatives.contains(alternative) else { return }
+            fix = alternative
+        }
+        phase = .working
+        let outcome = await actions.accept(id, alternative)
+        self.outcome = outcome
+        switch CardOutcome(outcome, canCopy: !fix.isEmpty) {
+        case .close: close()
+        case .keepOpen(let reason, let offersCopy):
+            phase = .finished(reason: reason, offersCopy: offersCopy)
+            onFinish?()
+        }
+    }
+
+    /// The Accept and guess buttons: review mode's step when it shows this card, else the card's own accept.
+    func pressAccept(alternative: String? = nil) {
+        if let reviewRoute { return reviewRoute.accept(alternative) }
+        Task { await accept(alternative: alternative) }
+    }
+
+    func pressDismiss() {
+        if let reviewRoute { return reviewRoute.dismiss() }
+        dismiss()
+    }
+
+    func copyFix() {
+        guard offersCopy || canCopyFix else { return }
+        clipboard.write(fix)
+        copied = true
+        copiedAlternative = nil
+    }
+
+    /// Where the app has no clean write, a guess is copied instead of accepted.
+    func copy(alternative: String) {
+        guard phase == .ready, alternatives.contains(alternative) else { return }
+        clipboard.write(alternative)
+        copiedAlternative = alternative
+        copied = false
+    }
+
+    func dismiss() {
+        guard phase == .ready else { return }
+        actions.dismiss(id)
+        close()
+    }
+
+    func addToDictionary() {
+        guard dictionaryTitle != nil else { return }
+        actions.addToDictionary(id)
+        close()
+    }
+
+    func hide() {
+        guard hideTitle != nil else { return }
+        actions.hide(kind)
+        close()
+    }
+
+    /// The unconfirmed card, back over its field after focus went elsewhere and returned.
+    func becomeNotice() {
+        guard case .finished = phase else { return }
+        phase = .notice
+    }
+
+    func close() {
+        guard phase != .closed else { return }
+        phase = .closed
+        onClose?()
+    }
+
+    /// A ready card lasts while its issue is visible in its field. Once Accept runs, the pipeline has dropped
+    /// the issue: a working card stays until its outcome, and a finished one while its field keeps focus, so
+    /// it doesn't follow the user to another app. A clipboard notice ignores the issues and ends on any focus change.
+    func survives(visible: Set<UUID>, in field: FieldID?) -> Bool {
+        switch phase {
+        case .ready: field == self.field && visible.contains(id)
+        case .working: true
+        case .finished, .notice: field == self.field
+        case .closed: false
+        }
+    }
+
+    /// A ready card is anchored to words that a window move or a scroll has moved; an edit ends a clipboard
+    /// notice; any other card stays.
+    func survives(_ change: LayoutChange) -> Bool {
+        switch phase {
+        case .ready: change == .caret || change == .edit
+        case .notice: change != .edit
+        case .working, .finished, .closed: true
+        }
+    }
+}
+
+/// Rulings R121 and R123: a card whose write finishes after focus moved to another field doesn't stay over the
+/// other app. An unconfirmed one is hidden, and shown once as a clipboard notice when its field is focused again,
+/// whatever its issues are by then; it is dropped when another card opens. Any other outcome closes.
+struct CardParking {
+    enum AfterFinish: Equatable {
+        case stays, hides, closes
+    }
+
+    struct Parked {
+        let card: IssueCardModel
+        let anchor: CGRect
+        let screen: CGRect
+    }
+
+    private(set) var parked: Parked?
+
+    /// Where `card` goes now that its write finished, `focused` being the field focused now.
+    mutating func finished(_ card: IssueCardModel, focused: FieldID?, anchor: CGRect, screen: CGRect) -> AfterFinish {
+        guard case .finished = card.phase, focused != card.field else { return .stays }
+        guard card.outcome == .unconfirmed else { return .closes }
+        parked = Parked(card: card, anchor: anchor, screen: screen)
+        return .hides
+    }
+
+    /// The parked card, as a clipboard notice, the first time a snapshot shows its field focused again.
+    mutating func received(_ snapshot: IssueSnapshot) -> Parked? {
+        guard let parked, snapshot.field == parked.card.field else { return nil }
+        self.parked = nil
+        parked.card.becomeNotice()
+        return parked
+    }
+
+    mutating func otherCardOpened() {
+        parked = nil
+    }
+}

@@ -1,0 +1,609 @@
+import Foundation
+import Testing
+@testable import SkaldCore
+import SkaldCoreTestSupport
+import struct SkaldCore.Issue
+
+private let mail = "com.example.mail"
+private let dutch = "Ik heb de fix gisterren nagekeken en het word morgen uitgerold"
+private let dutch2 = "Ik heb gisterren ook de logs bekeken"
+private let french = "J'ai vérifié les serveur ce matin et tout marche"
+private let french2 = "J'ai aussi regardé les journaux hier soir"
+private let flew = "We flew to teh office in paris yesterday"
+private let corrections = ["gisterren": "gisteren", "word": "wordt", "serveur": "serveurs"]
+
+private func claudeSettings(_ change: (inout Settings) -> Void = { _ in }) -> Settings {
+    var settings = Settings()
+    settings.claudeTyping = true
+    change(&settings)
+    return settings
+}
+
+private func makeRig(
+    _ settings: Settings = claudeSettings(),
+    claude: FakeEngine = .correcting(corrections),
+    key: Bool = true
+) -> PipelineRig {
+    PipelineRig(settings, claude: claude, key: key, misspellings: ["gisterren": "gisteren", "teh": "the"])
+}
+
+private func units(_ text: String) -> Int {
+    text.utf16.count
+}
+
+/// Waits until the Claude fake has seen `count` calls end cancelled; a late call ends on its own task. A call
+/// that never ends fails the test after five seconds instead of waiting for the suite's limit.
+private func waitForCancelled(_ claude: FakeEngine, _ count: Int) async {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
+        if await claude.cancelled.count >= count { return }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    Testing.Issue.record("fewer than \(count) Claude calls ended cancelled")
+}
+
+private func claudeKinds(_ rig: PipelineRig) async -> [IssueKind] {
+    await rig.pipeline.lastPublished.issues.filter { $0.source == .model }.map(\.kind)
+}
+
+/// Records whether a request began and whether its task was cancelled.
+private final class RequestSensor: @unchecked Sendable { // reason: both flags are only touched under the lock
+    private let lock = NSLock()
+    private var began = false
+    private var cancelled = false
+
+    var hasBegun: Bool { lock.withLock { began } }
+    var wasCancelled: Bool { lock.withLock { cancelled } }
+
+    func begin() { lock.withLock { began = true } }
+    func cancel() { lock.withLock { cancelled = true } }
+
+    /// Waits for the request to begin, for at most five seconds.
+    func waitUntilBegun() async {
+        for _ in 0..<5_000 {
+            if hasBegun { return }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        Testing.Issue.record("the request never began")
+    }
+}
+
+/// An engine that answers only when cancelled, and says when its task is.
+private struct WaitingEngine: Engine {
+    let sensor: RequestSensor
+    var kind: EngineKind { .claude }
+
+    func run(_ r: EngineRequest) async throws(EngineFailure) -> String {
+        await withTaskCancellationHandler {
+            sensor.begin()
+            try? await Task.sleep(for: .seconds(30))
+        } onCancel: {
+            sensor.cancel()
+        }
+        throw .cancelled
+    }
+}
+
+extension CheckPipeline {
+    /// Pauses and reads `probe` in the same turn on the actor, before anything the pause cancelled has run on it.
+    func pauseThenRead(_ probe: @Sendable () -> Bool) -> Bool {
+        setPaused(true)
+        return probe()
+    }
+}
+
+enum ClaudeRecheck: CaseIterable {
+    case switchOnOff, languageTicked, appKept
+
+    var off: Settings {
+        switch self {
+        case .switchOnOff: claudeSettings { $0.claudeTyping = false }
+        case .languageTicked: claudeSettings { $0.claudeLanguages[.nl] = false }
+        case .appKept: claudeSettings { $0.appOverrides[mail] = .thisMacOnly }
+        }
+    }
+}
+
+/// Holds the first route lookup of kind `.model` for Dutch until released.
+private actor LookupHold {
+    private var gate = CallGate(closed: true)
+
+    func arrive(_ language: Language, _ lookup: RouteLookup) async {
+        guard language == .nl, lookup == .model else { return }
+        let index = gate.arrive()
+        if index == 0, gate.mustWait(0) {
+            await withCheckedContinuation { gate.hold(0, $0) }
+        }
+    }
+
+    func waitForLookup() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { gate.wait(id, for: 1, $0) }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
+        }
+    }
+
+    private func stopWaiting(_ id: UUID) {
+        gate.stopWaiting(id)
+    }
+
+    func release() {
+        gate.release(0)
+    }
+}
+
+/// Holds whoever arrives until released.
+private actor ReleaseHold {
+    private var gate = CallGate(closed: true)
+
+    func arrive() async {
+        let index = gate.arrive()
+        if gate.mustWait(index) {
+            await withCheckedContinuation { gate.hold(index, $0) }
+        }
+    }
+
+    func waitForArrival() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { gate.wait(id, for: 1, $0) }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
+        }
+    }
+
+    private func stopWaiting(_ id: UUID) {
+        gate.stopWaiting(id)
+    }
+
+    func release() {
+        gate.release(0)
+    }
+}
+
+struct RequestMarkerTests {
+    @Test func aRequestNotSentBeforeTheCallerSettlesIsNeverSent() {
+        let marker = RequestMarker()
+        #expect(!marker.settle())
+        #expect(!marker.send())
+        #expect(!marker.settle())
+    }
+
+    @Test func aRequestSentBeforeTheCallerSettlesIsReportedSentOnce() {
+        let marker = RequestMarker()
+        #expect(marker.send())
+        #expect(marker.settle())
+        #expect(!marker.send())
+        #expect(marker.settle())
+    }
+}
+
+@Suite(.timeLimit(.minutes(1)))
+struct ClaudeTypingTests {
+    @Test func aDutchParagraphGoesToClaudeAndOnlyItsTextIsSent() async throws {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch + "\n" + dutch2, caret: 3)
+        await rig.check()
+
+        let requests = await claude.requests
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        #expect(request.action == .check)
+        #expect(request.language == .nl)
+        #expect(request.text == dutch)
+        #expect(request.confirmOriginal == nil)
+        #expect(request.confirmReplacement == nil)
+        #expect(rig.claudeModels.models == ["claude-haiku-5-5"])
+        #expect(await rig.engine.requests.isEmpty)
+        let issues = await rig.modelIssues()
+        #expect(issues.map(\.word) == ["gisterren", "word"])
+        #expect(issues.map(\.engine) == [.claude, .claude])
+    }
+
+    @Test func dutchSpellingShowsAtOnceAndClaudeWithdrawsWhatItLeftAlone() async {
+        let claude = FakeEngine.correcting(["word": "wordt"], gated: true)
+        let rig = makeRig(claude: claude)
+        var published = rig.pipeline.issues.makeAsyncIterator()
+        await rig.focus(dutch + "\n" + dutch2, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+        let shown = await PipelineRig.next(&published) { $0.issues.filter { $0.source == .spelling }.count == 2 }
+        #expect(shown?.issues.map(\.parent.text) == [dutch, dutch2])
+        #expect(shown?.issues.map(\.word) == ["gisterren", "gisterren"])
+
+        await claude.open()
+        await rig.pipeline.drain()
+        let issues = await rig.visible()
+        #expect(issues.filter { $0.source == .spelling }.map(\.parent.text) == [dutch2])
+        #expect(issues.filter { $0.source == .model }.map(\.word) == ["word"])
+        #expect(issues.filter { $0.source == .model }.map(\.engine) == [.claude])
+        #expect(await claude.texts == [dutch])
+    }
+
+    @Test func aFrenchParagraphShowsNothingUntilClaudeAnswers() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(french + "\n" + french2, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+        #expect(await rig.visible().isEmpty)
+        #expect(await rig.spelling.texts.isEmpty)
+
+        await claude.open()
+        await rig.pipeline.drain()
+        let issues = await rig.visible()
+        #expect(issues.map(\.word) == ["serveur"])
+        #expect(issues.map(\.engine) == [.claude])
+        #expect(await claude.texts == [french])
+    }
+
+    private func answeredFrench() async -> (PipelineRig, FakeEngine) {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        await rig.focus(french + "\n" + french2, caret: 3)
+        await rig.check()
+        return (rig, claude)
+    }
+
+    @Test func claudesFrenchIssuesSurviveTheCaretLeavingAndComingBack() async {
+        let (rig, claude) = await answeredFrench()
+        let inFrench2 = units(french) + 1 + 3
+
+        await rig.access.moveCaret(to: inFrench2, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.texts == [french, french2])
+
+        await rig.access.moveCaret(to: 3, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        await rig.access.moveCaret(to: 5, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.texts == [french, french2])
+        let issues = await rig.visible()
+        #expect(issues.map(\.word) == ["serveur"])
+        #expect(issues.map(\.engine) == [.claude])
+    }
+
+    @Test func claudesFrenchIssuesSurviveARefocus() async {
+        let (rig, claude) = await answeredFrench()
+        await rig.access.moveCaret(to: units(french) + 1 + 3, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.texts == [french, french2])
+
+        await rig.focus("ok", in: PipelineRig.fieldB)
+        await rig.pipeline.receive(.focused(PipelineRig.fieldA))
+        await rig.check()
+        let issues = await rig.visible()
+        #expect(issues.map(\.word) == ["serveur"])
+        #expect(issues.map(\.engine) == [.claude])
+        #expect(await claude.texts == [french, french2])
+    }
+
+    @Test func englishStaysOnTheMac() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        await rig.focus(flew, caret: 3)
+        await rig.check()
+
+        #expect(await rig.engine.texts == [flew])
+        #expect(await claude.requests.isEmpty)
+        let issues = await rig.modelIssues()
+        #expect(!issues.isEmpty)
+        #expect(issues.allSatisfy { $0.engine == .thisMac })
+    }
+
+    @Test func anAppKeptOnThisMacSendsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claudeSettings { $0.appOverrides[mail] = .thisMacOnly }, claude: claude)
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+
+        #expect(await claude.requests.isEmpty)
+        #expect(await rig.visible().map(\.word) == ["gisterren"])
+    }
+
+    @Test func nothingIsSentWhilePaused() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        await rig.pipeline.setPaused(true)
+        await rig.focus(dutch, caret: 3)
+        await rig.pipeline.receive(.edited(PipelineRig.fieldA))
+        await rig.check()
+
+        #expect(await claude.requests.isEmpty)
+        #expect(await rig.visible().isEmpty)
+    }
+
+    @Test func withoutAKeyDutchIsSpellingOnly() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude, key: false)
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+
+        #expect(await claude.requests.isEmpty)
+        #expect(await rig.visible().map(\.word) == ["gisterren"])
+    }
+
+    @Test(arguments: ["", FieldID.unknownApp])
+    func aFieldWithoutABundleIdentifierSendsNothing(_ app: String) async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        let field = FieldID(app: app, token: "x")
+        await rig.focus(dutch, caret: 3, in: field)
+        await rig.check()
+
+        #expect(await claude.requests.isEmpty)
+        #expect(await rig.visible(in: field).map(\.word) == ["gisterren"])
+    }
+
+    @Test func aNewerPauseCancelsTheRunningRequest() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+
+        let edited = dutch + " nu"
+        await rig.access.set(edited, caret: 3, in: PipelineRig.fieldA)
+        await rig.pipeline.receive(.edited(PipelineRig.fieldA))
+        rig.pass()
+        await claude.waitForRequests(2)
+        #expect(await claude.texts == [dutch, edited])
+
+        await claude.open()
+        await rig.pipeline.drain()
+        await waitForCancelled(claude, 1)
+        #expect(await claude.cancelled == [0])
+        let issues = await rig.modelIssues()
+        #expect(issues.map(\.word) == ["gisterren", "word"])
+        #expect(issues.allSatisfy { $0.chunk.text == edited })
+    }
+
+    @Test func anAnswerWithinTheTimeoutIsUsed() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+
+        rig.clock.advance(by: .milliseconds(4_999))
+        await claude.open()
+        await rig.pipeline.drain()
+        #expect(await rig.modelIssues().map(\.word) == ["gisterren", "word"])
+    }
+
+    @Test func anAnswerAfterTheTimeoutIsIgnored() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+
+        rig.clock.advance(by: CheckPipeline.claudeTimeout)
+        await rig.pipeline.drain()
+        await claude.open()
+        await waitForCancelled(claude, 1)
+        await rig.pipeline.drain()
+        #expect(await rig.modelIssues().isEmpty)
+        #expect(await claude.cancelled == [0])
+    }
+
+    @Test func confirmationStaysOnThisMacForAClaudeAnswer() async {
+        let text = "Ik heb de fix voor paris klaar gezet vandaag"
+        let settings = claudeSettings()
+        #expect(settings.modelChecks[.nl] == false)
+
+        let confirming = makeRig(settings, claude: .correcting(["paris": "Paris"]))
+        await confirming.focus(text, caret: 3)
+        await confirming.check()
+        #expect(await confirming.confirmer.asked == ["paris"])
+        #expect(await confirming.modelIssues().map(\.word) == ["paris"])
+
+        let withoutApple = makeRig(settings, claude: .correcting(["paris": "Paris"]))
+        await withoutApple.update(settings, apple: .appleIntelligenceOff)
+        await withoutApple.focus(text, caret: 3)
+        await withoutApple.check()
+        #expect(await withoutApple.confirmer.asked.isEmpty)
+        #expect(await withoutApple.modelIssues().isEmpty)
+    }
+
+    @Test func anAnswerArrivingAfterTheSwitchWentOffIsDropped() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+
+        await rig.update(claudeSettings { $0.claudeTyping = false })
+        await claude.open()
+        await rig.pipeline.drain()
+        await rig.check()
+        #expect(await rig.modelIssues().isEmpty)
+        #expect(await claude.texts == [dutch])
+    }
+
+    @Test func aPauseBeforeTheSendSendsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        let hold = LookupHold()
+        await rig.pipeline.setRouteHook { language, lookup in await hold.arrive(language, lookup) }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForLookup()
+
+        await rig.pipeline.setPaused(true)
+        await hold.release()
+        await rig.pipeline.drain()
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
+        #expect(await rig.modelIssues().isEmpty)
+    }
+
+    @Test func aJobCancelledBeforeItsRequestIsCreatedSendsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = PipelineRig(
+            claudeSettings(), claude: claude, key: true,
+            onClaudeFactory: { withUnsafeCurrentTask { $0?.cancel() } },
+            misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+
+        #expect(rig.claudeModels.models == ["claude-haiku-5-5"])
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes.isEmpty)
+        #expect(await rig.modelIssues().isEmpty)
+    }
+
+    @Test func aCancelAfterTheCancellationCheckButBeforeTheSendSendsNothingAndReportsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        let hold = ReleaseHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+
+        await rig.pipeline.setPaused(true)
+        await rig.pipeline.drain()
+        await hold.release()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes.isEmpty)
+    }
+
+    @Test func hidingAKindLeavesARunningRequestAlone() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let settings = claudeSettings()
+        let rig = makeRig(settings, claude: claude)
+        let hold = ReleaseHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+        await hold.release()
+        await claude.waitForRequests(1)
+
+        var hiding = settings
+        hiding.hide(.verbForm)
+        await rig.update(hiding)
+        await claude.open()
+        await rig.pipeline.drain()
+
+        #expect(await claude.requests.count == 1)
+        #expect(await claude.cancelled.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes == [.answered])
+        #expect(await claudeKinds(rig) == [.spelling])
+        await rig.update(settings)
+        #expect(await claudeKinds(rig) == [.spelling, .verbForm])
+        #expect(await claude.requests.count == 1)
+    }
+
+    @Test func nothingIsSentUntilTheMenuBarHasShownClaude() async {
+        let claude = FakeEngine.correcting(corrections)
+        let hold = ReleaseHold()
+        let rig = PipelineRig(
+            claudeSettings(), claude: claude, key: true,
+            showClaude: { _ in await hold.arrive() }, misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+        #expect(await rig.pipeline.lastClaudeStatus.sending)
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
+
+        await hold.release()
+        await rig.pipeline.drain()
+        #expect(await claude.texts == [dutch])
+        #expect(await rig.modelIssues().map(\.word) == ["gisterren", "word"])
+    }
+
+    @Test(arguments: ["a pause", "the app kept on this Mac"])
+    func aChangeWhileTheMenuBarIsShowingClaudeSendsNothing(_ change: String) async {
+        let claude = FakeEngine.correcting(corrections)
+        let hold = ReleaseHold()
+        let rig = PipelineRig(
+            claudeSettings(), claude: claude, key: true,
+            showClaude: { _ in await hold.arrive() }, misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+
+        if change == "a pause" {
+            await rig.pipeline.setPaused(true)
+        } else {
+            await rig.update(claudeSettings { $0.appOverrides[mail] = .thisMacOnly })
+        }
+        await hold.release()
+        await rig.pipeline.drain()
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes.isEmpty)
+    }
+
+    @Test func aRequestIsSentOnlyIfItsOutcomeIsReported() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        let hold = ReleaseHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+        await hold.release()
+        await claude.waitForRequests(1)
+
+        await rig.pipeline.setPaused(true)
+        await rig.pipeline.drain()
+        #expect(rig.claudeOutcomes.outcomes == [.cancelled])
+        #expect(await claude.requests.count == 1)
+        await claude.open()
+    }
+
+    @Test func aPauseCancelsTheRequestInFlightAtOnce() async {
+        let sensor = RequestSensor()
+        let rig = PipelineRig(
+            claudeSettings(), claude: WaitingEngine(sensor: sensor), key: true,
+            misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await sensor.waitUntilBegun()
+
+        #expect(await rig.pipeline.pauseThenRead { sensor.wasCancelled })
+    }
+
+    @Test func keepingTheAppOnThisMacBeforeTheSendSendsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        let hold = LookupHold()
+        await rig.pipeline.setRouteHook { language, lookup in await hold.arrive(language, lookup) }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForLookup()
+
+        await rig.update(claudeSettings { $0.appOverrides[mail] = .thisMacOnly })
+        await hold.release()
+        await rig.pipeline.drain()
+        await rig.check()
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
+        #expect(await rig.visible().map(\.word) == ["gisterren"])
+    }
+
+    @Test(arguments: ClaudeRecheck.allCases)
+    func turningClaudeOnRechecksTheField(_ change: ClaudeRecheck) async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(change.off, claude: claude)
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        #expect(await claude.requests.isEmpty)
+
+        await rig.update(claudeSettings())
+        await rig.check()
+        #expect(await claude.texts == [dutch])
+    }
+}

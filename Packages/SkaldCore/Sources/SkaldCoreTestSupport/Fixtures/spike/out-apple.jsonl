@@ -1,0 +1,36 @@
+{"id":"en1","lang":"en","ms":541.8459177017212,"output":"Hi Sarah, thanks for the quick reply. I've went through the logs and there is definitely something wrong with the backup job on the staging server."}
+{"id":"en2","lang":"en","ms":356.9580316543579,"output":"The new deployment pipeline runs every night at two, but its status isn't reported anywhere yet."}
+{"id":"en3","lang":"en","ms":371.7620372772217,"output":"Could you send me the updated contract before Friday? I want to review it with Pieter on Monday."}
+{"id":"en4","lang":"en","ms":428.14695835113525,"output":"We have tested the migration on a copy of production, and everything seems to work, although the indexes took longer than expected."}
+{"id":"en5","lang":"en","ms":383.02600383758545,"output":"Each of the clusters has its own ingress controller, which makes debugging a lot easier."}
+{"id":"en6","lang":"en","ms":465.9750461578369,"output":"I received your invoice yesterday. Accounting will process it this week, so you should receive the payment by the end of the month."}
+{"id":"en7","lang":"en","ms":400.66611766815186,"output":"Let's schedule a call for tomorrow afternoon to discuss the roadmap and who's responsible for which part."}
+{"id":"en8","lang":"en","ms":378.73101234436035,"output":"The client asked if we could reduce the number of alerts, because they get too many notifications at night."}
+{"id":"enc1","lang":"en","ms":577.9390335083008,"output":"I merged the fix for the Talos upgrade into main. The kubelet config now pins the cgroup driver, so the nodes come back cleanly after a reboot."}
+{"id":"enc2","lang":"en","ms":597.2529649734497,"output":"Quick update: the Rails app is on 8.1, Sidekiq jobs are green, and I've rotated the pg credentials in 1Password."}
+{"id":"enc3","lang":"en","ms":590.9500122070312,"output":"Thanks for joining today's call. As agreed, Brightline will deliver the first draft of the integration by the 14th, and Northwind will review it the following week."}
+{"id":"enc4","lang":"en","ms":335.1360559463501,"output":"lgtm, ship it. ping me if the canary looks off"}
+{"id":"nl1","lang":"nl","ms":451.7099857330322,"output":"Hallo Jan, de back-up wordt elke nacht om twee uur uitgevoerd, maar gisteren is er iets fout gegaan."}
+{"id":"nl2","lang":"nl","ms":370.55695056915283,"output":"Ik heb de nieuwe versie gisteren gedownload en het probleem is nog steeds niet opgelost."}
+{"id":"nl3","lang":"nl","ms":388.54706287384033,"output":"De server is veel sneller dan de oude, maar het geheugengebruik is eigenlijk hoger."}
+{"id":"nl4","lang":"nl","ms":449.3199586868286,"output":"Kan je mij laten weten wanneer het contract getekend is? Dan stuur ik onmiddellijk de factuur."}
+{"id":"nl5","lang":"nl","ms":561.7729425430298,"output":"Wat er gisteren gebeurd is, mag niet meer voorkomen. Ik stel voor dat we de waarschuwingen beter configureren."}
+{"id":"nl6","lang":"nl","ms":371.6479539871216,"output":"Hun hebben de migratie nog niet getest, dus we wachten best tot volgende week."}
+{"id":"nl7","lang":"nl","ms":489.3770217895508,"output":"De documentatie moet duidelijker worden, want nieuwe collega's begrijpen de setup niet. Wanneer wordt het aangepast?"}
+{"id":"nl8","lang":"nl","ms":466.217041015625,"output":"De klant is zeer geïnteresseerd in de nieuwe functionaliteit en wil volgende week een demo."}
+{"id":"nlc1","lang":"nl","ms":624.7400045394897,"output":"Ik heb de fix voor de Talos-upgrade gemerged. De knooppunten komen nu proper terug na een herstart."}
+{"id":"nlc2","lang":"nl","ms":433.27605724334717,"output":"Dag Pieter, bedankt voor je snelle antwoord. Ik bekijk het morgen en laat je iets weten tegen vrijdag."}
+{"id":"nlc3","lang":"nl","ms":393.79000663757324,"output":"De pipeline draait groen, de Sidekiq-jobs lopen weer en de credentials staan in 1Password."}
+{"id":"nlc4","lang":"nl","ms":564.6580457687378,"output":"Zoals afgesproken levert Brightline de eerste versie op tegen de 14e, en Northwind reviewt die de week erna."}
+{"id":"fr1","lang":"fr","ms":430.9380054473877,"output":"Bonjour Marie, je vous ai envoyé le contrat hier, mais je n'ai pas encore reçu de réponse."}
+{"id":"fr2","lang":"fr","ms":395.68400382995605,"output":"La sauvegarde a échoué cette nuit à cause d'un problème de disque sur le serveur de test."}
+{"id":"fr3","lang":"fr","ms":448.3010768890381,"output":"Les serveurs de production sont maintenant à jour, et les tests se déroulent sans problème."}
+{"id":"fr4","lang":"fr","ms":429.02398109436035,"output":"Pouvez-vous me dire où se trouve la documentation de l'API ? Je ne la trouve pas sur le wiki."}
+{"id":"fr5","lang":"fr","ms":392.098069190979,"output":"La facture que je vous ai envoyée la semaine dernière contient une erreur de TVA."}
+{"id":"fr6","lang":"fr","ms":372.20299243927,"output":"Nous avons déjà testé la migration, mais certaines requêtes sont encore trop lentes."}
+{"id":"fr7","lang":"fr","ms":434.6069097518921,"output":"Le client voudrait moins d'alertes la nuit, c'est vraiment pénible pour son équipe."}
+{"id":"fr8","lang":"fr","ms":468.4180021286011,"output":"Merci pour votre retour. Je regarderai ça demain matin et je vous tiendrai au courant."}
+{"id":"frc1","lang":"fr","ms":638.3929252624512,"output":"Bonjour Thomas, merci pour la réunion de ce matin. Comme convenu, nous livrerons la première version d'ici le 14. Le budget reste à septante mille euros."}
+{"id":"frc2","lang":"fr","ms":521.9360589981079,"output":"J'ai corrigé le correctif pour l'upgrade de Talos. Les nœuds redémarreront correctement maintenant."}
+{"id":"frc3","lang":"fr","ms":409.6369743347168,"output":"Le pipeline est vert, les jobs Sidekiq tournent à nouveau et les identifiants sont dans 1Password."}
+{"id":"frc4","lang":"fr","ms":326.3380527496338,"output":"Pas de souci, on en reparle lundi. Bon week-end !"}
