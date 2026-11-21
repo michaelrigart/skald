@@ -10,7 +10,8 @@ public struct IssueTracker: Sendable {
     private var suspended: Set<FieldID> = []
     private var ignored: Set<Ignored> = []
     private var modelResults: [ParagraphKey: [TextRange]] = [:]
-    /// The paragraphs a spelling or model result was stored for, until they are cleared or gone.
+    /// The paragraphs of the field last revalidated that a spelling or model result was stored for, until they are
+    /// cleared or gone. Revalidating another field drops the rest; focusing a field checks it again.
     private var resultKeys: Set<ParagraphKey> = []
 
     public init() {}
@@ -79,7 +80,7 @@ public struct IssueTracker: Sendable {
             if !dropped.contains(key) { dropped.append(key) }
         }
         resultKeys = resultKeys.filter { key in
-            key.field != s.field || ParagraphKeys.locate(key, in: parents) != nil || !ParagraphKeys.isGone(key, in: s)
+            key.field == s.field && (ParagraphKeys.locate(key, in: parents) != nil || !ParagraphKeys.isGone(key, in: s))
         }
         return dropped
     }

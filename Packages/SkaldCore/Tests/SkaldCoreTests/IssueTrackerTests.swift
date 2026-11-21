@@ -414,3 +414,14 @@ private func longParagraph() -> String {
     #expect(issue(in: snapshot, replacing: "teh", with: "the").kind == .spelling)
     #expect(issue(in: snapshot, replacing: "teh", with: "the", source: .model).kind == .grammar)
 }
+
+@Test func revalidatingAnotherFieldDropsTheResultsHeldForThisOne() {
+    let a = wholeSnapshot("a teh b")
+    let b = wholeSnapshot("c teh d", field: fieldB)
+    var tracker = IssueTracker()
+    tracker.setSpelling([], for: ParagraphKeys.keyed(a)[0].0)
+    #expect(tracker.hasResults(in: fieldA))
+
+    tracker.revalidate(b)
+    #expect(!tracker.hasResults(in: fieldA))
+}
