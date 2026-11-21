@@ -16,14 +16,18 @@ struct AppsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Skald checks what you type in the apps turned on here. Terminals, code editors and password managers start off.")
+            Text("Skald checks what you type in the apps turned on here. Nothing you type in an app kept on This Mac only goes to Claude, and the panel offers This Mac only there. Terminals, code editors and password managers start off.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             List(entries) { app in
-                Toggle(isOn: Binding(
-                    get: { model.settings.isEnabled(app: app.id) },
-                    set: { model.setApp(app.id, enabled: $0) }
+                Picker(selection: Binding(
+                    get: { model.settings.mode(app: app.id) },
+                    set: { model.setApp(app.id, mode: $0) }
                 )) {
+                    Text("On").tag(AppMode.on)
+                    Text("This Mac only").tag(AppMode.thisMacOnly)
+                    Text("Off").tag(AppMode.off)
+                } label: {
                     HStack {
                         if let icon = app.icon {
                             Image(nsImage: icon).resizable().frame(width: 18, height: 18)
@@ -31,7 +35,7 @@ struct AppsPane: View {
                         Text(app.name)
                     }
                 }
-                .toggleStyle(.switch)
+                .pickerStyle(.menu)
             }
             HStack {
                 Spacer()
@@ -62,6 +66,6 @@ struct AppsPane: View {
         panel.directoryURL = URL(filePath: "/Applications")
         panel.prompt = "Turn Off"
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
-        model.setApp(id, enabled: false)
+        model.setApp(id, mode: .off)
     }
 }

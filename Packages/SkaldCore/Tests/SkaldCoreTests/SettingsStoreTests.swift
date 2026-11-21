@@ -15,17 +15,30 @@ private func write(_ text: String, to directory: URL) throws {
     try Data(text.utf8).write(to: settingsFile(directory))
 }
 
+private let v1File = """
+{"version": 1, "launchAtLogin": false, "panelHotkey": {"keyCode": 3, "modifiers": 4096},
+ "pausedUntil": "2027-01-15T08:00:00.000Z", "appOverrides": {"com.mitchellh.ghostty": true, "com.apple.Notes": false},
+ "neverTouch": ["Brightline", "Talos"], "modelChecks": {"en": true, "nl": true, "fr": false},
+ "typingChecks": {"en": true, "nl": true, "fr": true}, "panelDefaultEngine": "claude",
+ "studio": {"api": "openAICompatible", "baseURL": "http://studio.local:1234", "model": "m"},
+ "claudeModel": "claude-sonnet-5-5"}
+"""
+
 @Test func settingsRoundTrip() throws {
     let directory = makeDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     var settings = Settings()
     settings.launchAtLogin = false
-    settings.appOverrides["com.mitchellh.ghostty"] = true
+    settings.appOverrides["com.mitchellh.ghostty"] = .on
+    settings.appOverrides["com.apple.Notes"] = .thisMacOnly
     settings.addNeverTouch("Talos")
     settings.modelChecks[.nl] = false
     settings.panelDefaultEngine = .claude
     settings.studio = StudioEndpoint(api: .openAICompatible, baseURL: "http://studio.local:1234", model: "m")
     settings.pausedUntil = Date(timeIntervalSince1970: 1_800_000_000)
+    settings.claudeTyping = true
+    settings.claudeLanguages = [.nl: true, .fr: false]
+    settings.claudeTypingModel = "claude-sonnet-5-5"
     let store = SettingsStore(directory: directory)
     try store.save(settings)
     guard case .loaded(let loaded) = store.load() else {
@@ -41,7 +54,7 @@ private func write(_ text: String, to directory: URL) throws {
         Issue.record("expected .fresh")
         return
     }
-    #expect(settings.version == 1)
+    #expect(settings.version == 2)
     #expect(settings.launchAtLogin)
     #expect(settings.panelHotkey == Hotkey.default)
     #expect(settings.panelHotkey.keyCode == 5)
@@ -54,6 +67,9 @@ private func write(_ text: String, to directory: URL) throws {
     #expect(settings.panelDefaultEngine == .thisMac)
     #expect(settings.studio == StudioEndpoint())
     #expect(settings.claudeModel == "claude-opus-5-5")
+    #expect(!settings.claudeTyping)
+    #expect(settings.claudeLanguages == [.nl: true, .fr: true])
+    #expect(settings.claudeTypingModel == "claude-haiku-5-5")
     #expect(!FileManager.default.fileExists(atPath: directory.path))
 }
 
@@ -74,7 +90,7 @@ private func write(_ text: String, to directory: URL) throws {
 @Test func futureVersionIsReadOnlyAndNeverOverwritten() throws {
     let directory = makeDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
-    let original = #"{"version": 2, "somethingNew": true}"#
+    let original = #"{"version": 3, "somethingNew": true}"#
     try write(original, to: directory)
     let before = try Data(contentsOf: settingsFile(directory))
     let store = SettingsStore(directory: directory)
@@ -82,7 +98,7 @@ private func write(_ text: String, to directory: URL) throws {
         Issue.record("expected .futureVersion")
         return
     }
-    #expect(version == 2)
+    #expect(version == 3)
     #expect(throws: SettingsStoreError.readOnly) { try store.save(Settings()) }
     #expect(try Data(contentsOf: settingsFile(directory)) == before)
 }
@@ -109,12 +125,69 @@ private func write(_ text: String, to directory: URL) throws {
 
 @Test func defaultOffAppsAreOffUnlessOverridden() {
     var settings = Settings()
+    #expect(settings.mode(app: "com.mitchellh.ghostty") == .off)
     #expect(!settings.isEnabled(app: "com.mitchellh.ghostty"))
+    #expect(settings.mode(app: "com.apple.Notes") == .on)
     #expect(settings.isEnabled(app: "com.apple.Notes"))
-    settings.appOverrides["com.mitchellh.ghostty"] = true
+    settings.appOverrides["com.mitchellh.ghostty"] = .on
     #expect(settings.isEnabled(app: "com.mitchellh.ghostty"))
-    settings.appOverrides["com.apple.Notes"] = false
+    settings.appOverrides["com.apple.Notes"] = .off
     #expect(!settings.isEnabled(app: "com.apple.Notes"))
+    settings.appOverrides["com.apple.Notes"] = .thisMacOnly
+    #expect(settings.mode(app: "com.apple.Notes") == .thisMacOnly)
+    #expect(settings.isEnabled(app: "com.apple.Notes"))
+}
+
+@Test func aV1FileIsReadWithoutLoss() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try write(v1File, to: directory)
+    guard case .loaded(let settings) = SettingsStore(directory: directory).load() else {
+        Issue.record("expected .loaded")
+        return
+    }
+    #expect(settings.version == 2)
+    #expect(settings.launchAtLogin == false)
+    #expect(settings.panelHotkey == Hotkey(keyCode: 3, modifiers: 4096))
+    #expect(settings.pausedUntil == Date(timeIntervalSince1970: 1_800_000_000))
+    #expect(settings.appOverrides == ["com.mitchellh.ghostty": .on, "com.apple.Notes": .off])
+    #expect(settings.neverTouch == ["Brightline", "Talos"])
+    #expect(settings.modelChecks == [.en: true, .nl: true, .fr: false])
+    #expect(settings.typingChecks == [.en: true, .nl: true, .fr: true])
+    #expect(settings.panelDefaultEngine == .claude)
+    #expect(settings.studio == StudioEndpoint(api: .openAICompatible, baseURL: "http://studio.local:1234", model: "m"))
+    #expect(settings.claudeModel == "claude-sonnet-5-5")
+    #expect(!settings.claudeTyping)
+    #expect(settings.claudeLanguages == [.nl: true, .fr: true])
+    #expect(settings.claudeTypingModel == "claude-haiku-5-5")
+}
+
+@Test func aV1FileSavedAgainIsWrittenAsVersion2() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try write(v1File, to: directory)
+    let store = SettingsStore(directory: directory)
+    guard case .loaded(let first) = store.load() else {
+        Issue.record("expected .loaded")
+        return
+    }
+    try store.save(first)
+    let object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settingsFile(directory))) as? [String: Any])
+    #expect(object["version"] as? Int == 2)
+    #expect(object["appOverrides"] as? [String: String] == ["com.apple.Notes": "off", "com.mitchellh.ghostty": "on"])
+    #expect(store.load() == .loaded(first))
+}
+
+@Test func anUnknownAppModeDropsOnlyThatEntry() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try write(#"{"version": 2, "appOverrides": {"a": "sometimes", "b": "thisMacOnly"}, "neverTouch": ["Talos"]}"#, to: directory)
+    guard case .loaded(let settings) = SettingsStore(directory: directory).load() else {
+        Issue.record("expected .loaded")
+        return
+    }
+    #expect(settings.appOverrides == ["b": .thisMacOnly])
+    #expect(settings.neverTouch == ["Talos"])
 }
 
 @Test func neverTouchStaysSortedAndUnique() {
@@ -209,9 +282,9 @@ private func write(_ text: String, to directory: URL) throws {
     let directory = makeDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = SettingsStore(directory: directory)
-    try write(#"{"version": 2}"#, to: directory)
+    try write(#"{"version": 3}"#, to: directory)
     _ = store.load()
-    try write(#"{"version": 1}"#, to: directory)
+    try write(#"{"version": 2}"#, to: directory)
     _ = store.load()
     try store.save(Settings())
 }

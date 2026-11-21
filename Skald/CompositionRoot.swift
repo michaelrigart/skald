@@ -86,7 +86,7 @@ final class CompositionRoot {
             actions: .init(
                 pauseForAnHour: { [model] in model.pauseForAnHour() },
                 resume: { [model] in model.resume() },
-                setApp: { [model] in model.setApp($0, enabled: $1) },
+                setApp: { [model] in model.setApp($0, mode: $1) },
                 grantAccess: { [weak self] in self?.showOnboarding() },
                 openSettings: { [weak self] in self?.openSettings() }
             ),
@@ -325,7 +325,7 @@ final class CompositionRoot {
 
     private func frontAppEntry() -> StatusItemController.FrontApp? {
         guard let app = frontApp, !app.isTerminated, let bundleID = app.bundleIdentifier else { return nil }
-        return .init(bundleID: bundleID, name: app.localizedName ?? bundleID, enabled: model.settings.isEnabled(app: bundleID))
+        return .init(bundleID: bundleID, name: app.localizedName ?? bundleID, mode: model.settings.mode(app: bundleID))
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handle: @escaping @MainActor (CompositionRoot, Notification) -> Void) {

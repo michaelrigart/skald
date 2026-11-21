@@ -64,7 +64,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     struct Actions {
         let pauseForAnHour: () -> Void
         let resume: () -> Void
-        let setApp: (_ bundleID: String, _ enabled: Bool) -> Void
+        let setApp: (_ bundleID: String, _ mode: AppMode) -> Void
         let grantAccess: () -> Void
         let openSettings: () -> Void
     }
@@ -73,7 +73,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     struct FrontApp: Equatable {
         let bundleID: String
         let name: String
-        let enabled: Bool
+        let mode: AppMode
     }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -110,9 +110,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(entry("Pause for an Hour", #selector(pauseForAnHour)))
         }
         if let app = frontApp() {
-            let toggle = entry(app.enabled ? "Turn Off for \(app.name)" : "Turn On for \(app.name)", #selector(toggleApp(_:)))
+            let turnOff = app.mode != .off
+            let toggle = entry(turnOff ? "Turn Off for \(app.name)" : "Turn On for \(app.name)", #selector(toggleApp(_:)))
             toggle.representedObject = app.bundleID
-            toggle.tag = app.enabled ? 0 : 1
+            toggle.tag = turnOff ? 0 : 1
             menu.addItem(toggle)
         }
         if state == .noAccessibility {
@@ -137,6 +138,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func toggleApp(_ sender: NSMenuItem) {
         guard let bundleID = sender.representedObject as? String else { return }
-        actions.setApp(bundleID, sender.tag == 1)
+        actions.setApp(bundleID, sender.tag == 1 ? .on : .off)
     }
 }

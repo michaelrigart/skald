@@ -36,13 +36,15 @@ private final class ChangeLog {
 
     @Test func anAppOverrideIsStoredOnlyWhereItDiffersFromTheShippedDefault() {
         let (model, _) = makeModel()
-        model.setApp("com.apple.Notes", enabled: false)
-        #expect(model.settings.appOverrides == ["com.apple.Notes": false])
-        model.setApp("com.apple.Notes", enabled: true)
+        model.setApp("com.apple.Notes", mode: .thisMacOnly)
+        #expect(model.settings.appOverrides == ["com.apple.Notes": .thisMacOnly])
+        model.setApp("com.apple.Notes", mode: .on)
         #expect(model.settings.appOverrides.isEmpty)
-        model.setApp("com.apple.Terminal", enabled: true)
-        #expect(model.settings.appOverrides == ["com.apple.Terminal": true])
-        model.setApp("com.apple.Terminal", enabled: false)
+        model.setApp("com.apple.Terminal", mode: .on)
+        #expect(model.settings.appOverrides == ["com.apple.Terminal": .on])
+        model.setApp("com.apple.Terminal", mode: .thisMacOnly)
+        #expect(model.settings.appOverrides == ["com.apple.Terminal": .thisMacOnly])
+        model.setApp("com.apple.Terminal", mode: .off)
         #expect(model.settings.appOverrides.isEmpty)
     }
 

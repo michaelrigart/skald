@@ -4,6 +4,25 @@ public enum EngineKind: String, Codable, CaseIterable, Sendable {
     case thisMac, macStudio, claude
 }
 
+public enum AppMode: String, Codable, CaseIterable, Sendable {
+    case on, thisMacOnly, off
+
+    fileprivate struct Stored: Decodable {
+        let mode: AppMode?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let flag = try? container.decode(Bool.self) {
+                mode = flag ? .on : .off
+            } else if let raw = try? container.decode(String.self) {
+                mode = AppMode(rawValue: raw)
+            } else {
+                mode = nil
+            }
+        }
+    }
+}
+
 public struct StudioEndpoint: Codable, Equatable, Sendable {
     public enum API: String, Codable, Sendable {
         case ollama, openAICompatible
@@ -56,7 +75,7 @@ public struct Hotkey: Codable, Equatable, Sendable {
 }
 
 public struct Settings: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public static let defaultOffApps: Set<String> = [
         "com.mitchellh.ghostty",
@@ -74,18 +93,29 @@ public struct Settings: Codable, Equatable, Sendable {
     public var launchAtLogin = true
     public var panelHotkey = Hotkey.default
     public var pausedUntil: Date?
-    public var appOverrides: [String: Bool] = [:]
+    public var appOverrides: [String: AppMode] = [:]
     public private(set) var neverTouch: [String] = []
     public var modelChecks: [Language: Bool] = Settings.defaultModelChecks
     public var typingChecks: [Language: Bool] = Settings.defaultTypingChecks
     public var panelDefaultEngine = EngineKind.thisMac
     public var studio = StudioEndpoint()
     public var claudeModel = "claude-opus-5-5"
+    public var claudeTyping = false
+    public var claudeLanguages: [Language: Bool] = Settings.defaultClaudeLanguages
+    public var claudeTypingModel = "claude-haiku-5-5"
 
     public init() {}
 
+    public static func defaultMode(app bundleID: String) -> AppMode {
+        defaultOffApps.contains(bundleID) ? .off : .on
+    }
+
+    public func mode(app bundleID: String) -> AppMode {
+        appOverrides[bundleID] ?? Settings.defaultMode(app: bundleID)
+    }
+
     public func isEnabled(app bundleID: String) -> Bool {
-        appOverrides[bundleID] ?? !Settings.defaultOffApps.contains(bundleID)
+        mode(app: bundleID) != .off
     }
 
     public mutating func addNeverTouch(_ word: String) {
@@ -99,6 +129,7 @@ public struct Settings: Codable, Equatable, Sendable {
 
     private static let defaultModelChecks: [Language: Bool] = [.en: true, .nl: false, .fr: false]
     private static let defaultTypingChecks: [Language: Bool] = [.en: true, .nl: true, .fr: false]
+    private static let defaultClaudeLanguages: [Language: Bool] = [.nl: true, .fr: true]
 
     private static func normalised(_ words: [String]) -> [String] {
         var seen = Set<String>()
@@ -129,21 +160,26 @@ public struct Settings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case version, launchAtLogin, panelHotkey, pausedUntil, appOverrides, neverTouch
         case modelChecks, typingChecks, panelDefaultEngine, studio, claudeModel
+        case claudeTyping, claudeLanguages, claudeTypingModel
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = Settings()
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? defaults.version
+        version = Settings.currentVersion
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? defaults.launchAtLogin
         panelHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .panelHotkey) ?? defaults.panelHotkey
         pausedUntil = try container.decodeIfPresent(Date.self, forKey: .pausedUntil)
-        appOverrides = try container.decodeIfPresent([String: Bool].self, forKey: .appOverrides) ?? defaults.appOverrides
+        let storedOverrides = try container.decodeIfPresent([String: AppMode.Stored].self, forKey: .appOverrides) ?? [:]
+        appOverrides = storedOverrides.compactMapValues(\.mode)
         neverTouch = Settings.normalised(try container.decodeIfPresent([String].self, forKey: .neverTouch) ?? [])
         modelChecks = Settings.languageChecks(in: container, forKey: .modelChecks, defaults: defaults.modelChecks)
         typingChecks = Settings.languageChecks(in: container, forKey: .typingChecks, defaults: defaults.typingChecks)
         panelDefaultEngine = Settings.lenient(EngineKind.self, in: container, forKey: .panelDefaultEngine) ?? defaults.panelDefaultEngine
         studio = try container.decodeIfPresent(StudioEndpoint.self, forKey: .studio) ?? defaults.studio
         claudeModel = try container.decodeIfPresent(String.self, forKey: .claudeModel) ?? defaults.claudeModel
+        claudeTyping = try container.decodeIfPresent(Bool.self, forKey: .claudeTyping) ?? defaults.claudeTyping
+        claudeLanguages = Settings.languageChecks(in: container, forKey: .claudeLanguages, defaults: defaults.claudeLanguages)
+        claudeTypingModel = try container.decodeIfPresent(String.self, forKey: .claudeTypingModel) ?? defaults.claudeTypingModel
     }
 }

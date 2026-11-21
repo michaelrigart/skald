@@ -71,13 +71,9 @@ import struct SwiftUI.Binding
     static let shippedOffApps = Settings.defaultOffApps
 
     /// Stores an override only where it differs from the shipped default.
-    func setApp(_ bundleID: String, enabled: Bool) {
+    func setApp(_ bundleID: String, mode: AppMode) {
         update {
-            if enabled == !Settings.defaultOffApps.contains(bundleID) {
-                $0.appOverrides[bundleID] = nil
-            } else {
-                $0.appOverrides[bundleID] = enabled
-            }
+            $0.appOverrides[bundleID] = mode == Settings.defaultMode(app: bundleID) ? nil : mode
         }
     }
 
