@@ -114,7 +114,9 @@ struct ClaudeFailureTests {
 
     @Test func repeatedFailuresSuspendClaudeOnTheInjectedClock() async {
         let claude = failing()
-        let rig = makeRig(claude: claude)
+        var onDevice = claudeSettings()
+        onDevice.modelChecks[.nl] = true
+        let rig = makeRig(onDevice, claude: claude, engine: .correcting(["word": "wordt"]))
         await rig.focus(variant(0), caret: 3)
         await rig.check()
         await type(variant(1), in: rig)
@@ -124,6 +126,7 @@ struct ClaudeFailureTests {
 
         await type(variant(2), in: rig, at: failedAt + .seconds(29))
         #expect(await claude.requests.count == 2)
+        #expect(await rig.engine.texts == [variant(0), variant(1), variant(2)])
         await type(variant(3), in: rig, at: failedAt + .seconds(30))
         #expect(await claude.requests.count == 3)
         #expect(await status(rig).sending == false)
@@ -266,7 +269,71 @@ struct ClaudeFailureTests {
 
         await claude.open()
         await rig.pipeline.setPaused(false)
-        await rig.pipeline.drain()
+        await rig.check()
+        #expect(await claude.texts == [dutch, dutch])
         #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
+    }
+
+    @Test func aSettingsUpdateRefreshesTheStatus() async {
+        let rig = makeRig(claude: FakeEngine.correcting(corrections))
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        #expect(await status(rig).sending)
+
+        await rig.router.set(PipelineRig.engineRouter(claudeSettings(), key: false))
+        await rig.pipeline.update(settings: claudeSettings())
+        await rig.pipeline.drain()
+        #expect(await status(rig).sending == false)
+    }
+
+    @Test func aFocusChangeRefreshesTheStatus() async {
+        let rig = makeRig(claude: FakeEngine.correcting(corrections))
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        #expect(await status(rig).sending)
+
+        await rig.pipeline.receive(.focused(nil))
+        await rig.pipeline.drain()
+        #expect(await status(rig).sending == false)
+    }
+
+    @Test func aFallbackKeepsTheClaudeIssuesStillShownForTheSameText() async throws {
+        var onDevice = claudeSettings()
+        onDevice.modelChecks[.nl] = true
+        let claude = FakeEngine { request, index in
+            index == 0 ? .success(replacingWords(in: request.text, corrections)) : .failure(.failed)
+        }
+        let rig = makeRig(onDevice, claude: claude, engine: .correcting(["gisterren": "gisteren"]))
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        #expect(await rig.modelIssues().map(\.word) == ["gisterren", "word"])
+
+        let flagged = try #require(await rig.modelIssues().first)
+        #expect(await rig.pipeline.neverFlag(flagged.id) == "gisterren")
+        await rig.recheckAtCaret()
+
+        #expect(await claude.texts == [dutch, dutch])
+        #expect(await rig.engine.requests.isEmpty)
+        let issues = await rig.modelIssues()
+        #expect(issues.map(\.word) == ["word"])
+        #expect(issues.map(\.engine) == [.claude])
+    }
+
+    @Test func aChangedParagraphGetsTheFallbacksIssues() async {
+        var onDevice = claudeSettings()
+        onDevice.modelChecks[.nl] = true
+        let claude = FakeEngine { request, index in
+            index == 0 ? .success(replacingWords(in: request.text, ["gisterren": "gisteren"])) : .failure(.failed)
+        }
+        let rig = makeRig(onDevice, claude: claude, engine: .correcting(["word": "wordt"]))
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        #expect(await rig.modelIssues().map(\.engine) == [.claude])
+
+        await type(variant(1), in: rig)
+        #expect(await rig.engine.texts == [variant(1)])
+        let issues = await rig.modelIssues()
+        #expect(issues.map(\.word) == ["word"])
+        #expect(issues.map(\.engine) == [.thisMac])
     }
 }

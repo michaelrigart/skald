@@ -127,6 +127,10 @@ public struct IssueTracker: Sendable {
             .sorted { $0.fieldRange.location < $1.fieldRange.location }
     }
 
+    public func hasModelIssues(for key: ParagraphKey, from engine: EngineKind) -> Bool {
+        issues.contains { $0.key == key && $0.source == .model && $0.engine == engine }
+    }
+
     public func issue(_ id: UUID) -> Issue? {
         issues.first { $0.id == id }
     }

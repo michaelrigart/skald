@@ -458,7 +458,8 @@ public actor CheckPipeline {
         }
     }
 
-    /// What the language's on-device switches say, for a chunk Claude was not asked about or could not answer.
+    /// What the language's on-device switches say, for a chunk Claude was not asked about or could not answer. A key
+    /// names its paragraph's text, so Claude issues still shown for it are for this text and stay.
     private func fallBack(
         _ request: EngineRequest,
         _ key: ParagraphKey,
@@ -467,7 +468,9 @@ public actor CheckPipeline {
         generation: Int,
         epoch: Int
     ) async -> ModelOutcome {
-        guard isCurrent(epoch, generation), await onDeviceRoute(language) == .model, isCurrent(epoch, generation) else { return .dropped }
+        guard isCurrent(epoch, generation) else { return .dropped }
+        if tracker.hasModelIssues(for: key, from: .claude) { return .checked }
+        guard await onDeviceRoute(language) == .model, isCurrent(epoch, generation) else { return .dropped }
         let result = await runApple(request)
         return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac, fallingBack: true)
     }
