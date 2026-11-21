@@ -26,3 +26,15 @@ private let buildFolder = "/Users/x/Code/skald/build/dd.noindex/Build/Products/D
     #expect(LaunchMode.resolve(isTestHost: true, probeRequested: false, bundlePath: installed) == .testHost)
     #expect(LaunchMode.resolve(isTestHost: true, probeRequested: true, bundlePath: installed) == .testHost)
 }
+
+@Test func aScrollProbeRequestedFromApplicationsRunsTheScrollProbe() {
+    #expect(LaunchMode.resolve(isTestHost: false, probeRequested: false, scrollProbeRequested: true, bundlePath: installed) == .scrollProbe)
+}
+
+@Test func aScrollProbeRequestedFromABuildFolderShowsTheMoveNoticeInstead() {
+    #expect(LaunchMode.resolve(isTestHost: false, probeRequested: false, scrollProbeRequested: true, bundlePath: buildFolder) == .wrongPlace)
+}
+
+@Test func aTestHostStaysATestHostWhenAskedForTheScrollProbe() {
+    #expect(LaunchMode.resolve(isTestHost: true, probeRequested: false, scrollProbeRequested: true, bundlePath: installed) == .testHost)
+}
