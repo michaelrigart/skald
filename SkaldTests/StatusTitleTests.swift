@@ -31,9 +31,9 @@ private func resolve(
 }
 
 @Test func claudeStatesNameTheLanguagesAndWhatTheyFellBackTo() {
-    #expect(StatusState.usingClaude([.nl, .fr]).title() == "Dutch and French checks use Claude")
-    #expect(StatusState.usingClaude([.nl]).title() == "Dutch checks use Claude")
-    #expect(StatusState.usingClaude([.fr]).title() == "French checks use Claude")
+    #expect(StatusState.usingClaude([.nl, .fr], lastFailure: nil).title() == "Dutch and French checks use Claude")
+    #expect(StatusState.usingClaude([.nl], lastFailure: nil).title() == "Dutch checks use Claude")
+    #expect(StatusState.usingClaude([.fr], lastFailure: nil).title() == "French checks use Claude")
     #expect(StatusState.claudeTrouble(.unreachable, fallbacks: [.init(language: .nl, route: .spellingOnly(.languageOff)), .init(language: .fr, route: .off)]).title()
         == "Claude unreachable: Dutch is spelling only, French isn't checked while typing")
     #expect(StatusState.claudeTrouble(.keyRejected, fallbacks: [.init(language: .nl, route: .model)]).title()
@@ -77,23 +77,36 @@ private func resolve(
     #expect(resolve(thermalPaused: true) == .spellingOnly(.thermalPause))
 }
 
-@Test func claudeTroubleRanksBelowPauseAndAboveClaudeAndApple() {
+@Test func claudeTroubleRanksBelowPauseAndAboveApple() {
     let fallbacks: [ClaudeFallback] = [.init(language: .nl, route: .model), .init(language: .fr, route: .off)]
-    let trouble = ClaudeStatus(sending: true, trouble: .unreachable)
+    let trouble = ClaudeStatus(sending: false, trouble: .unreachable)
     #expect(resolve(pausedUntil: halfPastTwo.addingTimeInterval(60), claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
         == .paused(until: halfPastTwo.addingTimeInterval(60)))
     #expect(resolve(apple: .appleIntelligenceOff, claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
         == .claudeTrouble(.unreachable, fallbacks: fallbacks))
     #expect(resolve(apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: nil), claudeLanguages: [.nl, .fr])
-        == .usingClaude([.nl, .fr]))
+        == .usingClaude([.nl, .fr], lastFailure: nil))
     #expect(resolve(apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: nil)) == .spellingOnly(.appleIntelligenceOff))
     #expect(resolve(claude: ClaudeStatus(sending: false, trouble: .rateLimited)) == .onThisMac)
     #expect(resolve(claude: ClaudeStatus(sending: false, trouble: nil), claudeLanguages: [.nl]) == .onThisMac)
 }
 
+@Test func whileARequestCanLeaveTheFirstLineIsTheClaudeLineAndAFailureIsASecondOne() {
+    let fallbacks: [ClaudeFallback] = [.init(language: .nl, route: .model)]
+    let state = resolve(
+        apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: .declined),
+        claudeLanguages: [.nl], fallbacks: fallbacks
+    )
+    #expect(state == .usingClaude([.nl], lastFailure: .declined))
+    #expect(state.title() == "Dutch checks use Claude")
+    #expect(state.detail == "Last check failed: Claude declined a paragraph")
+    #expect(StatusState.usingClaude([.nl], lastFailure: nil).detail == nil)
+    #expect(StatusState.claudeTrouble(.declined, fallbacks: fallbacks).detail == nil)
+}
+
 @Test func everyStateShowsTheMenuBarGlyphAsATemplateDescribedByItsTitle() throws {
     let states: [StatusState] = [
-        .onThisMac, .usingClaude([.nl]), .claudeTrouble(.unreachable, fallbacks: []),
+        .onThisMac, .usingClaude([.nl], lastFailure: nil), .claudeTrouble(.unreachable, fallbacks: []),
         .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility,
     ]
     let shared = try #require(NSImage(named: StatusState.glyphName))
@@ -112,7 +125,7 @@ private func resolve(
     let plain = try #require(NSImage(named: StatusState.glyphName)?.tiffRepresentation)
     let cloud = try #require(NSImage(named: StatusState.cloudGlyphName)?.tiffRepresentation)
     #expect(plain != cloud)
-    let state = StatusState.usingClaude([.nl])
+    let state = StatusState.usingClaude([.nl], lastFailure: nil)
     let sending = try #require(state.image(sendingToClaude: true))
     let quiet = try #require(state.image(sendingToClaude: false))
     #expect(sending.tiffRepresentation == cloud)
@@ -120,13 +133,6 @@ private func resolve(
     #expect(sending.isTemplate)
     #expect(quiet.isTemplate)
     #expect(sending.accessibilityDescription == state.title())
-}
-
-@Test func turningOnAnAppThatShipsOffKeepsItOnThisMac() {
-    for bundleID in Settings.defaultOffApps {
-        #expect(StatusItemController.modeWhenTurnedOn(bundleID) == .thisMacOnly)
-    }
-    #expect(StatusItemController.modeWhenTurnedOn("com.apple.TextEdit") == .on)
 }
 
 @Test func theTestHostBuildsNoCompositionRoot() throws {

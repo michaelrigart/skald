@@ -25,8 +25,8 @@ whether it is compatible with the one before. Each section says what changed.
   key turns the switch off.
 - Each app can be On, This Mac only or Off, in Settings > Apps or with the menu's Keep on This
   Mac. Nothing you type in an app kept on this Mac goes to Claude, and the panel offers only
-  This Mac only there. The menu's Turn On for an app that is off by default sets it to This Mac
-  only.
+  This Mac only there. The menu's Turn On sets an app to This Mac only when it is off by
+  default or Claude checks while typing are on; untick Keep on This Mac to let it use Claude.
 - Install with Homebrew: `brew install --cask michaelrigart/tap/skald`.
 - Releases are signed with a stable certificate, so the Accessibility permission you give Skald
   should survive updates. Switching from a self-built ad hoc copy needs it once more.

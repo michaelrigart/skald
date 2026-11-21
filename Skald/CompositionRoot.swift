@@ -61,9 +61,8 @@ final class CompositionRoot {
         pipeline = CheckPipeline(
             access: textAccess,
             apple: apple,
-            claude: { model in
-                LoggedEngine(ClaudeEngine(model: model, apiKey: { keychain.read() }, transport: transport, options: .typing), log: claudeLog)
-            },
+            claude: { model in ClaudeEngine(model: model, apiKey: { keychain.read() }, transport: transport, options: .typing) },
+            onClaudeRequest: { claudeLog.record($0) },
             spelling: SpellingChecker(),
             detector: SystemLanguageDetector(),
             oracle: SystemWordOracle(),
@@ -357,7 +356,7 @@ final class CompositionRoot {
 
     private func frontAppEntry() -> StatusItemController.FrontApp? {
         guard let app = frontApp, !app.isTerminated, let bundleID = app.bundleIdentifier else { return nil }
-        return .init(bundleID: bundleID, name: app.localizedName ?? bundleID, mode: model.settings.mode(app: bundleID))
+        return .init(bundleID: bundleID, name: app.localizedName ?? bundleID, mode: model.settings.mode(app: bundleID), claudeTyping: model.settings.claudeTyping)
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handle: @escaping @MainActor (CompositionRoot, Notification) -> Void) {

@@ -10,7 +10,7 @@ struct ClaudeFallback: Equatable {
 /// What the status item shows, most urgent first.
 enum StatusState: Equatable {
     case onThisMac
-    case usingClaude([Language])
+    case usingClaude([Language], lastFailure: ClaudeTrouble?)
     case claudeTrouble(ClaudeTrouble, fallbacks: [ClaudeFallback])
     case paused(until: Date)
     case spellingOnly(UnavailableReason)
@@ -23,8 +23,10 @@ enum StatusState: Equatable {
     ) -> StatusState {
         guard trusted else { return .noAccessibility }
         if let pausedUntil, pausedUntil > now { return .paused(until: pausedUntil) }
-        if let trouble = claude.trouble, !claudeLanguages.isEmpty { return .claudeTrouble(trouble, fallbacks: fallbacks) }
-        if claude.sending, !claudeLanguages.isEmpty { return .usingClaude(claudeLanguages) }
+        if !claudeLanguages.isEmpty {
+            if claude.sending { return .usingClaude(claudeLanguages, lastFailure: claude.trouble) }
+            if let trouble = claude.trouble { return .claudeTrouble(trouble, fallbacks: fallbacks) }
+        }
         if let apple { return .spellingOnly(apple) }
         if thermalPaused { return .spellingOnly(.thermalPause) }
         return .onThisMac
@@ -34,18 +36,12 @@ enum StatusState: Equatable {
         switch self {
         case .onThisMac:
             return "Checking on this Mac"
-        case .usingClaude(let languages):
+        case .usingClaude(let languages, _):
             let names = languages.map(\.displayName).joined(separator: " and ")
             return "\(names) checks use Claude"
         case .claudeTrouble(let trouble, let fallbacks):
-            let problem = switch trouble {
-            case .unreachable: "Claude unreachable"
-            case .keyRejected: "Claude has no valid API key"
-            case .rateLimited: "Claude is limiting requests"
-            case .declined: "Claude declined a paragraph"
-            }
-            guard !fallbacks.isEmpty else { return problem }
-            return problem + ": " + fallbacks.map(\.sentence).joined(separator: ", ")
+            guard !fallbacks.isEmpty else { return trouble.problem }
+            return trouble.problem + ": " + fallbacks.map(\.sentence).joined(separator: ", ")
         case .paused(let until):
             let style = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, timeZone: timeZone)
             return "Paused until \(until.formatted(style))"
@@ -54,6 +50,12 @@ enum StatusState: Equatable {
         case .noAccessibility:
             return "Skald needs Accessibility access"
         }
+    }
+
+    /// A second menu line, while checks still go to Claude after a failure.
+    var detail: String? {
+        guard case .usingClaude(_, let trouble?) = self else { return nil }
+        return "Last check failed: \(trouble.problem)"
     }
 
     static let glyphName = "SkaldMenuBar", cloudGlyphName = "SkaldMenuBarCloud"
@@ -66,6 +68,17 @@ enum StatusState: Equatable {
         glyph.isTemplate = true
         glyph.accessibilityDescription = title()
         return glyph
+    }
+}
+
+private extension ClaudeTrouble {
+    var problem: String {
+        switch self {
+        case .unreachable: "Claude unreachable"
+        case .keyRejected: "Claude has no valid API key"
+        case .rateLimited: "Claude is limiting requests"
+        case .declined: "Claude declined a paragraph"
+        }
     }
 }
 
@@ -114,6 +127,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let bundleID: String
         let name: String
         let mode: AppMode
+        /// Whether Claude checks while typing are switched on.
+        let claudeTyping: Bool
     }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -132,6 +147,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         show(.onThisMac, sendingToClaude: false)
     }
 
+    isolated deinit {
+        NSStatusBar.system.removeStatusItem(item)
+    }
+
     func show(_ state: StatusState, sendingToClaude: Bool) {
         self.state = state
         item.button?.image = state.image(sendingToClaude: sendingToClaude)
@@ -143,6 +162,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let heading = NSMenuItem(title: state.title(), action: nil, keyEquivalent: "")
         heading.isEnabled = false
         menu.addItem(heading)
+        if let detail = state.detail {
+            let failure = NSMenuItem(title: detail, action: nil, keyEquivalent: "")
+            failure.isEnabled = false
+            menu.addItem(failure)
+        }
         menu.addItem(.separator())
         if let app = frontApp(), app.mode != .off {
             let keep = entry("Keep \(app.name) on This Mac", #selector(toggleKeep(_:)))
@@ -158,7 +182,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if let app = frontApp() {
             let turnOff = app.mode != .off
             let toggle = entry(turnOff ? "Turn Off for \(app.name)" : "Turn On for \(app.name)", #selector(toggleApp(_:)))
-            toggle.representedObject = app.bundleID
+            toggle.representedObject = app
             toggle.tag = turnOff ? 0 : 1
             menu.addItem(toggle)
         }
@@ -183,8 +207,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func openSettings() { actions.openSettings() }
 
     @objc private func toggleApp(_ sender: NSMenuItem) {
-        guard let bundleID = sender.representedObject as? String else { return }
-        actions.setApp(bundleID, sender.tag == 1 ? Self.modeWhenTurnedOn(bundleID) : .off)
+        guard let app = sender.representedObject as? FrontApp else { return }
+        actions.setApp(app.bundleID, sender.tag == 1 ? Self.modeWhenTurnedOn(app.bundleID, claudeTyping: app.claudeTyping) : .off)
     }
 
     @objc private func toggleKeep(_ sender: NSMenuItem) {
@@ -192,9 +216,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         actions.setApp(bundleID, sender.state == .on ? .on : .thisMacOnly)
     }
 
-    /// An app that ships off (a terminal, a password manager) is turned on for this Mac only, so turning it on
-    /// never makes it eligible for Claude without a separate choice.
-    static func modeWhenTurnedOn(_ bundleID: String) -> AppMode {
-        Settings.defaultMode(app: bundleID) == .off ? .thisMacOnly : .on
+    /// Turning an app on never makes it eligible for Claude by itself: an app that ships off (a terminal, a
+    /// password manager), or any app while Claude checks while typing are on, comes on for This Mac only, and
+    /// ticking "Keep on This Mac" off is the explicit choice.
+    static func modeWhenTurnedOn(_ bundleID: String, claudeTyping: Bool) -> AppMode {
+        Settings.defaultMode(app: bundleID) == .off || claudeTyping ? .thisMacOnly : .on
     }
 }
