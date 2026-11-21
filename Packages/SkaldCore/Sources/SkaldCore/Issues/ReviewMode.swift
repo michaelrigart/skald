@@ -26,6 +26,9 @@ public struct ReviewMode: Sendable {
     public private(set) var phase: Phase = .closed
     /// The field offset the mode stands on: the shown issue's start.
     public private(set) var position = 0
+    /// Whether an unchecked snapshot, the pipeline's suspension on Skald's own write, has come since the accept
+    /// started. A checked snapshot before it still holds the old list.
+    private var suspended = false
 
     public var holdsKeys: Bool { phase != .closed }
 
@@ -61,6 +64,7 @@ public struct ReviewMode: Sendable {
                 guard index != nil else { return [] }
                 guard writes else { return [.copy(id)] }
                 phase = .applying(id)
+                suspended = false
                 return [.accept(id)]
             case .dismiss:
                 guard index != nil else { return [] }
@@ -80,7 +84,10 @@ public struct ReviewMode: Sendable {
     /// A snapshot for the focused field.
     public mutating func issuesChanged(_ issues: [Issue], checked: Bool) -> [Effect] {
         switch phase {
-        case .closed, .applying:
+        case .closed:
+            return []
+        case .applying:
+            suspended = suspended || !checked
             return []
         case .showing(let id):
             if let shown = issues.first(where: { $0.id == id }) {
@@ -89,7 +96,8 @@ public struct ReviewMode: Sendable {
             }
             return showNearest(in: issues)
         case .awaiting:
-            return checked ? showNearest(in: issues) : []
+            suspended = suspended || !checked
+            return checked && suspended ? showNearest(in: issues) : []
         }
     }
 

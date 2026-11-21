@@ -62,26 +62,51 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     var mode = open([a, b, c])
     #expect(mode.key(.accept, issues: [a, b, c], writes: true) == [.accept(a.id)])
     #expect(mode.phase == .applying(a.id))
+    for key in [ReviewMode.Key.next, .previous, .accept, .dismiss] { #expect(mode.key(key, issues: [a, b, c], writes: true) == []) }
     #expect(mode.issuesChanged([b, c], checked: true) == [])          // the pipeline dropped the accepted issue
     #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(6))])
     #expect(mode.phase == .awaiting(a.id) && mode.holdsKeys)
     for key in [ReviewMode.Key.next, .previous, .accept, .dismiss] { #expect(mode.key(key, issues: [], writes: true) == []) }
     #expect(mode.edited() == [])                                      // Skald's own write
+    #expect(mode.issuesChanged([b, c], checked: true) == [])          // published before the suspension: the old list
     #expect(mode.issuesChanged([], checked: false) == [])             // suspended while the field is read again
     #expect(mode.issuesChanged([b.moved(to: 21), c.moved(to: 32)], checked: true) == [.show(b.id)])
     #expect(mode.phase == .showing(b.id) && mode.position == 21)
     #expect(mode.waitEnded(a.id) == [])                               // the wait is over already
 }
 
+@Test func theSuspensionMayArriveBeforeTheOutcome() {
+    var mode = open([a, b, c])
+    _ = mode.key(.accept, issues: [a, b, c], writes: true)
+    #expect(mode.issuesChanged([], checked: false) == [])             // while applying
+    #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    #expect(mode.issuesChanged([b.moved(to: 21), c.moved(to: 32)], checked: true) == [.show(b.id)])
+}
+
+@Test func aNewAcceptForgetsTheEarlierSuspension() {
+    var mode = open([a, b, c])
+    _ = mode.key(.accept, issues: [a, b, c], writes: true)
+    _ = mode.finished(.replaced)
+    _ = mode.issuesChanged([], checked: false)
+    _ = mode.issuesChanged([b, c], checked: true)
+    #expect(mode.key(.accept, issues: [b, c], writes: true) == [.accept(b.id)])
+    _ = mode.finished(.replaced)
+    #expect(mode.issuesChanged([c], checked: true) == [])             // the old list again
+    #expect(mode.issuesChanged([], checked: false) == [])
+    #expect(mode.issuesChanged([c], checked: true) == [.show(c.id)])
+}
+
 @Test func theRecheckFindingNothingEndsTheModeAndAnEarlierIssueIsShownWhenNoneFollows() {
     var last = open([a])
     _ = last.key(.accept, issues: [a], writes: true)
     _ = last.finished(.replaced)
+    _ = last.issuesChanged([], checked: false)
     #expect(last.issuesChanged([], checked: true) == [.close])
     var back = open([a, b])
     _ = back.key(.next, issues: [a, b], writes: true)
     _ = back.key(.accept, issues: [a, b], writes: true)
     _ = back.finished(.replaced)
+    _ = back.issuesChanged([], checked: false)
     #expect(back.issuesChanged([a], checked: true) == [.show(a.id)])
 }
 
