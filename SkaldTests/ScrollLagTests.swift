@@ -168,4 +168,46 @@ import Testing
         #expect(harness.settler.isHidden)
         #expect(harness.shown.isEmpty)
     }
+
+    @Test func theDrawEpochMovesOnAScrollARedrawAndAShowButNotOnAReadThatDoesNotShow() async {
+        let harness = Harness(ceiling: ceiling)
+        var epoch = harness.settler.drawEpoch
+        harness.settler.scrolled()
+        #expect(harness.settler.drawEpoch != epoch)
+        epoch = harness.settler.drawEpoch
+        await harness.quiet()
+        await harness.release()
+        #expect(harness.settler.drawEpoch == epoch)
+        await harness.release()
+        #expect(harness.shown.count == 1)
+        #expect(harness.settler.drawEpoch != epoch)
+        epoch = harness.settler.drawEpoch
+        await harness.release()
+        #expect(harness.settler.drawEpoch == epoch)
+        harness.settler.redrawn()
+        #expect(harness.settler.drawEpoch != epoch)
+    }
+
+    /// A pass that began before a scroll, a redraw or a show must not draw its marks after it, and nor may one
+    /// that ends while the underlines are hidden.
+    @Test func aPassDrawsItsMarksOnlyWhenNothingChangedAndNothingIsHidden() async {
+        let harness = Harness(ceiling: ceiling)
+        var began = harness.settler.drawEpoch
+        #expect(harness.settler.mayDrawMarks(since: began))
+
+        harness.settler.scrolled()
+        #expect(!harness.settler.mayDrawMarks(since: harness.settler.drawEpoch))
+        await harness.quiet()
+        await harness.release()
+        began = harness.settler.drawEpoch
+        await harness.release()
+        // The show drew its own layout; the pass that began before it is stale, one that began after is not.
+        #expect(!harness.settler.mayDrawMarks(since: began))
+        #expect(harness.settler.mayDrawMarks(since: harness.settler.drawEpoch))
+
+        began = harness.settler.drawEpoch
+        harness.settler.redrawn()
+        #expect(!harness.settler.mayDrawMarks(since: began))
+        #expect(harness.settler.mayDrawMarks(since: harness.settler.drawEpoch))
+    }
 }

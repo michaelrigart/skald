@@ -151,11 +151,14 @@ final class OverlayController {
         requestRedraw()
     }
 
-    /// The words may be elsewhere now. A scroll hides the underlines and leaves the reading to `scroller`; a
-    /// window move or a caret move reads the marks again, and a window move closes a card that is only offering
+    /// The words may be elsewhere now. A scroll hides the underlines, leaves their reading to `scroller` and
+    /// moves the badge with its field; a window move or a caret move reads the marks again, and a window move closes a card that is only offering
     /// its choices; an edit closes a clipboard notice. A text or caret change also ends a scroll's hiding.
     private func moved(_ change: LayoutChange) {
-        if change == .scroll { return scroller.scrolled() }
+        if change == .scroll {
+            scroller.scrolled()
+            return requestRedraw()
+        }
         if change != .caret { cards.retain { $0.survives(change) } }
         if change == .window { resetHover() }
         if change == .edit || change == .caret { scroller.redrawn() }
@@ -241,7 +244,7 @@ final class OverlayController {
         else { return }
         let generation = self.generation
         let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil
-        guard !Task.isCancelled, generation == self.generation, hover.current == id,
+        guard !Task.isCancelled, generation == self.generation, hover.current == id, !cards.isBusy,
               let drawn = targets.first(where: { $0.id == id })?.rect
         else { return }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
@@ -318,14 +321,16 @@ final class OverlayController {
     }
 
     private func drawMarks() async {
-        let layout = await layout()
-        guard layout.generation == generation else { return }
+        let scroller = self.scroller
+        let epoch = scroller.drawEpoch
         // While a scroll hides the underlines only the badge is drawn, and there are no hover targets.
-        if !scroller.isHidden { show(layout.marks, targets: layout.targets) }
+        let layout = await layout(withMarks: !scroller.isHidden)
+        guard layout.generation == generation else { return }
+        if scroller === self.scroller, scroller.mayDrawMarks(since: epoch) { show(layout.marks, targets: layout.targets) }
         showBadge(at: layout.badgeFrame)
     }
 
-    private func layout() async -> Layout {
+    private func layout(withMarks: Bool = true) async -> Layout {
         let generation = self.generation
         let snapshot = self.snapshot
         let nothing = Layout(generation: generation, marks: [], targets: [], badgeFrame: nil)
@@ -337,7 +342,7 @@ final class OverlayController {
             let frame = await access.frame(of: field)
             var marks: [UnderlineView.Mark] = []
             var targets: [HoverTracker.Target] = []
-            if !snapshot.issues.isEmpty {
+            if withMarks, !snapshot.issues.isEmpty {
                 let visible = await access.visibleRange(of: field)
                 let issues = OverlayGeometry.issues(snapshot.issues, meeting: visible).sorted { $0.source == .model && $1.source != .model }
                 Log.ui.debug("redraw: \(snapshot.issues.count, privacy: .public) issues, \(issues.count, privacy: .public) ranges asked")

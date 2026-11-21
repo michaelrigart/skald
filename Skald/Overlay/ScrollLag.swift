@@ -28,6 +28,8 @@ final class ScrollSettler<Layout> {
     /// Bumped by every scroll and every redraw, so a read that started before one is dropped, not fed.
     private var epoch = 0
     private var pending: Task<Void, Never>?
+    /// Bumped by every scroll, every redraw and every show: marks a pass read before it are stale after it.
+    private(set) var drawEpoch = 0
 
     /// `now` is the time since one fixed instant on the clock `sleep` runs on.
     init(
@@ -46,8 +48,15 @@ final class ScrollSettler<Layout> {
 
     var isHidden: Bool { settle.isHidden }
 
+    /// Whether a redraw pass that began at `epoch` may draw its marks: nothing is hidden, and no scroll, redraw
+    /// or show has drawn since. A pass dropped this way is followed by one that draws.
+    func mayDrawMarks(since epoch: Int) -> Bool {
+        !isHidden && drawEpoch == epoch
+    }
+
     func scrolled() {
         epoch += 1
+        drawEpoch += 1
         pending?.cancel()
         pending = nil
         perform(settle.scrolled(at: now()), reading: nil)
@@ -56,6 +65,7 @@ final class ScrollSettler<Layout> {
     /// A text or caret change drew the underlines again: nothing is pending any more.
     func redrawn() {
         epoch += 1
+        drawEpoch += 1
         pending?.cancel()
         pending = nil
         settle.redrawn()
@@ -72,7 +82,10 @@ final class ScrollSettler<Layout> {
             switch action {
             case .hide: hide()
             case .read(let delay): read(after: delay)
-            case .show: if let reading { show(reading) }
+            case .show:
+                guard let reading else { break }
+                drawEpoch += 1
+                show(reading)
             }
         }
     }
