@@ -199,6 +199,18 @@ private func claudeRouter(
     #expect(router.typing(.nl, app: chat) == .claude)
 }
 
+@Test func onlyAnAppThatIsOnGoesToClaude() {
+    let ghostty = "com.mitchellh.ghostty"
+    #expect(Settings.defaultMode(app: ghostty) == .off)
+    let router = claudeRouter(configure: {
+        $0.modelChecks[.nl] = true
+        $0.appOverrides[mail] = .off
+    })
+    #expect(router.typing(.nl, app: mail) == .model)
+    #expect(router.typing(.nl, app: ghostty) == .model)
+    #expect(router.typing(.nl, app: chat) == .claude)
+}
+
 @Test func withoutAKeyNothingGoesToClaude() {
     let router = claudeRouter(key: false)
     #expect(router.typing(.nl, app: mail) == .spellingOnly(.languageOff))

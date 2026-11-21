@@ -307,6 +307,11 @@ private func dutchRig(
     #expect(engine == .thisMac)
     #expect(await rig.session.run(.fix, on: .claude) == .unavailable(.claude, .keptOnThisMac, alternatives: [.thisMac]))
     #expect(await rig.claude.requests.isEmpty)
+
+    let unready = FakeEngine { _, _ in .failure(.unavailable(.modelNotReady)) }
+    let failing = Rig(text: flew, settings: settings, thisMac: unready, app: "com.example.chat")
+    #expect(await failing.session.run(.fix, on: nil) == .unavailable(.thisMac, .modelNotReady, alternatives: []))
+    #expect(await failing.claude.requests.isEmpty)
 }
 
 @Test func claudeIsNeverCalledUnlessChosenOrTheDefault() async {
