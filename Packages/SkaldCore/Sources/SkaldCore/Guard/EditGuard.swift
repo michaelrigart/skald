@@ -296,7 +296,7 @@ public struct EditGuard: Sendable {
 
     private static func englishStem(_ word: String, _ facts: WordFacts) -> String? {
         if let stem = facts.englishStems[word] { return stem }
-        return facts.english.contains(word) ? word : nil
+        return facts.english.contains(word) && facts.misspelled.contains(word) ? word : nil
     }
 
     private static func stemKeys(_ stem: String) -> Set<String> {

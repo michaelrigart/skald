@@ -756,6 +756,11 @@
    "lemma": "tu",
    "misspelled": false
   },
+  "tous": {
+   "english": false,
+   "lemma": "tout",
+   "misspelled": false
+  },
   "tout": {
    "english": true,
    "lemma": "tout",
@@ -942,6 +947,14 @@
    "misspelled": false
   },
   "voorvallen": {
+   "english": false,
+   "misspelled": false
+  },
+  "warm": {
+   "english": true,
+   "misspelled": false
+  },
+  "warme": {
    "english": false,
    "misspelled": false
   },

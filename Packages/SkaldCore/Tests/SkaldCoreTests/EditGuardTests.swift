@@ -47,6 +47,15 @@ private func outcome(_ row: Row) async throws {
     #expect(guardrail.verdict(for: found[0], in: paragraph, language: .nl, source: .model, facts: WordFacts()) == .keep)
 }
 
+@Test func aWordTheParagraphsDictionaryAcceptsIsNotBorrowedForBeingEnglishToo() {
+    let paragraph = "Tout les serveurs sont à jour"
+    let found = TextDiff.edits(from: paragraph, to: "Tous les serveurs sont à jour")
+    let guardrail = EditGuard(neverTouch: [])
+    #expect(guardrail.verdict(for: found[0], in: paragraph, language: .fr, source: .model, facts: WordFacts(english: ["tout"])) == .keep)
+    #expect(guardrail.verdict(for: found[0], in: paragraph, language: .fr, source: .model,
+                              facts: WordFacts(misspelled: ["tout"], english: ["tout"])) == .drop(.borrowedWord))
+}
+
 @Test func theBorrowedWordRuleAppliesOnlyToDutchAndFrench() {
     let paragraph = "Il a mergé le correctif."
     let found = TextDiff.edits(from: paragraph, to: "Il a fusionné le correctif.")

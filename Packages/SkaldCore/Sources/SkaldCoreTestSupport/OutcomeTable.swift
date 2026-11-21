@@ -97,7 +97,7 @@ public let outcomeTable: [Row] = [
     Row("A Dutch weekday is lowercase", .nl, "Op maandag", "Op Maandag", .drop(.addedFormality)),
     Row("A Dutch adverb is not a function word", .nl, "Het werkt wel.", "Het werkt niet.", .drop(.replacement)),
     Row("An English adverb is not a function word", .en, "I also checked the logs.", "I just checked the logs.", .drop(.replacement)),
-    Row("A French adverb is not a function word", .fr, "Je ne le fais plus.", "Je ne le fais jamais.", .drop(.borrowedWord)),
+    Row("A French adverb is not a function word", .fr, "Je ne le fais plus.", "Je ne le fais jamais.", .drop(.replacement)),
     Row("A preposition swap is not a function-word fix", .nl, "Ik laat je iets weten tegen vrijdag.",
         "Ik laat je iets weten voor vrijdag.", .undecided),
     Row("A preposition replaced by a verb", .en, "I could of fixed it.", "I could have fixed it.", .undecided),
@@ -169,6 +169,14 @@ public let outcomeTable: [Row] = [
     Row("behavour → behaviour", .en, "His behavour was odd during the call.", "His behaviour was odd during the call.", .keep),
     Row("spelling behavour → behaviour", .en, "His behavour was odd during the call.", "His behaviour was odd during the call.", .keep,
         source: .spelling),
+    Row("A French word English also has, fixed to another French word", .fr,
+        "Tout les serveurs sont à jour", "Tous les serveurs sont à jour", .keep),
+    Row("A French borrowing fixed to a French word", .fr,
+        "J'ai mergé le correctif", "J'ai fusionné le correctif", .drop(.borrowedWord)),
+    Row("A Dutch borrowing fixed to a Dutch word", .nl,
+        "Ik heb de fix gemerged", "Ik heb de fix gemerkt", .drop(.borrowedWord)),
+    Row("A Dutch word English also has, fixed to another Dutch word", .nl,
+        "Het was een warm dag", "Het was een warme dag", .keep),
 ]
 
 /// A paragraph's proposals judged together by `resolve` without a confirmer; `kept` lists "original → replacement".
