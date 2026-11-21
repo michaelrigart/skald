@@ -12,7 +12,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-skald-upgrade-design.md`, "Stage 1: engines" and the sections it relies on (Goals, Non-goals, Anti-goals, Constraints, "Left to the builder", "Decisions"). v1's rules: `docs/superpowers/specs/2026-11-02-skald-design.md`. Stage 2 is out of scope.
 
-**Base:** `feat/skald-upgrade` at `87fc08d`. It lacks three later `feat/skald-v1` commits (`43a271c`, `165ba73`, `c4c165a`, paste rules and README); see Finishing.
+**Base:** `feat/skald-upgrade` at `5665de7` (this plan), with `feat/skald-v1` through `c4c165a` merged at `6a3018e`.
+
+**Order:** the tasks run serially, 1 to 12; each `Depends on:` names the task before it and any task whose interface it uses.
 
 ## Global Constraints
 
@@ -30,7 +32,7 @@
   - Core: `swift test --package-path Packages/SkaldCore`
   - Platform: `swift test --package-path Packages/SkaldPlatform27`
   - App: `mise exec -- xcodegen generate`, then `xcodebuild test -project Skald.xcodeproj -scheme Skald -derivedDataPath build/dd.noindex -quiet -only-testing:SkaldTests`
-- Commits: imperative mood, no agent attribution, staged changes checked for secrets.
+- Commits: imperative mood, no agent attribution, staged changes checked for secrets. A commit stages the task's listed files by path, never a directory.
 
 ## Values this plan decides (spec, "Left to the builder")
 
@@ -47,7 +49,7 @@
 | Menu | First line "Checking on this Mac" (replaces "Skald is on") or "Dutch and French checks use Claude"; under it "Keep ‹App› on This Mac" (a checkmark item, shown when the frontmost app isn't Off). Glyph asset `SkaldMenuBarCloud`, from `design/menubar-cloud.svg`. |
 | Panel in a kept app | Picker and default are This Mac only; a request for another engine is `.unavailable(engine, .keptOnThisMac, alternatives: [.thisMac])`. |
 | Request log | `Log.claude`, one line per typing request: `typing request N: answered` or the trouble's name. |
-| Eval | `--thinking on|off` and `--fallbacks on|off` (default off, i.e. `.typing`); `--out` required in claude mode; prices by exact model id; a request is refused unless spend so far plus its ceiling stays within `--max-cost`; `--max-cost` above 0 and at most 5; latency bar 2 s for claude, none for replay. |
+| Eval | `--thinking on|off` and `--fallbacks on|off` (default off, i.e. `.typing`); `--out` required in claude mode; prices by exact model id; a request is refused unless spend so far plus its ceiling stays within `--max-cost`, and a sent request whose answer carries no usage (lost to a transport error or timeout) is charged its ceiling, so `--max-cost` is a strict bound; `--max-cost` above 0 and at most 5; latency bar 2 s for claude, none for replay; recall and clean paragraphs judged in every mode but spelling. |
 | Guard fix | A bare English word is a borrowed word only when the paragraph's dictionary rejects it; borrowing through an English stem ("gemerged", "mergé") is unchanged. Dutch keep row: "warm" → "warme". |
 | Memory | `/usr/bin/footprint -p Skald`, idle and after a TextEdit check, baseline vs. new Release build; numbers go in the PR description. |
 
@@ -55,23 +57,24 @@
 
 1. **A request leaves while the menu bar shows no cloud** (the anti-goal "sends text while typing without the menu bar showing it"). Expected: the pipeline publishes `sending: true` before it calls the engine. Task 8, `theStatusSaysSendingBeforeTheRequestLeaves`.
 2. **A v1 settings file saved back with its old `"version": 1` but three-way values**: v1 would then fail to decode it and move it aside as corrupt. Expected: written as version 2. Task 4, `aV1FileSavedAgainIsWrittenAsVersion2`.
-3. **An answer arriving after the switch went off, the app was kept on this Mac, or the paragraph changed.** Expected: dropped, nothing published. Task 7, `anAnswerArrivingAfterTheSwitchWentOffIsDropped` and `aNewerPauseCancelsTheRunningRequest`.
+3. **A pause or a "This Mac only" landing after the check started but before the send, or an answer arriving after the switch went off or the paragraph changed.** Expected: nothing sent in the first case, nothing published in the second. Task 7, `aPauseBeforeTheSendSendsNothing`, `keepingTheAppOnThisMacBeforeTheSendSendsNothing`, `anAnswerArrivingAfterTheSwitchWentOffIsDropped` and `aNewerPauseCancelsTheRunningRequest`; Task 8 keeps them passing with the status publish in place.
 4. **A French paragraph's Claude issues wiped when the caret leaves and comes back**, because v1's spelling-off branch clears a whole key and French spelling is off. Expected: they stay. Task 7, `claudesFrenchIssuesSurviveTheCaretLeavingAndComingBack`.
-5. **A model id priced by substring** ("claude-haiku-4-5" at a tenth of its price) so real spend passes `--max-cost`. Expected: only exact ids are priced; the cap holds per request. Task 2, `pricesAreExactModelIDs` and `aRequestWhoseCeilingWouldPassTheLimitIsNeverSent`.
+5. **Real spend passing `--max-cost`**: a model id priced by substring ("claude-haiku-4-5" at a tenth of its price), or a request whose answer was lost and so never counted. Expected: only exact ids are priced; a lost answer costs its ceiling; the cap holds per request. Task 2, `pricesAreExactModelIDs`, `aRequestWhoseCeilingWouldPassTheLimitIsNeverSent` and `aLostAnswerIsChargedItsCeiling`.
 
 ---
 
 ## Baseline (controller, before Task 1)
 
-Build the untouched base for the memory comparison; no commit.
+Build the commit before Task 1 for the memory comparison; no commit.
 
 ```bash
 mise exec -- xcodegen generate
 xcodebuild -project Skald.xcodeproj -scheme Skald -configuration Release -derivedDataPath build/dd-baseline.noindex -quiet build
 mkdir -p build/baseline && ditto build/dd-baseline.noindex/Build/Products/Release/Skald.app build/baseline/Skald.app
+git rev-parse HEAD   # record this SHA as the baseline's commit
 ```
 
-Record the commit (`87fc08d`) beside it. Measuring happens after the final verification ("Memory, before and after").
+Measuring happens after the final verification ("Memory, before and after").
 
 ---
 
@@ -130,12 +133,6 @@ func typingRequestShape() async throws {
     ] as NSDictionary)
 }
 
-@Test("typing sends thinking disabled and no fallbacks; the panel sends v1's request")
-func optionValues() {
-    #expect(ClaudeRequestOptions.typing == ClaudeRequestOptions(thinking: .disabled, serverFallbacks: false))
-    #expect(ClaudeRequestOptions.panel == ClaudeRequestOptions(thinking: .modelDefault, serverFallbacks: true))
-}
-
 @Test("a rejected key and a rate limit are named", arguments: [(401, UnavailableReason.claudeKeyRejected), (403, .claudeKeyRejected), (429, .claudeRateLimited)])
 func namedHTTPErrors(_ example: (Int, UnavailableReason)) async {
     let transport = StubTransport(status: example.0, json: #"{"type":"error","error":{"type":"x","message":"y"}}"#)
@@ -160,7 +157,12 @@ Expected: all pass; `requestShape` unchanged and green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Packages/SkaldCore/Sources/SkaldCore/Engines Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeEngineTests.swift Skald/CompositionRoot.swift Skald/StatusItemController.swift SkaldTests/StatusTitleTests.swift
+git add Packages/SkaldCore/Sources/SkaldCore/Engines/Remote/ClaudeRequestOptions.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/Remote/ClaudeEngine.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/Remote/HTTPTransport.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/Engine.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeEngineTests.swift \
+  Skald/CompositionRoot.swift Skald/StatusItemController.swift SkaldTests/StatusTitleTests.swift
 git commit -m "Give Claude's typing request its own options and name a rejected key"
 ```
 
@@ -170,24 +172,26 @@ git commit -m "Give Claude's typing request its own options and name a rejected 
 
 **Safety boundary: the key and spend off the Mac. Per-task review. Lands in a commit of its own, before Task 3: the gate run is made from this commit.**
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (the previous task; `ClaudeRequestOptions`, `ClaudeEngine.maxTokens`)
 
 **Files:**
 - Modify: `Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalRunner.swift` (modes, options, bar, replay, raw answers)
 - Create: `Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/ClaudeSpend.swift` (`ModelPrice`, `CostTrackingTransport`, `BudgetExceeded`)
 - Create: `Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalInputs.swift` (`EvalReplay`, `EvalClaudeKey`)
 - Modify: `Packages/SkaldPlatform27/Sources/skald-eval/main.swift`
-- Move: `Packages/SkaldCore/Tests/SkaldCoreTests/Support/StubTransport.swift` → `Packages/SkaldCore/Sources/SkaldCoreTestSupport/StubTransport.swift` (public, plain `import SkaldCore`; Core tests that use it import `SkaldCoreTestSupport`)
+- Move (`git mv`): `Packages/SkaldCore/Tests/SkaldCoreTests/Support/StubTransport.swift` → `Packages/SkaldCore/Sources/SkaldCoreTestSupport/StubTransport.swift` (public, plain `import SkaldCore`)
+- Modify: `Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeEngineTests.swift` and `Packages/SkaldCore/Tests/SkaldCoreTests/StudioEngineTests.swift` (add `import SkaldCoreTestSupport`; they are the only users of `StubTransport`)
 - Modify: `Eval/README.md` ("Running")
-- Test: `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalRunnerTests.swift`; Create `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalClaudeTests.swift`
+- Test: `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalRunnerTests.swift` (options, bar, and the runner-path tests beside its private helpers); Create `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalClaudeTests.swift` (prices, spend, key, replay loading)
 
-Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with these differences: no `languagetool` or `apple-cloud` mode; prices by exact id; the cap refuses by ceiling, not after passing it; `--out` required for claude; raw answers written; latency bar by mode; the key read through `EvalClaudeKey`; `--thinking` and `--fallbacks`.
+Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with these differences: no `languagetool` or `apple-cloud` mode; prices by exact id; the cap refuses by ceiling, not after passing it, and charges a lost answer its ceiling; `--out` required for claude; raw answers written; latency bar by mode; the key read through `EvalClaudeKey`; `--thinking` and `--fallbacks`.
 
 **Interfaces:**
 - Consumes: `ClaudeEngine(model:apiKey:transport:options:)`, `ClaudeEngine.maxTokens`, `ClaudeRequestOptions` (Task 1).
 - Produces:
   ```swift
   public enum EvalMode: String, Sendable { case model, spelling, claude, replay }
+  EvalMode.isModelPath: Bool   // every mode but spelling; EvalBar.misses judges clean paragraphs and recall on it (today: `mode == .model`)
   public struct EvalOptions: Equatable, Sendable {      // existing four fields first, so v1 call sites compile
       public var set: String; public var mode: EvalMode; public var guardOn: Bool; public var out: String?
       public var claudeModel: String? = nil
@@ -205,6 +209,7 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
   }
   public actor CostTrackingTransport: HTTPTransport {
       public init(inner: any HTTPTransport, price: ModelPrice, maxCost: Double, usageLog: URL?)
+      public var spent: Double { get }
       public var summary: String { get }
   }
   public struct BudgetExceeded: Error {}
@@ -215,7 +220,7 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
   }
   ```
 - `--thinking on` → `.modelDefault`, `off` → `.disabled`; `--fallbacks on|off` → `serverFallbacks`.
-- Cap rule: before forwarding, refuse with `BudgetExceeded` (the inner transport is not called) when `spent + price.cost(input: httpBody byte count, output: ClaudeEngine.maxTokens) > maxCost`. A token is at least one byte, and the body's JSON keys outweigh the API's few template tokens, so the ceiling bounds the request. Each answer's `usage.input_tokens`/`output_tokens` is added at the exact price.
+- Cap rule: before forwarding, refuse with `BudgetExceeded` (the inner transport is not called) when `spent + price.cost(input: httpBody byte count, output: ClaudeEngine.maxTokens) > maxCost`. A token is at least one byte, and the body's JSON keys outweigh the API's few template tokens, so the ceiling bounds the request. A forwarded request is charged its answer's `usage.input_tokens`/`output_tokens` at the exact price; when there is no usage to read (the inner transport threw, the request timed out, or the body has no `usage`), it is charged its ceiling, so `spent` never understates the bill and `--max-cost` is a strict bound.
 - Files in claude mode with `--out X`: `X` (graded outputs, as today), `X.raw.jsonl` (`EvalOutput` lines of `run.raw`, replayable), `X.usage.jsonl` (one `{"input_tokens":…,"output_tokens":…,"cost":…,"total_cost":…}` line per request). stderr gets `claude request: ` plus that line. After the run, `summary` is printed.
 - Summary format: `claude usage: N requests, I input tokens, O output tokens, $T of $L; $C a check, $M a month at 500 checks a day` (`T` `%.4f`, `L` `%.2f`, `C` `%.6f`, `M` = C × 500 × 30, `%.2f`), plus `, stopped at the cost limit` when a request was refused.
 - Order in `main.swift` for claude: options parsed (usage errors exit 2), cases loaded, key read (missing → exit 2 before any request).
@@ -249,6 +254,22 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
 | `--mode model --outputs r` | `--outputs is for --mode replay` |
 
 `EvalBarTests.latency`: add `#expect(EvalBar.misses(scored(tp: 20, latencies: fast + [1_999, 5_000, 9_000]), mode: .claude).isEmpty)`, `… [2_000, …] , mode: .claude) == [.latency]`, and `mode: .replay` with p90 9_000 → no latency miss.
+`EvalBarTests.cleanParagraphs`: add `#expect(EvalBar.misses(scored(tp: 40, fp: 2), mode: .claude) == [.cleanParagraphs])` and the same for `.replay`.
+`EvalBarTests.recall`: add `#expect(EvalBar.misses(scored(tp: 17, fn: 2), mode: .claude) == [.recall])` and the same for `.replay`.
+
+Runner-path tests, in `EvalRunnerTests.swift` beside its private `MappedDetector`, `ScriptedSpelling`, `NoFacts` and `Approves` (they stay private: shared top-level test names clash across files):
+```swift
+@Test func aReplayedCaseWithoutARecordedAnswerIsARequestError() async
+// runner(.replay, replay: ["a": answer]) on cases a and b (both .nl): a's output is the answer as cleaned,
+// b's error == "failed"; EvalBar.verdict(score, errors: 1, mode: .replay) == .noVerdict(errors: 1)
+
+@Test func claudeModeSendsEachCaseAsTheTypingRequestAndKeepsTheRawAnswer() async throws
+// EvalRunner(mode: .claude, guardOn: false, detector: MappedDetector(...), engine: ClaudeEngine(model: "claude-haiku-5-5",
+//   apiKey: { "sk-test" }, transport: CostTrackingTransport(inner: stub, price: haiku, maxCost: 1, usageLog: nil), options: .typing),
+//   spelling: ScriptedSpelling(flags: []), oracle: NoFacts(), confirmer: Approves())
+// two cases → outputs and raw equal the stubbed answers; each sent body's messages[0].content is its case text,
+// "thinking" == ["type": "disabled"], no "fallbacks" key, no "anthropic-beta" header
+```
 
 `EvalClaudeTests` (new):
 ```swift
@@ -271,6 +292,11 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
 // first reply's usage 1000 in / 2000 out (cost 0.0011); the second send throws BudgetExceeded,
 // the stub saw exactly 1 request, and summary ends with ", stopped at the cost limit"
 
+@Test func aLostAnswerIsChargedItsCeiling() async throws
+// maxCost 0.004; body exactly 1_000 bytes (ceiling 0.002148); the stub's first reply is .failure(URLError(.timedOut)):
+// the send throws, abs(spent - 0.002148) < 1e-12; the second send throws BudgetExceeded (0.002148 + 0.002148 > 0.004)
+// and the stub saw exactly 1 request
+
 @Test func theKeyComesOnlyFromSkaldEvalClaudeKey() throws {
     #expect(try EvalClaudeKey.read(from: ["SKALD_EVAL_CLAUDE_KEY": "sk-eval"]) == "sk-eval")
     for environment in [[:], ["SKALD_EVAL_CLAUDE_KEY": ""], ["ANTHROPIC_API_KEY": "sk-other"]] {
@@ -280,23 +306,11 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
 
 @Test func replayReadsTheProxyFormatByID() throws
 // temp file: {"id":"a","lang":"nl","ms":0,"output":"x"} / {"id":"b","lang":"fr","ms":0,"output":null} / "" → ["a": "x"]
-
-@Test func aReplayedCaseWithoutARecordedAnswerIsARequestError() async
-// runner(.replay, replay: ["a": answer]) on cases a and b (both .nl): a's output is the answer as cleaned,
-// b's error == "failed"; EvalBar.verdict(score, errors: 1, mode: .replay) == .noVerdict(errors: 1)
-
-@Test func claudeModeSendsEachCaseAsTheTypingRequestAndKeepsTheRawAnswer() async throws
-// EvalRunner(mode: .claude, guardOn: false, detector: MappedDetector(...), engine: ClaudeEngine(model: "claude-haiku-5-5",
-//   apiKey: { "sk-test" }, transport: CostTrackingTransport(inner: stub, price: haiku, maxCost: 1, usageLog: nil), options: .typing),
-//   spelling: ScriptedSpelling(flags: []), oracle: NoFacts(), confirmer: Approves())
-// two cases → outputs and raw equal the stubbed answers; each sent body's messages[0].content is its case text,
-// "thinking" == ["type": "disabled"], no "fallbacks" key, no "anthropic-beta" header
 ```
-The helpers `MappedDetector`, `ScriptedSpelling`, `NoFacts`, `Approves` move from `EvalRunnerTests.swift` to file scope shared by both files (drop `private`).
 
 - [ ] **Step 2: Run, expect failure**
 
-Run: `swift test --package-path Packages/SkaldPlatform27 --filter 'EvalOptionsTests|EvalBarTests|EvalClaudeTests'`
+Run: `swift test --package-path Packages/SkaldPlatform27 --filter 'EvalOptionsTests|EvalBarTests|EvalRunnerPathTests|EvalClaudeTests'`
 Expected: compile failure.
 
 - [ ] **Step 3: Implement** the interfaces above; `main.swift` wires claude mode (`CostTrackingTransport(inner: URLSessionTransport(), …)`, `ClaudeEngine(… options: options.claudeRequest)`) and replay (`EvalReplay.load`), writes `X.raw.jsonl` whenever `run.raw` is non-empty, prints the summary in claude mode. Update `Eval/README.md` "Running": the four modes, every flag, the three output files, the cap rule, the key variable, and that replay costs nothing and is how guard-off and later re-grades are made.
@@ -317,15 +331,26 @@ Expected (the proxy run's figures, `scored-haiku-guardon.txt`): `en … (tp 17, 
 - [ ] **Step 6: Commit** (this commit alone; its SHA goes in the PR as the gate commit)
 
 ```bash
-git add Packages/SkaldPlatform27 Packages/SkaldCore/Sources/SkaldCoreTestSupport/StubTransport.swift Packages/SkaldCore/Tests Eval/README.md
+git add Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalRunner.swift \
+  Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/ClaudeSpend.swift \
+  Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalInputs.swift \
+  Packages/SkaldPlatform27/Sources/skald-eval/main.swift \
+  Packages/SkaldCore/Sources/SkaldCoreTestSupport/StubTransport.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/Support/StubTransport.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeEngineTests.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/StudioEngineTests.swift \
+  Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalRunnerTests.swift \
+  Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalClaudeTests.swift \
+  Eval/README.md
 git commit -m "Add Claude and replay modes to the eval tool"
 ```
+(The old `StubTransport.swift` path stages its deletion.)
 
 ---
 
 ### Task 3: A native word is not borrowed for being English too
 
-**Depends on:** Task 2 (lands after the eval commit, so the gate run can't see it)
+**Depends on:** Task 2 (the previous task; this fix lands after the eval commit, so the gate run can't see it)
 
 **Files:**
 - Modify: `Packages/SkaldCore/Sources/SkaldCore/Guard/EditGuard.swift:297-300` (`englishStem`)
@@ -352,7 +377,7 @@ Row("A Dutch borrowing fixed to a Dutch word", .nl,
 Row("A Dutch word English also has, fixed to another Dutch word", .nl,
     "Het was een warm dag", "Het was een warme dag", .keep),
 ```
-Line 100, "A French adverb is not a function word" ("plus" → "jamais"): expected `.drop(.replacement)`. "plus" is in the French dictionary, so under the spec's outcome it is no longer a borrowed word; the outcome stays a drop, as its Dutch and English siblings' do.
+Line 100, "A French adverb is not a function word" ("plus" → "jamais"): expected `.drop(.replacement)`. "plus" is in the French dictionary, so it is no longer a borrowed word; it stays a drop, as its Dutch and English siblings do, and the spec lets a drop's recorded reason change.
 
 In `EditGuardTests`:
 ```swift
@@ -379,7 +404,10 @@ Expected: all pass. Any other existing row changing keep/drop/undecided, or any 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Packages/SkaldCore
+git add Packages/SkaldCore/Sources/SkaldCore/Guard/EditGuard.swift \
+  Packages/SkaldCore/Sources/SkaldCoreTestSupport/OutcomeTable.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/Fixtures/guard/word-facts.json \
+  Packages/SkaldCore/Tests/SkaldCoreTests/EditGuardTests.swift
 git commit -m "Stop counting a native word as borrowed because English has it too"
 ```
 
@@ -389,7 +417,7 @@ git commit -m "Stop counting a native word as borrowed because English has it to
 
 **Safety boundary: settings migration. Per-task review.**
 
-**Depends on:** none
+**Depends on:** Task 3 (the previous task; order only)
 
 **Files:**
 - Modify: `Packages/SkaldCore/Sources/SkaldCore/Settings/Settings.swift`
@@ -443,23 +471,15 @@ private let v1File = """
 // {"version": 2, "appOverrides": {"a": "sometimes", "b": "thisMacOnly"}, "neverTouch": ["Talos"]} → .loaded with
 // appOverrides == ["b": .thisMacOnly] and neverTouch == ["Talos"] (not .recoveredFromCorrupt)
 
-@Test func eachAppHasAMode() {
-    var settings = Settings()
-    #expect(settings.mode(app: "com.apple.Terminal") == .off)
-    #expect(settings.mode(app: "com.apple.Notes") == .on)
-    settings.appOverrides["com.apple.Notes"] = .thisMacOnly
-    #expect(settings.mode(app: "com.apple.Notes") == .thisMacOnly)
-    #expect(settings.isEnabled(app: "com.apple.Notes"))
-    #expect(!settings.isEnabled(app: "com.apple.Terminal"))
-}
 ```
-Extend `settingsRoundTrip` with `appOverrides["com.apple.Notes"] = .thisMacOnly`, `claudeTyping = true`, `claudeLanguages = [.nl: true, .fr: false]`, `claudeTypingModel = "claude-sonnet-5-5"` (replacing its `= true` override with `.on`). `missingFileLoadsFreshDefaults`: `version == 2`, `claudeTyping == false`, `claudeLanguages == [.nl: true, .fr: true]`, `claudeTypingModel == "claude-haiku-5-5"`. `futureVersionIsReadOnlyAndNeverOverwritten`: the file's version becomes 3.
+`defaultOffAppsAreOffUnlessOverridden`, with modes: `mode(app: "com.mitchellh.ghostty") == .off` and `mode(app: "com.apple.Notes") == .on` by default; ghostty overridden `.on` is enabled; Notes overridden `.off` is not; Notes overridden `.thisMacOnly` has `mode == .thisMacOnly` and is enabled.
+Extend `settingsRoundTrip` with `appOverrides["com.apple.Notes"] = .thisMacOnly`, `claudeTyping = true`, `claudeLanguages = [.nl: true, .fr: false]`, `claudeTypingModel = "claude-sonnet-5-5"` (replacing its `= true` override with `.on`). `missingFileLoadsFreshDefaults`: `version == 2`, `claudeTyping == false`, `claudeLanguages == [.nl: true, .fr: true]`, `claudeTypingModel == "claude-haiku-5-5"`. The future file in `futureVersionIsReadOnlyAndNeverOverwritten` and in `aSuccessfulLoadClearsTheReadOnlyFlag` becomes version 3 (version 2 is now current).
 
 `SettingsModelTests.anAppOverrideIsStoredOnlyWhereItDiffersFromTheShippedDefault`, rewritten: Notes `.thisMacOnly` → `["com.apple.Notes": .thisMacOnly]`; Notes `.on` → empty; Terminal `.on` → `["com.apple.Terminal": .on]`; Terminal `.thisMacOnly` → `[… : .thisMacOnly]`; Terminal `.off` → empty.
 
 - [ ] **Step 2: Run, expect failure**
 
-Run: `swift test --package-path Packages/SkaldCore --filter 'aV1File|anUnknownAppMode|eachAppHasAMode|settingsRoundTrip|missingFile|futureVersion'`
+Run: `swift test --package-path Packages/SkaldCore --filter 'aV1File|anUnknownAppMode|defaultOffApps|settingsRoundTrip|missingFile|futureVersion|aSuccessfulLoad'`
 Expected: compile failure.
 
 - [ ] **Step 3: Implement** the Core interfaces, then the app: `setApp(_:mode:)`; the Apps pane's per-app switch becomes a menu `Picker` with "On", "This Mac only", "Off", and its caption reads "Skald checks what you type in the apps turned on here. Nothing you type in an app kept on This Mac only goes to Claude, and the panel offers This Mac only there. Terminals, code editors and password managers start off."; the status menu's item reads "Turn Off for ‹App›" unless the mode is `.off` (sets `.off`), else "Turn On for ‹App›" (sets `.on`).
@@ -469,7 +489,10 @@ Expected: compile failure.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Packages/SkaldCore Skald SkaldTests
+git add Packages/SkaldCore/Sources/SkaldCore/Settings/Settings.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/SettingsStoreTests.swift \
+  Skald/SettingsModel.swift Skald/Settings/AppsPane.swift Skald/StatusItemController.swift Skald/CompositionRoot.swift \
+  SkaldTests/SettingsModelTests.swift
 git commit -m "Store a three-way setting per app and the Claude typing settings"
 ```
 
@@ -479,13 +502,13 @@ git commit -m "Store a three-way setting per app and the Claude typing settings"
 
 **Safety boundary: what is sent off the Mac. Per-task review.**
 
-**Depends on:** Task 4
+**Depends on:** Task 4 (the previous task; `Settings.mode(app:)`, `claudeTyping`, `claudeLanguages`)
 
 **Files:**
-- Modify: `Packages/SkaldCore/Sources/SkaldCore/Engines/EngineRouter.swift`, `LiveRouter.swift:12-14`, `Engine.swift` (`.keptOnThisMac`), `PanelSession.swift` (init `app:`, lines 93-95 and 105)
+- Modify: `Packages/SkaldCore/Sources/SkaldCore/Engines/EngineRouter.swift`, `Packages/SkaldCore/Sources/SkaldCore/Engines/LiveRouter.swift:12-14`, `Packages/SkaldCore/Sources/SkaldCore/Engines/Engine.swift` (`.keptOnThisMac`), `Packages/SkaldCore/Sources/SkaldCore/Engines/PanelSession.swift` (init `app:`, lines 93-95 and 105)
 - Modify: `Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift:444` (`typing(language)` → `onDevice(language)`: no behaviour change)
 - Modify: `Skald/CompositionRoot.swift:234-282` (pass `source?.bundleIdentifier`; `pickerEngines(app:)`, `panelDefault(app:)`), `Skald/StatusItemController.swift` (`.keptOnThisMac` explanation "this app is kept on this Mac")
-- Test: `Packages/SkaldCore/Tests/SkaldCoreTests/EngineRouterTests.swift`, `PanelSessionTests.swift`, `SkaldTests/StatusTitleTests.swift` (reason list)
+- Test: `Packages/SkaldCore/Tests/SkaldCoreTests/EngineRouterTests.swift`, `Packages/SkaldCore/Tests/SkaldCoreTests/PanelSessionTests.swift`, `SkaldTests/StatusTitleTests.swift` (reason list)
 
 **Interfaces:**
 - Consumes: `Settings.mode(app:)`, `claudeTyping`, `claudeLanguages` (Task 4).
@@ -548,7 +571,14 @@ git commit -m "Store a three-way setting per app and the Claude typing settings"
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Packages/SkaldCore Skald SkaldTests
+git add Packages/SkaldCore/Sources/SkaldCore/Engines/EngineRouter.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/LiveRouter.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/Engine.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Engines/PanelSession.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/EngineRouterTests.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/PanelSessionTests.swift \
+  Skald/CompositionRoot.swift Skald/StatusItemController.swift SkaldTests/StatusTitleTests.swift
 git commit -m "Route Dutch and French to Claude by language and app, and keep a kept app's panel on this Mac"
 ```
 
@@ -556,7 +586,7 @@ git commit -m "Route Dutch and French to Claude by language and app, and keep a 
 
 ### Task 6: Backing off when Claude fails
 
-**Depends on:** Task 1
+**Depends on:** Task 5 (the previous task; order only); Task 1 (`UnavailableReason.claudeKeyRejected`, `.claudeRateLimited`)
 
 **Files:**
 - Create: `Packages/SkaldCore/Sources/SkaldCore/Engines/ClaudeBackoff.swift`
@@ -621,7 +651,8 @@ git commit -m "Route Dutch and French to Claude by language and app, and keep a 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Packages/SkaldCore
+git add Packages/SkaldCore/Sources/SkaldCore/Engines/ClaudeBackoff.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeBackoffTests.swift
 git commit -m "Suspend Claude checks after repeated failures, for a growing interval"
 ```
 
@@ -631,13 +662,13 @@ git commit -m "Suspend Claude checks after repeated failures, for a growing inte
 
 **Safety boundary: what is sent off the Mac. Per-task review.**
 
-**Depends on:** Task 5
+**Depends on:** Task 6 (the previous task; order only); Task 5 (`typing(_:app:)`, `onDevice(_:)`, `canConfirmOnDevice`); Task 4 (the Claude settings, `AppMode`)
 
 **Files:**
-- Modify: `Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift` (init, `checkModel`, `spell`, `mayConfirm`, `route`, `update(settings:)`, `anchored`)
-- Modify: `Packages/SkaldCore/Sources/SkaldCore/Issues/Issue.swift`, `Issues/IssueTracker.swift:49-58` (revalidate carries `engine`)
-- Create: `Packages/SkaldCore/Tests/SkaldCoreTests/Support/PipelineRig.swift` (the `Rig` of `CheckPipelineTests.swift` with the constants it needs, renamed `PipelineRig`, made internal, extended with `claude: FakeEngine?`, a key flag, a record of the models the factory was asked for, and word facts for every language)
-- Modify: `Packages/SkaldCore/Tests/SkaldCoreTests/CheckPipelineTests.swift` (uses `PipelineRig`; no test changes)
+- Modify: `Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift` (init, `checkModel`, `spell`, `mayConfirm`, `route`, `setRouteHook`, `update(settings:)`, `anchored`)
+- Modify: `Packages/SkaldCore/Sources/SkaldCore/Issues/Issue.swift`, `Packages/SkaldCore/Sources/SkaldCore/Issues/IssueTracker.swift:49-58` (revalidate carries `engine`)
+- Create: `Packages/SkaldCore/Tests/SkaldCoreTests/Support/PipelineRig.swift`: the `Rig` of `CheckPipelineTests.swift`, renamed `PipelineRig`, internal, extended with `claude: FakeEngine?`, a key flag, a record of the models the factory was asked for, and word facts for every language. Everything it shares (its fields `fieldA`/`fieldB`, the pause, `makeSettings`, `engineRouter`, `GatedOracle`) becomes a static member or nested type of `PipelineRig` (`PipelineRig.fieldA`, `PipelineRig.makeSettings(…)`), never an internal top-level name: other test files declare private top-level names like these, and an internal one beside them is ambiguous.
+- Modify: `Packages/SkaldCore/Tests/SkaldCoreTests/CheckPipelineTests.swift` (uses `PipelineRig`; its route-hook closures take the new lookup kind; no test changes)
 - Create: `Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeTypingTests.swift`
 - Test: `Packages/SkaldCore/Tests/SkaldCoreTests/IssueTrackerTests.swift`
 
@@ -650,11 +681,14 @@ git commit -m "Suspend Claude checks after repeated failures, for a growing inte
   public static let claudeTimeout: Duration = .seconds(5)   // on CheckPipeline
   Issue.init(id:key:parent:chunk:edit:source:language:engine: EngineKind? = nil)
   public let engine: EngineKind?   // on Issue: .claude or .thisMac for a model issue, nil for spelling
+  enum RouteLookup: Sendable { case spelling, model }                    // internal, for the test hook
+  CheckPipeline.setRouteHook(_ hook: (@Sendable (Language, RouteLookup) async -> Void)?)   // was (Language)
   ```
 - Model check: the route is `typing(language, app: key.field.app)`. `.claude` sends `EngineRequest(action: .check, language:, text: chunk.text)` to `claude(settings.claudeTypingModel)`, raced against `claudeTimeout` on the injected clock (at the deadline the request's task is cancelled and its answer, if it comes, ignored); `.model` runs Apple as v1; anything else is dropped as v1. A Claude failure or timeout is dropped here; Task 8 turns it into a fallback.
+- Before the send: every route lookup goes through `route(…)`, which calls the hook with its kind; after the model check's lookup, the epoch, generation and a `.claude` route are checked again, and nothing awaits between that check and the engine call. A pause, a focus change or a settings update (the app kept on this Mac, the switch off) that lands after the check started therefore sends nothing.
 - After the answer: `ModelAnswer.judge` as for Apple; the epoch, generation and a route still `.claude` for that language and app must hold, or nothing is published. Confirmation on the Claude path is allowed when `router.current.canConfirmOnDevice` and Apple has not been found unavailable.
 - Model issues carry `engine: .claude` or `.thisMac`; `IssueTracker.revalidate` keeps it.
-- Spelling, at the caret and in the background, follows `router.current.onDevice(language)`. When that is `.off` while the model route is `.claude`, the spelling job removes only the key's spelling issues (`tracker.setSpelling([], for:)`), never Claude's.
+- Spelling, at the caret and in the background, follows `router.current.onDevice(language)`. When that is `.off` while the model route for the paragraph's language and the field's app is `.claude`, the spelling job neither clears nor forgets the key: it ends. (v1's off branch, `CheckPipeline.swift:364-369`, clears the key's issues, Claude's included, and at the caret sends `.forget`, which also drops the key from the scheduler's `modelChecked`, so the next caret move would send the paragraph again; in the background it clears the key when a refocus re-queues it.) When the model route is not `.claude`, v1's branch stands.
 - `update(settings:)` rechecks when `claudeTyping`, `claudeLanguages` or `appOverrides` change, as for `typingChecks`/`modelChecks`.
 
 - [ ] **Step 1: Extract the rig.** Move `Rig` and its constants to `Support/PipelineRig.swift` as above; run `swift test --package-path Packages/SkaldCore --filter CheckPipelineTests`; expected: every test passes unchanged.
@@ -673,8 +707,11 @@ git commit -m "Suspend Claude checks after repeated failures, for a growing inte
 // field french + "\n" + french2, Claude gated: before release visible is empty and FakeSpelling has no French call;
 // after release visible == ["serveur"] with engine .claude; Claude's texts == [french]
 @Test func claudesFrenchIssuesSurviveTheCaretLeavingAndComingBack()
-// after the previous: caret to french2 (checked: Claude's texts == [french, french2]), back to french:
-// no third request, and "serveur" (engine .claude) is still visible
+// after the previous: caret to french2 (checked: Claude's texts == [french, french2]), back to french, then one more
+// caret move inside french: still 2 requests, and "serveur" (engine .claude) is still visible
+@Test func claudesFrenchIssuesSurviveARefocus()
+// after the previous: focus fieldB, then fieldA again with the caret in french2 and let the background pass run:
+// "serveur" (engine .claude) is still visible and Claude's requests are still 2
 @Test func englishStaysOnTheMac()              // flew: Apple got [flew], Claude got nothing, model issues have engine .thisMac
 @Test func anAppKeptOnThisMacSendsNothing()     // appOverrides["com.example.mail"] = .thisMacOnly: Claude got nothing; "gisterren" flagged
 @Test func nothingIsSentWhilePaused()           // setPaused(true), focus, edit, pause passes: Claude got nothing, visible empty
@@ -689,6 +726,12 @@ git commit -m "Suspend Claude checks after repeated failures, for a growing inte
 // although modelChecks[.nl] is false; with the router's apple .appleIntelligenceOff it is asked nothing and the edit is dropped
 @Test func anAnswerArrivingAfterTheSwitchWentOffIsDropped()
 // gated; request in flight; update(settings with claudeTyping false); release: no Claude issue published
+@Test func aPauseBeforeTheSendSendsNothing()
+// as v1's pausingDuringASpellingLookupPublishesNothing: a hook (this file's own, private) holds the first route lookup
+// of kind .model for .nl; setPaused(true); release; drain: Claude's requests are empty, no Claude issue
+@Test func keepingTheAppOnThisMacBeforeTheSendSendsNothing()
+// the same hold; rig.update(settings with appOverrides["com.example.mail"] = .thisMacOnly); release; drain; then
+// pass the pause again: Claude's requests are empty, "gisterren" flagged
 @Test func turningClaudeOnRechecksTheField()    // switch off: Claude got nothing; update with it on and pass the pause: Claude got [dutch]
 ```
 `IssueTrackerTests`:
@@ -703,7 +746,13 @@ git commit -m "Suspend Claude checks after repeated failures, for a growing inte
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Packages/SkaldCore
+git add Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Issues/Issue.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Issues/IssueTracker.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/Support/PipelineRig.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/CheckPipelineTests.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeTypingTests.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/IssueTrackerTests.swift
 git commit -m "Check the caret's Dutch and French paragraph with Claude while typing"
 ```
 
@@ -713,12 +762,12 @@ git commit -m "Check the caret's Dutch and French paragraph with Claude while ty
 
 **Safety boundary: what is sent off the Mac (the status before the send). Per-task review.**
 
-**Depends on:** Task 6, Task 7
+**Depends on:** Task 7 (the previous task; the Claude path); Task 6 (`ClaudeBackoff`, `ClaudeTrouble`)
 
 **Files:**
 - Modify: `Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift`
 - Create: `Packages/SkaldCore/Sources/SkaldCore/Pipeline/ClaudeStatus.swift`
-- Test: Create `Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeFailureTests.swift`
+- Test: Create `Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeFailureTests.swift`; Task 7's `ClaudeTypingTests` run again unchanged
 
 **Interfaces:**
 - Consumes: `ClaudeBackoff`, `ClaudeTrouble` (Task 6); the Claude path (Task 7).
@@ -737,7 +786,7 @@ git commit -m "Check the caret's Dutch and French paragraph with Claude while ty
   }
   ```
 - `sending` = not paused, a factory exists, the focused field's last confident language routes to `.claude` for the field's app, and the backoff isn't suspended. Recomputed and yielded (when changed) on focus, pause and resume, settings updates, every route lookup, every Claude outcome and `resetClaude()`; on the sync paths through a tracked job, so `drain()` covers it.
-- **The status says `sending: true` before the engine is called**, every time.
+- **The status says `sending: true` before the engine is called**, every time, and publishing it adds no suspension point: the pre-send status is computed synchronously from the `EngineRouter` value the check's final route lookup just read and the pipeline's own state, so Task 7's rule (nothing awaits between the last check and the engine call) still holds and its race tests still pass.
 - A request is sent only when `backoff.mayAsk(about: chunk.text, at: now)`; otherwise the chunk takes `onDevice(language)`.
 - A failure (the timeout included, cancellation excluded) calls `backoff.failed(ClaudeTrouble(failure)!, text:, at:)`, yields the status, and falls back in the same job: `onDevice == .model` runs Apple as v1 (issues with `engine: .thisMac`); otherwise the check is dropped. Issues already shown are never cleared by a failure. A success calls `backoff.succeeded()`.
 
@@ -767,11 +816,13 @@ git commit -m "Check the caret's Dutch and French paragraph with Claude while ty
 
 - [ ] **Step 2: Run, expect failure.** `swift test --package-path Packages/SkaldCore --filter ClaudeFailureTests` → compile failure.
 - [ ] **Step 3: Implement** the behaviour above.
-- [ ] **Step 4: Run, expect pass.** Focused, then the Core suite.
+- [ ] **Step 4: Run, expect pass.** Focused, then the Core suite (`ClaudeTypingTests`' `aPauseBeforeTheSendSendsNothing` and `keepingTheAppOnThisMacBeforeTheSendSendsNothing` included).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Packages/SkaldCore
+git add Packages/SkaldCore/Sources/SkaldCore/Pipeline/CheckPipeline.swift \
+  Packages/SkaldCore/Sources/SkaldCore/Pipeline/ClaudeStatus.swift \
+  Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeFailureTests.swift
 git commit -m "Fall back and back off when Claude can't answer, and report it"
 ```
 
@@ -781,7 +832,7 @@ git commit -m "Fall back and back off when Claude can't answer, and report it"
 
 **Safety boundary: showing what is sent; this task also turns the path on in the app. Per-task review.**
 
-**Depends on:** Task 4, Task 5, Task 8
+**Depends on:** Task 8 (the previous task; `ClaudeStatus`, `resetClaude()`); Task 5 (`claudeTypingLanguages`, `onDevice`); Task 4 (`AppMode`); Task 1 (`ClaudeRequestOptions.typing`)
 
 **Files:**
 - Modify: `Skald/StatusItemController.swift` (`StatusState`, `image(sendingToClaude:)`, `show(_:sendingToClaude:)`, the menu)
@@ -790,7 +841,7 @@ git commit -m "Fall back and back off when Claude can't answer, and report it"
 - Modify: `Skald/Log.swift` (`static let claude = Logger(subsystem: SkaldCore.bundleID, category: "claude")`)
 - Create: `Skald/ClaudeTypingLog.swift`
 - Create: `design/menubar-cloud.svg`; Modify: `design/render` (two more `rsvg-convert` lines into `SkaldMenuBarCloud.imageset`)
-- Create: `Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/` (`Contents.json` as `SkaldMenuBar.imageset`'s with the new file names, `SkaldMenuBarCloud@1x.png`, `@2x.png`)
+- Create: `Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/Contents.json` (as `SkaldMenuBar.imageset`'s, with the new file names), `Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/SkaldMenuBarCloud@1x.png`, `Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/SkaldMenuBarCloud@2x.png`
 - Test: `SkaldTests/StatusTitleTests.swift`; Create `SkaldTests/ClaudeTypingLogTests.swift`
 
 **Interfaces:**
@@ -806,12 +857,13 @@ git commit -m "Fall back and back off when Claude can't answer, and report it"
       static let glyphName = "SkaldMenuBar", cloudGlyphName = "SkaldMenuBarCloud"
       func image(sendingToClaude: Bool) -> NSImage?
   }
-  final class ClaudeTypingLog: Sendable {
+  nonisolated final class ClaudeTypingLog: Sendable {
       func record(_ outcome: Result<String, EngineFailure>) -> Int      // logs `line` with privacy .public, returns the count
       static func line(_ count: Int, _ outcome: Result<String, EngineFailure>) -> String
   }
-  struct LoggedEngine: Engine { init(_ inner: any Engine, log: ClaudeTypingLog) }
+  nonisolated struct LoggedEngine: Engine { init(_ inner: any Engine, log: ClaudeTypingLog) }
   ```
+- Both are `nonisolated`, as `AppSwitches` and `KeychainStore` are: the app target defaults to MainActor isolation (`SWIFT_DEFAULT_ACTOR_ISOLATION`), and the pipeline's actor calls them.
 - Rank: no Accessibility > paused > `claudeTrouble` (a trouble and a non-empty `claudeLanguages`) > `usingClaude` (`sending` and a non-empty `claudeLanguages`) > `spellingOnly` (Apple, then thermal) > `onThisMac`. `fallbacks` = `claudeTypingLanguages` with `onDevice` of each.
 - Glyph: the cloud form exactly while `ClaudeStatus.sending`; both forms are templates described by the title.
 - Menu, top down: the title; a separator; "Keep ‹App› on This Mac" (checkmark when `.thisMacOnly`; toggles to `.on` or `.thisMacOnly`; shown when there is a frontmost app whose mode isn't `.off`); Pause/Resume; Turn Off/On; Grant Accessibility Access when needed; a separator; Settings; Quit.
@@ -855,7 +907,12 @@ Update `everyStateShowsTheMenuBarGlyph…` to `image(sendingToClaude: false)` an
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Skald SkaldTests design
+git add Skald/StatusItemController.swift Skald/CompositionRoot.swift Skald/SettingsModel.swift Skald/Log.swift \
+  Skald/ClaudeTypingLog.swift design/menubar-cloud.svg design/render \
+  Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/Contents.json \
+  Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/SkaldMenuBarCloud@1x.png \
+  Skald/Assets.xcassets/SkaldMenuBarCloud.imageset/SkaldMenuBarCloud@2x.png \
+  SkaldTests/StatusTitleTests.swift SkaldTests/ClaudeTypingLogTests.swift
 git commit -m "Show a cloud in the menu bar while checks go to Claude"
 ```
 
@@ -863,14 +920,14 @@ git commit -m "Show a cloud in the menu bar while checks go to Claude"
 
 ### Task 10: Settings for Claude while typing
 
-**Depends on:** Task 4
+**Depends on:** Task 9 (the previous task; order only); Task 4 (`claudeTyping`, `claudeLanguages`)
 
 **Files:**
-- Modify: `Skald/Settings/LanguagesPane.swift`, `Skald/Settings/EnginesPane.swift:13, 79-130`, `Skald/SettingsModel.swift`
+- Modify: `Skald/Settings/LanguagesPane.swift`, `Skald/Settings/EnginesPane.swift:13`, `Skald/SettingsModel.swift`
 - Test: `SkaldTests/SettingsModelTests.swift`
 
 **Interfaces:**
-- Consumes: `Settings.claudeTyping`, `claudeLanguages`, `claudeTypingModel` (Task 4).
+- Consumes: `Settings.claudeTyping`, `claudeLanguages` (Task 4). `claudeTypingModel` stays a stored setting with no field in Settings.
 - Produces:
   ```swift
   extension SettingsModel {
@@ -878,7 +935,7 @@ git commit -m "Show a cloud in the menu bar while checks go to Claude"
       func claudeLanguage(_ language: Language) -> Binding<Bool>
   }
   ```
-- Copy, fixed: section "Claude while typing"; switch "Check Dutch and French with Claude while typing" (disabled without a key, with "Store a Claude API key under Engines to turn this on."); ticks "Dutch", "French" (disabled while the switch is off); text "While you type Dutch or French, Skald sends the paragraph you are typing in, and nothing else, to Anthropic's Claude API with your key. English stays on this Mac, and so does every app kept on This Mac only. The menu bar icon shows a cloud while checks go to Claude." Per language, the switches read "Check while typing on this Mac" and "Model checks on this Mac (grammar and spelling)"; for a language Claude takes, under them: "Claude checks ‹Dutch› while typing. These switches apply when ‹Dutch› is back on this Mac: in apps kept on This Mac only, and when Claude can't answer." Engines: the first section's text becomes "Checking while typing runs on this Mac, unless you turn on Claude for Dutch and French under Languages."; the Claude section's model field is labelled "Model for the panel" and gains "Model while typing" (`claudeTypingModel`, saved like the panel's).
+- Copy, fixed: section "Claude while typing"; switch "Check Dutch and French with Claude while typing" (disabled without a key, with "Store a Claude API key under Engines to turn this on."); ticks "Dutch", "French" (disabled while the switch is off); text "While you type Dutch or French, Skald sends the paragraph you are typing in, and nothing else, to Anthropic's Claude API with your key. English stays on this Mac, and so does every app kept on This Mac only. The menu bar icon shows a cloud while checks go to Claude." Per language, the switches read "Check while typing on this Mac" and "Model checks on this Mac (grammar and spelling)"; for a language Claude takes, under them: "Claude checks ‹Dutch› while typing. These switches apply when ‹Dutch› is back on this Mac: in apps kept on This Mac only, and when Claude can't answer." Engines: the first section's text becomes "Checking while typing runs on this Mac, unless you turn on Claude for Dutch and French under Languages." Nothing else in the Engines pane changes.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -894,7 +951,8 @@ git commit -m "Show a cloud in the menu bar while checks go to Claude"
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Skald SkaldTests
+git add Skald/Settings/LanguagesPane.swift Skald/Settings/EnginesPane.swift Skald/SettingsModel.swift \
+  SkaldTests/SettingsModelTests.swift
 git commit -m "Add the Claude while typing switch to Settings"
 ```
 
@@ -902,7 +960,7 @@ git commit -m "Add the Claude while typing switch to Settings"
 
 ### Task 11: The card's Claude label and the panel's This Mac only line
 
-**Depends on:** Task 5, Task 7
+**Depends on:** Task 10 (the previous task; order only); Task 7 (`Issue.engine`); Task 5 (`.keptOnThisMac`, `PanelSession`'s app)
 
 **Files:**
 - Modify: `Skald/Overlay/CardOutcome.swift:89-114` (`byClaude`), `Skald/Overlay/IssueCard.swift:162-202` (the label)
@@ -928,7 +986,9 @@ git commit -m "Add the Claude while typing switch to Settings"
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Skald SkaldTests
+git add Skald/Overlay/CardOutcome.swift Skald/Overlay/IssueCard.swift Skald/Panel/PanelController.swift \
+  Skald/Panel/PanelView.swift Skald/CompositionRoot.swift SkaldTests/Support/IssueFixture.swift \
+  SkaldTests/CardOutcomeTests.swift SkaldTests/PanelReplaceTests.swift
 git commit -m "Label Claude's cards and say why a kept app's panel stays on this Mac"
 ```
 
@@ -936,10 +996,10 @@ git commit -m "Label Claude's cards and say why a kept app's panel stays on this
 
 ### Task 12: Changelog and documentation
 
-**Depends on:** Task 3, Task 9, Task 10, Task 11
+**Depends on:** Task 11 (the previous task); Tasks 3, 9 and 10 (what it documents)
 
 **Files:**
-- Modify: `CHANGELOG.md` (`## [Unreleased]`), `README.md:20-22`, `Eval/README.md` ("What missed")
+- Modify: `CHANGELOG.md` (`## [Unreleased]`, line 19), `README.md:20`, `Eval/README.md` ("What missed")
 
 - [ ] **Step 1: CHANGELOG.** Under `### Added`:
   - "Dutch and French can be checked by Claude while you type: turn on Settings > Languages > Claude while typing, with your own Claude API key. Only the paragraph you are typing in is sent, English always stays on your Mac, and the menu bar icon shows a cloud while checks go to Claude. A card says when Claude found the issue. When Claude can't answer, Skald falls back to your on-device settings and the menu says why."
@@ -1012,7 +1072,7 @@ grep -v '"id":"fr-h07"' Eval/heldout.jsonl > build/eval/heldout-without-fr-h07.j
 $E --set build/eval/heldout-without-fr-h07.jsonl --mode replay --outputs build/eval/heldout-claude.jsonl.raw.jsonl
 ```
 
-- **Settling the request.** Thinking: of steps 1 and 2, keep the setting that meets the bar on the tuning part, and the faster (lower p90) if both do. Fallbacks: if step 0 fails (a request error, NO VERDICT), it stays off. If it is accepted, it still stays off: the API reference says Claude Haiku 5.5 has no server-side fallback and ignores `"default"`; turning it on is Michael's call. The change is one line, `ClaudeRequestOptions.typing`, plus `optionValues` and `typingRequestShape`; commit "Settle the typing request on the tuning run".
+- **Settling the request.** Thinking: of steps 1 and 2, keep the setting that meets the bar on the tuning part, and the faster (lower p90) if both do. Fallbacks: if step 0 fails (a request error, NO VERDICT), it stays off. If it is accepted, it still stays off: the API reference says Claude Haiku 5.5 has no server-side fallback and ignores `"default"`; turning it on is Michael's call. The change is one line, `ClaudeRequestOptions.typing`, plus `typingRequestShape`'s expected body; commit "Settle the typing request on the tuning run".
 - **Pass, per language, for Dutch and French on the held-out set, guard on (step 3):** precision at least 0.95, at most one clean paragraph flagged, recall at least 0.90, p90 latency under 2 s (the tool's verdict for `--mode claude`). English's line is informational; the tool's exit status counts it too.
 - **Cost:** the summary's "a month at 500 checks a day" figure from step 3.
 - **Stop and bring it to Michael** if Dutch or French misses the bar, if p90 is 2 s or more, or if the monthly figure is above $5.
@@ -1025,7 +1085,6 @@ With the switch on, type Dutch and French in Notes, Zen and Slack: the glyph sho
 
 ## Finishing (controller)
 
-- Before pushing, merge `feat/skald-v1` (three commits ahead of the base: `43a271c`, `165ba73`, `c4c165a`) and run the full verification again.
 - Push `feat/skald-upgrade`; open a draft PR (`merge-request` skill) into `feat/skald-v1` while PR #1 is open, else `main`. Its body names the gate commit (Task 2), lists the Rulings, the Memory figures, and states that it leaves draft only after "Owed: the gate run" passes and is recorded.
-- The spec's **Status** stays `In progress` with the PR reference; at the final pre-merge commit, `Implemented`, and this plan is marked completed.
+- The spec's **Status** stays `In progress`, citing stage 1's PR: it also holds stage 2, which is not built. At the final pre-merge commit only this plan is marked completed (`Implemented`, citing the PR; "do not run this plan again").
 - The final report gives `wt-rm feat/skald-upgrade` for once it is merged or abandoned.
