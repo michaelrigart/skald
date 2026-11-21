@@ -20,7 +20,7 @@ final class OverlayController {
     private var generation = 0
     private var capabilities: (field: FieldID, value: AccessCapabilities)?
     /// What the badge shows for the focused field; nil hides it. Kept across a recheck, so it doesn't blink.
-    private var badgeContent: BadgeContent?
+    private var badgeState: BadgeState?
     private var windows: [UnderlineWindow] = []
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
@@ -99,8 +99,8 @@ final class OverlayController {
         generation += 1
         let fieldChanged = new.field != snapshot.field
         if fieldChanged { capabilities = nil }
-        badgeContent = BadgeContent.next(
-            current: badgeContent, issues: OverlayGeometry.distinct(new.issues).count, checked: new.checked,
+        badgeState = BadgeState.next(
+            current: badgeState, issues: OverlayGeometry.distinct(new.issues), checked: new.checked,
             sameField: new.field != nil && !fieldChanged, paused: settings.settings.pausedUntil.map { $0 > .now } ?? false
         )
         snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues), checked: new.checked)
@@ -111,7 +111,7 @@ final class OverlayController {
             cardAnchor = nil
         }
         if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
-        if fieldChanged || badgeContent == nil { badge.hide() }
+        if fieldChanged || badgeState == nil { badge.hide() }
         requestRedraw()
     }
 
@@ -268,8 +268,8 @@ final class OverlayController {
 
     /// The badge at the field's corner for what `next` says, beside underlines too; hidden without a frame.
     private func showBadge(_ snapshot: IssueSnapshot, frame: CGRect?, primaryHeight: CGFloat) {
-        guard let badgeContent, let frame else { return badge.hide() }
-        badge.show(badgeContent, label: OverlayGeometry.badgeLabel(snapshot.issues), at: OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight))
+        guard let badgeState, let frame else { return badge.hide() }
+        badge.show(badgeState.content, label: badgeState.label, at: OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight))
     }
 
     private func capabilities(of field: FieldID) async -> AccessCapabilities {

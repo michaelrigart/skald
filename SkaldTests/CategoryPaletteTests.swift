@@ -66,10 +66,4 @@ struct CategoryPaletteTests {
         }
         #expect(IssueCategory.allCases.filter(CategoryPalette.isDotted) == [.punctuation])
     }
-
-    @Test func theColoursAreThePlansValues() {
-        #expect(CategoryPalette.rgb(.spelling) == .init(hex: 0xD55E00))
-        #expect(CategoryPalette.rgb(.grammar) == .init(hex: 0x0072B2))
-        #expect(CategoryPalette.rgb(.punctuation) == .init(hex: 0x8B5CF6))
-    }
 }

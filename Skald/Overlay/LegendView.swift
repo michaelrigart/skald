@@ -23,10 +23,8 @@ struct LegendView: View {
             Canvas { context, size in
                 let colour = Color(nsColor: CategoryPalette.color(category))
                 if CategoryPalette.isDotted(category) {
-                    var x: CGFloat = 0
-                    while x < size.width {
-                        context.fill(Path(CGRect(x: x, y: 0, width: min(2, size.width - x), height: size.height)), with: .color(colour))
-                        x += 4
+                    for dot in UnderlineView.dots(in: CGRect(origin: .zero, size: size)) {
+                        context.fill(Path(dot), with: .color(colour))
                     }
                 } else {
                     context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 1), with: .color(colour))

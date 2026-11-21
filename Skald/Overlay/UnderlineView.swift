@@ -18,7 +18,7 @@ final class UnderlineView: NSView {
         for mark in marks where mark.rect.intersects(dirtyRect) {
             CategoryPalette.color(mark.category).setFill()
             if CategoryPalette.isDotted(mark.category) {
-                Self.dots(in: mark.rect).forEach { $0.fill() }
+                Self.dots(in: mark.rect).forEach { NSBezierPath(rect: $0).fill() }
             } else {
                 NSBezierPath(roundedRect: mark.rect, xRadius: 1, yRadius: 1).fill()
             }
@@ -26,11 +26,11 @@ final class UnderlineView: NSView {
     }
 
     /// 2-point squares every 4 points along the rect, at least one; the last is cut at the rect's end.
-    static func dots(in rect: CGRect) -> [NSBezierPath] {
+    static func dots(in rect: CGRect) -> [CGRect] {
         let count = max(1, Int((rect.width / 4).rounded(.up)))
         return (0..<count).map { index in
             let x = rect.minX + CGFloat(index) * 4
-            return NSBezierPath(rect: CGRect(x: x, y: rect.minY, width: min(2, rect.maxX - x), height: rect.height))
+            return CGRect(x: x, y: rect.minY, width: min(2, rect.maxX - x), height: rect.height)
         }
     }
 }

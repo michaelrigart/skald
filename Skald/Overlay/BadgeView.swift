@@ -1,4 +1,5 @@
 import AppKit
+import SkaldCore
 
 /// What the badge shows: the field's issue count, or a quiet tick for a checked field with none.
 enum BadgeContent: Equatable {
@@ -10,6 +11,21 @@ enum BadgeContent: Equatable {
         if issues > 0 { return .count(issues) }
         if checked { return .tick }
         return sameField && !paused ? current : nil
+    }
+}
+
+/// What the badge shows and says aloud. A held count keeps the label it was given with, so the badge and VoiceOver agree.
+struct BadgeState: Equatable {
+    let content: BadgeContent
+    let label: String
+
+    /// `BadgeContent.next` with the label: recomputed when the content is new (issues, or a checked field),
+    /// kept with the content when it is held across a recheck.
+    static func next(current: BadgeState?, issues: [Issue], checked: Bool, sameField: Bool, paused: Bool) -> BadgeState? {
+        let content = BadgeContent.next(current: current?.content, issues: issues.count, checked: checked, sameField: sameField, paused: paused)
+        guard let content else { return nil }
+        if issues.isEmpty, !checked { return current }
+        return BadgeState(content: content, label: OverlayGeometry.badgeLabel(issues))
     }
 }
 
