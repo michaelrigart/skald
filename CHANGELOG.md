@@ -16,7 +16,17 @@ whether it is compatible with the one before. Each section says what changed.
 - A panel, opened with a hotkey, to fix or rewrite the selection or the current paragraph.
 - Optional remote engines for the panel: a Mac Studio (Settings > Engines > Mac Studio, which
   takes any Ollama or OpenAI-compatible server), and Claude.
-  Checking while you type always stays on your Mac.
+  Checking while you type stays on your Mac unless you turn on Claude for Dutch and French.
+- Dutch and French can be checked by Claude while you type: turn on Settings > Languages >
+  Check Dutch and French with Claude while typing, with your own Claude API key. Only the
+  paragraph you are typing in is sent, English always stays on your Mac, and the menu bar icon
+  shows a cloud while checks go to Claude. A card says when Claude found the issue. When Claude
+  can't answer, Skald falls back to your on-device settings and the menu says why. Removing the
+  key turns the switch off.
+- Each app can be On, This Mac only or Off, in Settings > Apps or with the menu's Keep on This
+  Mac. Nothing you type in an app kept on this Mac goes to Claude, and the panel offers only
+  This Mac only there. The menu's Turn On for an app that is off by default sets it to This Mac
+  only.
 - Install with Homebrew: `brew install --cask michaelrigart/tap/skald`.
 - Releases are signed with a stable certificate, so the Accessibility permission you give Skald
   should survive updates. Switching from a self-built ad hoc copy needs it once more.
@@ -27,6 +37,10 @@ whether it is compatible with the one before. Each section says what changed.
 
 ### Fixed
 
+- A French or Dutch fix such as "Tout les" to "Tous les" is no longer dropped because the word
+  also exists in English. A fix that translates an English word still is.
+- When Claude rejects your key or limits requests, the panel says why and offers the other
+  engines, where it used to say "That didn't work. Try again."
 - A card or the badge's list no longer opens at zero size, which showed nothing, about every
   other time.
 - A word that spelling and Apple's model both flag, with the same fix, shows once in the badge's

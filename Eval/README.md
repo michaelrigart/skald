@@ -188,6 +188,10 @@ cases.
   - The model proposed no fix for `nl-h03` ("gebeurt") or `nl-h06` ("Zowiezo").
   - The guard dropped `fr-h07` "Tout" → "Tous" as a borrowed word, because "tout" is also an
     English word.
+    Fixed by stage 1 of the upgrade (2026-11-21): a word the paragraph's own dictionary accepts
+    is no longer a borrowed word because English has it too, when the fix is a close native
+    form of it. `fr-h07` and every case in this list are exposed, so their results after the fix
+    prove nothing.
   - The guard dropped `nl-h07` "hebben" → "heeft", which came in one edit with "beslist" →
     "besloten".
 - **Spelling only:**
