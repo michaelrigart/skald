@@ -114,6 +114,53 @@ private final class ChangeLog {
         #expect(testKeychain.read() == nil)
     }
 
+    @Test func turningClaudeTypingOnNeedsAStoredKey() throws {
+        defer { try? testKeychain.delete() }
+        let (model, _) = makeModel()
+        #expect(!model.setClaudeTyping(true))
+        #expect(!model.settings.claudeTyping)
+        #expect(model.saveClaudeKey("sk-test"))
+        #expect(model.setClaudeTyping(true))
+        #expect(model.settings.claudeTyping)
+    }
+
+    @Test func theClaudeSwitchNeverRewritesTheOnDeviceSwitches() throws {
+        defer { try? testKeychain.delete() }
+        let (model, _) = makeModel()
+        #expect(model.saveClaudeKey("sk-test"))
+        let typing = model.settings.typingChecks
+        let modelChecks = model.settings.modelChecks
+        #expect(model.setClaudeTyping(true))
+        model.claudeLanguage(.fr).wrappedValue = false
+        #expect(model.settings.claudeLanguages[.fr] == false)
+        #expect(model.setClaudeTyping(false))
+        #expect(model.settings.typingChecks == typing)
+        #expect(model.settings.modelChecks == modelChecks)
+    }
+
+    @Test func removingTheKeyTurnsTheClaudeSwitchOff() throws {
+        defer { try? testKeychain.delete() }
+        let (model, _) = makeModel()
+        #expect(model.saveClaudeKey("sk-test"))
+        #expect(model.setClaudeTyping(true))
+        #expect(model.claudeTakes(.nl))
+        #expect(model.removeClaudeKey())
+        #expect(!model.settings.claudeTyping)
+        #expect(!model.claudeTakes(.nl))
+    }
+
+    @Test func aLanguageIsClaudesOnlyWhileTheSwitchIsOnTheKeyIsStoredAndTheLanguageIsTicked() throws {
+        defer { try? testKeychain.delete() }
+        let (model, _) = makeModel()
+        #expect(model.saveClaudeKey("sk-test"))
+        #expect(!model.claudeTakes(.nl))
+        #expect(model.setClaudeTyping(true))
+        #expect(model.claudeTakes(.nl) && model.claudeTakes(.fr))
+        #expect(!model.claudeTakes(.en))
+        model.claudeLanguage(.fr).wrappedValue = false
+        #expect(model.claudeTakes(.nl) && !model.claudeTakes(.fr))
+    }
+
     @Test func aBlankKeyIsNeitherStoredNorReported() {
         let (model, store) = makeModel()
         let log = ChangeLog()

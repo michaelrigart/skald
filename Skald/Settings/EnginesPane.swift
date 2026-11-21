@@ -10,7 +10,7 @@ struct EnginesPane: View {
                 Picker("Panel's default engine", selection: model.binding(\.panelDefaultEngine)) {
                     ForEach(EngineKind.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
-                Text("Checking while typing always runs on this Mac. Claude is used only when you pick it in the panel or make it the default here.")
+                Text("Checking while typing runs on this Mac, unless you turn on Claude for Dutch and French under Languages.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

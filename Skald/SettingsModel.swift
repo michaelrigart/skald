@@ -99,6 +99,25 @@ import struct SwiftUI.Binding
         Binding(get: { self.settings.typingChecks[language] ?? false }, set: { on in self.update { $0.typingChecks[language] = on } })
     }
 
+    // MARK: Claude while typing
+
+    /// Turning it on needs a stored key; without one nothing changes. The on-device switches are never touched.
+    @discardableResult
+    func setClaudeTyping(_ on: Bool) -> Bool {
+        if on, !claudeKeyStored { return false }
+        update { $0.claudeTyping = on }
+        return true
+    }
+
+    func claudeLanguage(_ language: Language) -> Binding<Bool> {
+        Binding(get: { self.settings.claudeLanguages[language] ?? false }, set: { on in self.update { $0.claudeLanguages[language] = on } })
+    }
+
+    /// Whether Claude takes this language's typing checks, the Settings counterpart of the router's rule.
+    func claudeTakes(_ language: Language) -> Bool {
+        settings.claudeTyping && claudeKeyStored && language != .en && settings.claudeLanguages[language] == true
+    }
+
     // MARK: Claude key
 
     /// Stores the key; the field that held it is cleared by the caller, and the key is never shown again.
@@ -122,6 +141,7 @@ import struct SwiftUI.Binding
         } catch {
             return false
         }
+        update { $0.claudeTyping = false }
         claudeKeyChanged()
         return true
     }
