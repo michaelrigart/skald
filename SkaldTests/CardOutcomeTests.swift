@@ -122,7 +122,7 @@ import Testing
     // MARK: The kind, the alternatives, the menu and the labels
 
     private func card(
-        _ issue: Issue, accept: @escaping (UUID, Int?) async -> ReplaceOutcome = { _, _ in .replaced }, hide: @escaping (IssueKind) -> Void = { _ in }
+        _ issue: Issue, accept: @escaping (UUID, String?) async -> ReplaceOutcome = { _, _ in .replaced }, hide: @escaping (IssueKind) -> Void = { _ in }
     ) -> IssueCardModel {
         IssueCardModel(
             issue: issue, writes: true, clipboard: spy,
@@ -169,12 +169,19 @@ import Testing
         #expect(hidden.isEmpty && card.phase == .ready)
     }
 
-    @Test func anAlternativeIsAcceptedByItsIndex() async {
-        var asked: [Int?] = []
-        let card = card(spelling(guesses: ["the", "ten", "tea"]), accept: { _, index in asked.append(index); return .replaced })
+    @Test func anAlternativeIsAcceptedByItsText() async {
+        var asked: [String?] = []
+        let card = card(spelling(guesses: ["the", "ten", "tea"]), accept: { _, text in asked.append(text); return .replaced })
         #expect(card.alternatives == ["ten", "tea"])
-        await card.accept(alternative: 1)
-        #expect(asked == [1] && card.phase == .closed)
+        await card.accept(alternative: "tea")
+        #expect(asked == ["tea"] && card.phase == .closed)
+    }
+
+    @Test func aGuessTheCardDoesNotShowIsNotAccepted() async {
+        var asked: [String?] = []
+        let card = card(spelling(guesses: ["the", "ten", "tea"]), accept: { _, text in asked.append(text); return .replaced })
+        await card.accept(alternative: "tech")
+        #expect(asked.isEmpty && card.phase == .ready)
     }
 
     @Test func aReadOnlyCardCopiesAnAlternativeAndStaysReady() {
@@ -182,18 +189,36 @@ import Testing
             issue: spelling(guesses: ["the", "ten", "tea"]), writes: false, clipboard: spy,
             actions: .init(accept: { _, _ in .replaced }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
         )
-        card.copy(alternative: 7)
+        card.copy(alternative: "tech")
         #expect(spy.writes.isEmpty && !card.copied)
-        card.copy(alternative: 1)
+        card.copy(alternative: "tea")
         #expect(spy.writes == ["tea"] && card.phase == .ready)
-        #expect(!card.copied && card.copiedAlternative == 1)
+        #expect(!card.copied && card.copiedAlternative == "tea")
         card.copyFix()
         #expect(spy.writes == ["tea", "the"] && card.copied)
     }
 
+    @Test func onlyTheLastCopyReadsCopiedWhateverItWas() {
+        func readOnly() -> IssueCardModel {
+            IssueCardModel(
+                issue: spelling(guesses: ["the", "ten", "tea"]), writes: false, clipboard: spy,
+                actions: .init(accept: { _, _ in .replaced }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
+            )
+        }
+        let fixFirst = readOnly()
+        fixFirst.copyFix()
+        fixFirst.copy(alternative: "ten")
+        #expect(!fixFirst.copied && fixFirst.copiedAlternative == "ten")
+
+        let guessFirst = readOnly()
+        guessFirst.copy(alternative: "ten")
+        guessFirst.copyFix()
+        #expect(guessFirst.copied && guessFirst.copiedAlternative == nil)
+    }
+
     @Test func theAlternativesRowIsOfferedWhileReadyWhetherOrNotTheAppWrites() async {
         let guesses = spelling(guesses: ["the", "ten", "tea"])
-        func model(_ issue: Issue, writes: Bool, accept: @escaping (UUID, Int?) async -> ReplaceOutcome = { _, _ in .replaced }) -> IssueCardModel {
+        func model(_ issue: Issue, writes: Bool, accept: @escaping (UUID, String?) async -> ReplaceOutcome = { _, _ in .replaced }) -> IssueCardModel {
             IssueCardModel(
                 issue: issue, writes: writes, clipboard: spy,
                 actions: .init(accept: accept, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
@@ -208,7 +233,7 @@ import Testing
             for await answer in answers { return answer }
             return .failed
         }
-        let accepting = Task { await working.accept(alternative: 0) }
+        let accepting = Task { await working.accept(alternative: "ten") }
         while working.phase != .working { await Task.yield() }
         #expect(!working.offersAlternatives)
         answer.yield(.replaced)
@@ -216,8 +241,8 @@ import Testing
     }
 
     @Test func acceptWithoutAnAlternativeAsksForTheFix() async {
-        var asked: [Int?] = []
-        let card = card(spelling(guesses: ["the", "ten"]), accept: { _, index in asked.append(index); return .replaced })
+        var asked: [String?] = []
+        let card = card(spelling(guesses: ["the", "ten"]), accept: { _, text in asked.append(text); return .replaced })
         await card.accept()
         #expect(asked == [nil])
     }
@@ -411,14 +436,14 @@ import Testing
 
     @Test func aReviewCardSendsItsButtonsToReviewModeInsteadOfActingItself() async {
         let card = card()
-        var accepted: [Int?] = []
+        var accepted: [String?] = []
         var dismissed = 0
         card.reviewRoute = .init(accept: { accepted.append($0) }, dismiss: { dismissed += 1 })
         card.pressAccept()
-        card.pressAccept(alternative: 1)
+        card.pressAccept(alternative: "ten")
         card.pressDismiss()
         await Task.yield()
-        #expect(accepted == [nil, 1] && dismissed == 1)
+        #expect(accepted == [nil, "ten"] && dismissed == 1)
         #expect(card.phase == .ready)
     }
 

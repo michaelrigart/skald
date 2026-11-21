@@ -12,8 +12,10 @@ final class ReviewSession {
         let writes: () -> Bool
         /// Shows the issue's card; `index` counts from 0 in the list `count` long.
         let show: (Issue, _ index: Int, _ count: Int) -> Void
-        /// Accepts through the shown card, so it says "Applying the fix…"; the guess's index, or nil for the fix.
-        let accept: (UUID, Int?) async -> ReplaceOutcome
+        /// Accepts through the shown card, so it says "Applying the fix…"; the guess's replacement text, or nil for the fix.
+        let accept: (UUID, String?) async -> ReplaceOutcome
+        /// Why the card of an accept that wasn't confirmed stays open, when it still says.
+        let reason: (UUID) -> String?
         let copy: (UUID) -> Void
         let dismiss: (UUID) -> Void
         /// The "Checking…" card.
@@ -23,6 +25,9 @@ final class ReviewSession {
     }
 
     static let checking = "Checking…"
+    static let ended = "Review ended"
+    static let nothing = "No suggestions"
+    static let unavailable = "Review isn't available"
 
     private let keys: ReviewKeys
     private let announcer: any Announcing
@@ -33,8 +38,6 @@ final class ReviewSession {
     /// pipeline has not dropped yet.
     private var issues: [Issue] = []
     private var dismissed: Set<UUID> = []
-    /// The guess the accept being run was asked for with the mouse; nil for ↩.
-    private var alternative: Int?
     private var wait: Task<Void, Never>?
     /// Bumped by every `.close`, so the outcome of a write or the end of a wait that belongs to an earlier opening
     /// reaches nothing.
@@ -60,17 +63,18 @@ final class ReviewSession {
         issues = actions.issues()
         dismissed = []
         let effects = mode.toggle(issues: issues)
-        guard !effects.isEmpty else { return }
+        guard !effects.isEmpty else { return announcer.announce(Self.nothing) }
         guard keys.hold({ [weak self] in self?.pressed($0) }) else {
             Log.ui.notice("review mode not opened: the system refused a key")
             _ = mode.left()
-            return
+            return announcer.announce(Self.unavailable)
         }
         run(effects)
     }
 
-    /// Every snapshot of the focused field, in the order the pipeline publishes them: the mode waits for a recheck
-    /// that follows an unchecked one. Another field leaves.
+    /// The snapshots of the focused field that reach the controller, in their order: the mode waits for a recheck
+    /// that follows an unchecked one, and falls back to its wait when the pipeline dropped that one. Another field
+    /// leaves.
     func snapshot(_ new: [Issue], checked: Bool, sameField: Bool) {
         guard sameField else { return left() }
         guard isOpen else { return }
@@ -89,11 +93,9 @@ final class ReviewSession {
         run(mode.left())
     }
 
-    /// The card's Accept or guess button: ↩'s step, for a guess when `alternative` is given.
-    func accept(alternative: Int?) {
-        self.alternative = alternative
-        pressed(.accept)
-        self.alternative = nil
+    /// The card's Accept or guess button: ↩'s step, for the guess with that replacement when `alternative` is given.
+    func accept(alternative: String?) {
+        pressed(.accept, alternative: alternative)
     }
 
     /// The card's Dismiss button: ⌫'s step.
@@ -101,22 +103,24 @@ final class ReviewSession {
         pressed(.dismiss)
     }
 
-    private func pressed(_ key: ReviewMode.Key) {
-        run(mode.key(key, issues: issues, writes: actions.writes()))
+    private func pressed(_ key: ReviewMode.Key, alternative: String? = nil) {
+        run(mode.key(key, issues: issues, writes: actions.writes()), alternative: alternative)
     }
 
-    private func run(_ effects: [ReviewMode.Effect]) {
+    /// `alternative` is the guess an `.accept` effect writes, nil for the fix; `reason` is what a `.close` says when
+    /// it ends the mode, nil for "Review ended".
+    private func run(_ effects: [ReviewMode.Effect], alternative: String? = nil, reason: String? = nil) {
         for effect in effects {
             switch effect {
             case .show(let id): show(id)
-            case .accept(let id): accepting(id)
+            case .accept(let id): accepting(id, alternative: alternative)
             case .copy(let id): actions.copy(id)
             case .dismiss(let id):
                 dismissed.insert(id)
                 issues.removeAll { $0.id == id }
                 actions.dismiss(id)
             case .wait(let id, let duration): checkingWait(id, duration)
-            case .close: close()
+            case .close: close(saying: reason ?? Self.ended)
             }
         }
     }
@@ -127,13 +131,12 @@ final class ReviewSession {
         announcer.announce(Self.announcement(label: IssueCardModel.label(for: issues[index]), index: index, count: issues.count))
     }
 
-    private func accepting(_ id: UUID) {
+    private func accepting(_ id: UUID, alternative: String?) {
         let epoch = epoch
-        let alternative = alternative
         Task { [actions] in
             let outcome = await actions.accept(id, alternative)
             guard epoch == self.epoch else { return }
-            run(mode.finished(outcome))
+            run(mode.finished(outcome), reason: outcome == .replaced ? nil : actions.reason(id))
         }
     }
 
@@ -149,12 +152,13 @@ final class ReviewSession {
         }
     }
 
-    private func close() {
+    private func close(saying: String) {
         epoch += 1
         wait?.cancel()
         wait = nil
         dismissed = []
         keys.release()
         actions.close()
+        announcer.announce(saying)
     }
 }

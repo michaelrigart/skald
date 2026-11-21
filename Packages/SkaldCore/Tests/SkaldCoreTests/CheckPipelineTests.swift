@@ -1196,7 +1196,7 @@ struct IssueDetailTests {
     @Test func acceptingAnAlternativeWritesItsText() async throws {
         let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
         let issue = try await spellingIssue(rig)
-        #expect(await rig.pipeline.accept(issue.id, alternative: 1) == .replaced)
+        #expect(await rig.pipeline.accept(issue.id, alternative: "tea") == .replaced)
         let written = try #require(await rig.access.replacements.last)
         #expect(await rig.access.replacements.count == 1)
         let result = (sawTeh as NSString).replacingCharacters(in: NSRange(location: written.range.location, length: written.range.length), with: written.text)
@@ -1209,8 +1209,8 @@ struct IssueDetailTests {
     @Test func anUnknownAlternativeIsRefused() async throws {
         let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
         let issue = try await spellingIssue(rig)
-        #expect(await rig.pipeline.accept(issue.id, alternative: 2) == .failed)
-        #expect(await rig.pipeline.accept(issue.id, alternative: -1) == .failed)
+        #expect(await rig.pipeline.accept(issue.id, alternative: "tech") == .failed)
+        #expect(await rig.pipeline.accept(issue.id, alternative: "") == .failed)
         #expect(await rig.access.replacements.isEmpty)
         #expect(await rig.pipeline.lastPublished.issues.map(\.id) == [issue.id])
     }
@@ -1227,8 +1227,29 @@ struct IssueDetailTests {
         let shown = try #require(await rig.pipeline.lastPublished.issues.first)
         #expect(shown.id == issue.id)
         #expect(shown.alternatives.map(\.replacement) == ["ten"])
-        #expect(await rig.pipeline.accept(issue.id, alternative: 1) == .failed)
+        #expect(await rig.pipeline.accept(issue.id, alternative: "tea") == .failed)
         #expect(await rig.access.replacements.isEmpty)
+        #expect(await rig.pipeline.accept(issue.id, alternative: "ten") == .replaced)
+        #expect(await rig.access.replacements.count == 1)
+    }
+
+    @Test func aStrippedGuessIsRefusedAndTheOneThatMovedUpIsAcceptedByItsText() async throws {
+        let settings = makeSettings(model: false)
+        let rig = Rig(settings, guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(issue.alternatives.map(\.replacement) == ["ten", "tea"])
+
+        var banned = settings
+        banned.addNeverTouch("ten")
+        await rig.update(banned)
+        #expect(await rig.pipeline.lastPublished.issues.first?.alternatives.map(\.replacement) == ["tea"])
+        #expect(await rig.pipeline.accept(issue.id, alternative: "ten") == .failed)
+        #expect(await rig.access.replacements.isEmpty)
+
+        #expect(await rig.pipeline.accept(issue.id, alternative: "tea") == .replaced)
+        let written = try #require(await rig.access.replacements.last)
+        let result = (sawTeh as NSString).replacingCharacters(in: NSRange(location: written.range.location, length: written.range.length), with: written.text)
+        #expect(result == "I saw tea logs again today.")
     }
 
     @Test func aModelIssueIsClassifiedWithTheOraclesFacts() async {

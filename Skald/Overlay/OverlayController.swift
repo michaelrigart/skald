@@ -166,7 +166,8 @@ final class OverlayController {
             cards.show([parked.card], anchor: parked.anchor, screen: parked.screen)
             cardAnchor = nil
         }
-        // Every snapshot, in the order the pipeline publishes them: review mode waits for a recheck by their order.
+        // Review mode waits for a recheck by the order of the snapshots it sees. The pipeline buffers only the newest
+        // snapshot, so a dropped unchecked one makes the mode fall back to its 6 s wait.
         review.snapshot(snapshot.issues, checked: new.checked, sameField: new.field != nil && !fieldChanged)
         if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
         if fieldChanged || badgeState == nil { badge.hide() }
@@ -279,6 +280,7 @@ final class OverlayController {
                 },
                 show: { [weak self] issue, _, _ in self?.showReviewCard(for: issue) },
                 accept: { [weak self] id, alternative in await self?.acceptReviewed(id, alternative: alternative) ?? .failed },
+                reason: { [weak self] id in self?.reviewCard(id)?.reason },
                 copy: { [weak self] id in self?.reviewCard(id)?.copyFix() },
                 dismiss: { [weak self] id in self?.dismissReviewed(id) },
                 showChecking: { [weak self] in self?.showChecking() },
@@ -295,6 +297,10 @@ final class OverlayController {
     /// on screen is what the keys act on; where the word isn't drawn, its bounds are read and the panel moves there.
     private func showReviewCard(for issue: Issue) {
         reviewShow?.cancel()
+        resetHover()
+        // `CardPanel.anchor` outlives its panel's closing, so a card that follows a dismissed or accepted one
+        // opens where that one was, not at the badge or the pointer.
+        let continuing = reviewCard != nil || cards.isOpen
         let model = card(issue)
         model.reviewing = true
         model.reviewRoute = .init(
@@ -306,7 +312,7 @@ final class OverlayController {
         open(
             [model],
             anchor: OverlayGeometry.provisionalReviewAnchor(
-                drawn: drawn, panel: cards.isOpen ? cards.anchor : nil, badge: badge.frame, pointer: Self.pointer
+                drawn: drawn, panel: continuing ? cards.anchor : nil, badge: badge.frame, pointer: Self.pointer
             ),
             hoverAnchor: nil
         )
@@ -335,7 +341,7 @@ final class OverlayController {
 
     private static var pointer: CGRect { CGRect(origin: NSEvent.mouseLocation, size: .zero) }
 
-    private func acceptReviewed(_ id: UUID, alternative: Int?) async -> ReplaceOutcome {
+    private func acceptReviewed(_ id: UUID, alternative: String?) async -> ReplaceOutcome {
         guard let card = reviewCard(id) else { return .failed }
         await card.accept(alternative: alternative)
         return card.outcome ?? .failed
@@ -384,7 +390,7 @@ final class OverlayController {
         else { return }
         let generation = self.generation
         let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil
-        guard !Task.isCancelled, generation == self.generation, hover.current == id, !cards.isBusy,
+        guard !Task.isCancelled, !review.isOpen, generation == self.generation, hover.current == id, !cards.isBusy,
               let drawn = targets.first(where: { $0.id == id })?.rect
         else { return }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0

@@ -228,10 +228,10 @@ private struct IssueCardView: View {
             case .ready:
                 if card.offersAlternatives {
                     HStack(spacing: 6) {
-                        ForEach(Array(card.alternatives.enumerated()), id: \.offset) { index, guess in
-                            let copied = card.copiedAlternative == index
+                        ForEach(Array(card.alternatives.enumerated()), id: \.offset) { _, guess in
+                            let copied = card.copiedAlternative == guess
                             Button(copied ? "Copied" : guess) {
-                                if card.writes { card.pressAccept(alternative: index) } else { card.copy(alternative: index) }
+                                if card.writes { card.pressAccept(alternative: guess) } else { card.copy(alternative: guess) }
                             }
                             .lineLimit(1)
                             .accessibilityLabel("\(card.writes ? "Use" : copied ? "Copied" : "Copy") \(guess): \(card.label)")

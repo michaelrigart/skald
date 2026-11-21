@@ -69,7 +69,8 @@ struct CardContent: Equatable {
 /// card is between Accept and its outcome. It writes the clipboard only when Copy fix is pressed.
 @Observable final class IssueCardModel: Identifiable {
     struct Actions {
-        let accept: (UUID, _ alternative: Int?) async -> ReplaceOutcome
+        /// The guess is passed by its replacement text, which the pipeline looks up among the issue's current guesses.
+        let accept: (UUID, _ alternative: String?) async -> ReplaceOutcome
         let dismiss: (UUID) -> Void
         /// Still writes the never-touch list.
         let addToDictionary: (UUID) -> Void
@@ -102,7 +103,7 @@ struct CardContent: Equatable {
     private(set) var phase: Phase = .ready
     private(set) var copied = false
     /// The guess Copy last put on the clipboard, which the fix's own Copy fix doesn't change.
-    private(set) var copiedAlternative: Int?
+    private(set) var copiedAlternative: String?
     /// The write's outcome, once Accept has one.
     private(set) var outcome: ReplaceOutcome?
     /// Set by the controller while review mode shows this card.
@@ -110,7 +111,7 @@ struct CardContent: Equatable {
     /// Where the card's own buttons go while review mode shows it, so a mouse Accept or Dismiss is a review step
     /// like ↩ and ⌫, not an edit that ends the mode.
     struct ReviewRoute {
-        let accept: (Int?) -> Void
+        let accept: (String?) -> Void
         let dismiss: () -> Void
     }
     @ObservationIgnored var reviewRoute: ReviewRoute?
@@ -154,6 +155,12 @@ struct CardContent: Equatable {
 
     var offersAccept: Bool { phase == .ready && writes }
 
+    /// Why the card stays open after an accept that wasn't confirmed.
+    var reason: String? {
+        if case .finished(let reason, _) = phase { return reason }
+        return nil
+    }
+
     /// Copy fix in the card's menu, whether or not the app also offers it as a button.
     var canCopyFix: Bool { phase == .ready && !fix.isEmpty }
 
@@ -180,11 +187,11 @@ struct CardContent: Equatable {
         }
     }
 
-    func accept(alternative: Int? = nil) async {
+    func accept(alternative: String? = nil) async {
         guard offersAccept else { return }
         if let alternative {
-            guard alternatives.indices.contains(alternative) else { return }
-            fix = alternatives[alternative]
+            guard alternatives.contains(alternative) else { return }
+            fix = alternative
         }
         phase = .working
         let outcome = await actions.accept(id, alternative)
@@ -198,7 +205,7 @@ struct CardContent: Equatable {
     }
 
     /// The Accept and guess buttons: review mode's step when it shows this card, else the card's own accept.
-    func pressAccept(alternative: Int? = nil) {
+    func pressAccept(alternative: String? = nil) {
         if let reviewRoute { return reviewRoute.accept(alternative) }
         Task { await accept(alternative: alternative) }
     }
@@ -212,13 +219,15 @@ struct CardContent: Equatable {
         guard offersCopy || canCopyFix else { return }
         clipboard.write(fix)
         copied = true
+        copiedAlternative = nil
     }
 
     /// Where the app has no clean write, a guess is copied instead of accepted.
-    func copy(alternative: Int) {
-        guard phase == .ready, alternatives.indices.contains(alternative) else { return }
-        clipboard.write(alternatives[alternative])
+    func copy(alternative: String) {
+        guard phase == .ready, alternatives.contains(alternative) else { return }
+        clipboard.write(alternative)
         copiedAlternative = alternative
+        copied = false
     }
 
     func dismiss() {

@@ -59,7 +59,9 @@ private final class Announcer: Announcing {
     private var shown: [Issue] = []
     private var places: [(index: Int, count: Int)] = []
     private var accepting: [UUID] = []
-    private var alternatives: [Int?] = []
+    private var alternatives: [String?] = []
+    /// What the card of the accept in question says about it, by issue.
+    private var reasons: [UUID: String] = [:]
     private var copied: [UUID] = []
     private var dismissed: [UUID] = []
     private var checkingShown = 0
@@ -89,6 +91,7 @@ private final class Announcer: Announcing {
                     alternatives.append(alternative)
                     return outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
                 },
+                reason: { [unowned self] in reasons[$0] },
                 copy: { [unowned self] in copied.append($0) },
                 dismiss: { [unowned self] in dismissed.append($0) },
                 showChecking: { [unowned self] in checkingShown += 1 },
@@ -112,14 +115,16 @@ private final class Announcer: Announcing {
     @Test func aFieldWithoutIssuesOpensNothing() {
         list = []
         session.toggle()
-        #expect(!session.isOpen && registrar.held.isEmpty && shown.isEmpty && announcer.said.isEmpty)
+        #expect(!session.isOpen && registrar.held.isEmpty && shown.isEmpty && closed == 0)
+        #expect(announcer.said == ["No suggestions"])
     }
 
     @Test func theModeStaysClosedWhenTheKeysAreRefused() {
         let refusing = FakeRegistrar(refusing: [36])
         let session = make(refusing)
         session.toggle()
-        #expect(!session.isOpen && refusing.held.isEmpty && shown.isEmpty && announcer.said.isEmpty && closed == 0)
+        #expect(!session.isOpen && refusing.held.isEmpty && shown.isEmpty && closed == 0)
+        #expect(announcer.said == ["Review isn't available"])
     }
 
     @Test func theAnnouncementSaysThePlaceInTheList() {
@@ -199,6 +204,7 @@ private final class Announcer: Announcing {
         await settle()
         await gate.open()
         #expect(!session.isOpen && registrar.held.isEmpty && closed == 1)
+        #expect(announcer.said.last == "Review ended")
     }
 
     @Test func aWaitLeftBehindDoesNotEndALaterOpeningsWait() async {
@@ -223,6 +229,18 @@ private final class Announcer: Announcing {
         tap(36)
         await settle()
         #expect(!session.isOpen && registrar.held.isEmpty && closed == 1 && checkingShown == 0)
+        #expect(announcer.said.last == "Review ended")
+    }
+
+    @Test func anUnconfirmedWriteSaysWhyItsCardStaysOpen() async {
+        outcomes = [.unconfirmed]
+        reasons[a.id] = "The app didn't show the change. The clipboard now holds the fix."
+        session.toggle()
+        tap(36)
+        await settle()
+        #expect(!session.isOpen && closed == 1)
+        #expect(announcer.said.last == "The app didn't show the change. The clipboard now holds the fix.")
+        #expect(announcer.said.filter { $0 == "Review ended" }.isEmpty)
     }
 
     @Test func theOutcomeOfAWriteLeftBehindDoesNotReachALaterOpening() async {
@@ -249,6 +267,7 @@ private final class Announcer: Announcing {
             #expect(registrar.held.count == 6 && session.isOpen)
             leave(session)
             #expect(!session.isOpen && registrar.held.isEmpty)
+            #expect(announcer.said.last == "Review ended")
         }
     }
 
@@ -270,9 +289,9 @@ private final class Announcer: Announcing {
 
     @Test func aGuessAcceptedWithTheMouseGoesThroughTheModeAndWaitsForTheRecheck() async {
         session.toggle()
-        session.accept(alternative: 1)
+        session.accept(alternative: "ten")
         await settle()
-        #expect(accepting == [a.id] && alternatives == [1])
+        #expect(accepting == [a.id] && alternatives == ["ten"])
         #expect(session.isOpen && registrar.held.count == 6 && checkingShown == 1)
         session.edited()
         #expect(session.isOpen)

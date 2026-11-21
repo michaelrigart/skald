@@ -248,13 +248,14 @@ public actor CheckPipeline {
         fieldLanguages[field]
     }
 
-    /// Writes the issue's fix, or with `alternative` the guess at that index of its alternatives.
-    public func accept(_ id: UUID, alternative: Int? = nil) async -> ReplaceOutcome {
+    /// Writes the issue's fix, or with `alternative` the guess whose replacement is that text, looked up among the
+    /// alternatives it has now: a guess the pipeline stripped since the caller saw it is refused.
+    public func accept(_ id: UUID, alternative: String? = nil) async -> ReplaceOutcome {
         guard let issue = tracker.issue(id) else { return .failed }
         let edit: Edit
         if let alternative {
-            guard issue.alternatives.indices.contains(alternative) else { return .failed }
-            edit = issue.alternatives[alternative]
+            guard let guess = issue.alternatives.first(where: { $0.replacement == alternative }) else { return .failed }
+            edit = guess
         } else {
             edit = issue.edit
         }
