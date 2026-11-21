@@ -23,6 +23,7 @@ public actor PanelSession {
     private let engines: [EngineKind: any Engine]
     private let router: LiveRouter
     private let access: (any TextAccess)?
+    private let app: String?
     private let fieldLanguage: Language?
 
     private var chosenLanguage: Language?
@@ -39,6 +40,7 @@ public actor PanelSession {
         engines: [EngineKind: any Engine],
         router: LiveRouter,
         access: (any TextAccess)?,
+        app: String?,
         fieldLanguage: Language? = nil
     ) {
         self.capture = capture
@@ -50,6 +52,7 @@ public actor PanelSession {
         self.engines = engines
         self.router = router
         self.access = access
+        self.app = app
         self.fieldLanguage = fieldLanguage
     }
 
@@ -90,7 +93,7 @@ public actor PanelSession {
         let parts = PanelText.paragraphs(text)
         guard let languages = languages(of: parts) else { return .needsLanguage }
         let kind: EngineKind
-        switch await router.current.panel(requested: requested) {
+        switch await router.current.panel(requested: requested, app: app) {
         case .use(let engine): kind = engine
         case let .unavailable(engine, reason, alternatives): return .unavailable(engine, reason, alternatives: alternatives)
         }
@@ -102,7 +105,7 @@ public actor PanelSession {
             guard !Task.isCancelled else { return .failed(.cancelled) }
             return .revised(text: revised, edits: TextDiff.edits(from: text, to: revised), engine: kind)
         } catch .unavailable(let reason) {
-            return .unavailable(kind, reason, alternatives: await router.current.alternatives(to: kind))
+            return .unavailable(kind, reason, alternatives: await router.current.alternatives(to: kind, app: app))
         } catch {
             return .failed(error)
         }

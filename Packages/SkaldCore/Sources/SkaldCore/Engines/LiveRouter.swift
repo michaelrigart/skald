@@ -10,6 +10,6 @@ public actor LiveRouter {
     }
 
     public func modelAllowed(_ language: Language) -> Bool {
-        current.typing(language) == .model
+        current.onDevice(language) == .model
     }
 }

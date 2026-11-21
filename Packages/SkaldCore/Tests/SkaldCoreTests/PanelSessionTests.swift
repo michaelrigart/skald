@@ -69,6 +69,7 @@ private struct Rig {
         oracle: any WordOracle = misspelled(["en": ["teh"]]),
         confirmer: (any EditConfirming)? = nil,
         router live: LiveRouter? = nil,
+        app: String? = nil,
         fieldLanguage: Language? = nil
     ) {
         self.thisMac = thisMac
@@ -86,6 +87,7 @@ private struct Rig {
             engines: [.thisMac: thisMac, .macStudio: studio, .claude: claude],
             router: router,
             access: access,
+            app: app,
             fieldLanguage: fieldLanguage
         )
     }
@@ -293,6 +295,17 @@ private func dutchRig(
     let rig = Rig(text: flew, engineRouter: makeRouter(makeSettings(), key: false))
     let result = await rig.session.run(.fix, on: .claude)
     #expect(result == .unavailable(.claude, .claudeKeyMissing, alternatives: [.thisMac]))
+    #expect(await rig.claude.requests.isEmpty)
+}
+
+@Test func aSessionInAnAppKeptOnThisMacNeverRunsClaude() async {
+    var settings = makeSettings(panelDefault: .claude)
+    settings.appOverrides["com.example.chat"] = .thisMacOnly
+    let rig = Rig(text: flew, settings: settings, app: "com.example.chat")
+
+    guard case .revised(_, _, let engine) = await rig.session.run(.fix, on: nil) else { Testing.Issue.record("not revised"); return }
+    #expect(engine == .thisMac)
+    #expect(await rig.session.run(.fix, on: .claude) == .unavailable(.claude, .keptOnThisMac, alternatives: [.thisMac]))
     #expect(await rig.claude.requests.isEmpty)
 }
 

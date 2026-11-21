@@ -441,7 +441,7 @@ public actor CheckPipeline {
 
     private func route(_ language: Language) async -> TypingRoute {
         await routeHook?(language)
-        let route = await router.current.typing(language)
+        let route = await router.current.onDevice(language)
         if route == .model, let appleUnavailable { return .spellingOnly(appleUnavailable) }
         return route
     }

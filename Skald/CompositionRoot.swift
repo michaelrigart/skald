@@ -250,7 +250,9 @@ final class CompositionRoot {
             }
             let writes = if let capture { await textAccess.capabilities(for: capture.field.app).contains(.cleanWrite) } else { false }
             let fieldLanguage = if let focused { await pipeline.lastConfidentLanguage(for: focused) } else { nil as Language? }
-            let picker = await liveRouter.current.pickerEngines
+            let app = source?.bundleIdentifier
+            let router = await liveRouter.current
+            let picker = router.pickerEngines(app: app)
             let session = PanelSession(
                 capture: capture,
                 text: text,
@@ -261,6 +263,7 @@ final class CompositionRoot {
                 engines: engines,
                 router: liveRouter,
                 access: capture == nil ? nil : textAccess,
+                app: app,
                 fieldLanguage: fieldLanguage
             )
             let target = capture.map { capture in
@@ -272,7 +275,7 @@ final class CompositionRoot {
                     return await textAccess.waitForFocus(on: capture.field, timeout: .seconds(1))
                 }
             }
-            var opening = PanelOpening(session: session, text: text, target: target, engines: picker, engine: settings.panelDefaultEngine)
+            var opening = PanelOpening(session: session, text: text, target: target, engines: picker, engine: router.panelDefault(app: app))
             opening.needsLanguage = await session.needsLanguage()
             if content == .unreadable { opening.notice = PanelController.unreadableNotice }
             if case .clipboard = content { opening.fromClipboard = true }

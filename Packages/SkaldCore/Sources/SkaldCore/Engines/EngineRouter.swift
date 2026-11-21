@@ -1,5 +1,5 @@
 public enum TypingRoute: Equatable, Sendable {
-    case model, spellingOnly(UnavailableReason), off
+    case model, claude, spellingOnly(UnavailableReason), off
 }
 
 public enum PanelRoute: Equatable, Sendable {
@@ -20,7 +20,13 @@ public struct EngineRouter: Sendable {
         self.claudeKeyPresent = claudeKeyPresent
     }
 
-    public func typing(_ language: Language) -> TypingRoute {
+    /// `.claude` when the language is Dutch or French, the switch is on, the language is ticked, a key is stored and
+    /// the app's mode is `.on`; otherwise the on-device route. Never `.claude` for English.
+    public func typing(_ language: Language, app: String) -> TypingRoute {
+        claudeTypingLanguages.contains(language) && settings.mode(app: app) == .on ? .claude : onDevice(language)
+    }
+
+    public func onDevice(_ language: Language) -> TypingRoute {
         if settings.typingChecks[language] == false { return .off }
         if let appleAvailability { return .spellingOnly(appleAvailability) }
         if thermalPaused { return .spellingOnly(.thermalPause) }
@@ -28,18 +34,40 @@ public struct EngineRouter: Sendable {
         return .model
     }
 
-    public func panel(requested: EngineKind?) -> PanelRoute {
-        let engine = requested ?? settings.panelDefaultEngine
+    public var canConfirmOnDevice: Bool {
+        appleAvailability == nil && !thermalPaused
+    }
+
+    public var claudeTypingLanguages: [Language] {
+        guard settings.claudeTyping, claudeKeyPresent else { return [] }
+        return [Language.nl, .fr].filter { settings.claudeLanguages[$0] == true }
+    }
+
+    public func panel(requested: EngineKind?, app: String?) -> PanelRoute {
+        let engine = requested ?? panelDefault(app: app)
+        if keptOnThisMac(app), engine != .thisMac {
+            return .unavailable(engine, .keptOnThisMac, alternatives: alternatives(to: engine, app: app))
+        }
         guard let reason = unavailableReason(engine) else { return .use(engine) }
-        return .unavailable(engine, reason, alternatives: alternatives(to: engine))
+        return .unavailable(engine, reason, alternatives: alternatives(to: engine, app: app))
     }
 
-    public func alternatives(to engine: EngineKind) -> [EngineKind] {
-        EngineKind.allCases.filter { $0 != engine && unavailableReason($0) == nil }
+    public func alternatives(to engine: EngineKind, app: String?) -> [EngineKind] {
+        let candidates = keptOnThisMac(app) ? [EngineKind.thisMac] : EngineKind.allCases
+        return candidates.filter { $0 != engine && unavailableReason($0) == nil }
     }
 
-    public var pickerEngines: [EngineKind] {
-        [.thisMac] + (settings.studio.isConfigured ? [.macStudio] : []) + [.claude]
+    public func pickerEngines(app: String?) -> [EngineKind] {
+        if keptOnThisMac(app) { return [.thisMac] }
+        return [.thisMac] + (settings.studio.isConfigured ? [.macStudio] : []) + [.claude]
+    }
+
+    public func panelDefault(app: String?) -> EngineKind {
+        keptOnThisMac(app) ? .thisMac : settings.panelDefaultEngine
+    }
+
+    private func keptOnThisMac(_ app: String?) -> Bool {
+        app.map { settings.mode(app: $0) == .thisMacOnly } ?? false
     }
 
     private func unavailableReason(_ engine: EngineKind) -> UnavailableReason? {

@@ -55,6 +55,7 @@ extension UnavailableReason {
         case .claudeKeyMissing: "no Claude API key is stored"
         case .claudeKeyRejected: "Claude didn't accept the API key"
         case .claudeRateLimited: "Claude is limiting requests"
+        case .keptOnThisMac: "this app is kept on this Mac"
         }
     }
 }
