@@ -213,7 +213,7 @@ public struct Settings: Codable, Equatable, Sendable {
         neverTouch = Settings.normalised(try container.decodeIfPresent([String].self, forKey: .neverTouch) ?? [])
         let storedKinds = (try? container.decodeIfPresent([String].self, forKey: .hiddenKinds)) ?? nil
         hiddenKinds = Settings.hideable((storedKinds ?? []).compactMap { IssueKind(rawValue: $0) })
-        reviewHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .reviewHotkey) ?? defaults.reviewHotkey
+        reviewHotkey = ((try? container.decodeIfPresent(Hotkey.self, forKey: .reviewHotkey)) ?? nil) ?? defaults.reviewHotkey
         modelChecks = Settings.languageChecks(in: container, forKey: .modelChecks, defaults: defaults.modelChecks)
         typingChecks = Settings.languageChecks(in: container, forKey: .typingChecks, defaults: defaults.typingChecks)
         panelDefaultEngine = Settings.lenient(EngineKind.self, in: container, forKey: .panelDefaultEngine) ?? defaults.panelDefaultEngine

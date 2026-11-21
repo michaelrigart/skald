@@ -330,3 +330,17 @@ private let v1File = """
     let settings = try JSONDecoder().decode(Settings.self, from: Data(stored.utf8))
     #expect(settings.hiddenKinds == [.accent, .verbForm])
 }
+
+@Test func aMalformedReviewShortcutReadsAsTheDefaultAndKeepsTheRest() throws {
+    for stored in [#""x""#, #"{"keyCode":15}"#] {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try write(#"{"version":2,"neverTouch":["Brightline"],"reviewHotkey":\#(stored)}"#, to: directory)
+        guard case .loaded(let settings) = SettingsStore(directory: directory).load() else {
+            Issue.record("expected .loaded for \(stored)")
+            continue
+        }
+        #expect(settings.reviewHotkey == .review)
+        #expect(settings.neverTouch == ["Brightline"])
+    }
+}
