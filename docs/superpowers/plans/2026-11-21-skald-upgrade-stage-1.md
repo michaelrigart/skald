@@ -1,6 +1,6 @@
 # Skald Upgrade, Stage 1 (Engines) Implementation Plan
 
-**Status:** In progress
+**Status:** Implemented (branch `feat/skald-upgrade`, merged into `feat/skald-v1`; ships with [PR #1](https://github.com/michaelrigart/skald/pull/1)). The gate run and Michael's checks below are still owed.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the `plan-run` skill runs plans and takes precedence over both.
 

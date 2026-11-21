@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20
 **Owner:** Michael Rigart
-**Status:** In progress
+**Status:** In progress (stage 1 on branch `feat/skald-upgrade`, ships with [PR #1](https://github.com/michaelrigart/skald/pull/1); stage 2 not built).
 **Sign-off:** Michael, 2026-11-21, with the three decisions as recorded under "Decisions".
 **Builds on:** [Skald: design](2026-11-02-skald-design.md) (v1, branch `feat/skald-v1`, PR #1). Everything
 v1 specifies stays as it is unless this document changes it.
