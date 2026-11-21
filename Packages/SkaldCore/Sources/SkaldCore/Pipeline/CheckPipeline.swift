@@ -625,8 +625,8 @@ public actor CheckPipeline {
     private func updateClaudeStatus(_ router: EngineRouter) {
         guard claude != nil else { return }
         let routed = currentField.flatMap { field in fieldLanguages[field].map { router.typing($0, app: field.app) == .claude } } ?? false
-        let sending = routed && !isPaused && !backoff.isSuspended(at: timing.elapsed())
-        publishClaudeStatus(ClaudeStatus(sending: sending, trouble: backoff.trouble))
+        let suspended = backoff.isSuspended(at: timing.elapsed())
+        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: backoff.trouble, suspended: suspended))
     }
 
     private func publishClaudeStatus(_ status: ClaudeStatus) {

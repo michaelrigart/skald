@@ -3,10 +3,13 @@ public struct ClaudeStatus: Equatable, Sendable {
     public var sending: Bool
     /// From a failed request until the next success.
     public var trouble: ClaudeTrouble?
+    /// Failures have paused Claude's requests, so checks go to the on-device route until the pause ends.
+    public var suspended: Bool
 
-    public init(sending: Bool, trouble: ClaudeTrouble?) {
+    public init(sending: Bool, trouble: ClaudeTrouble?, suspended: Bool = false) {
         self.sending = sending
         self.trouble = trouble
+        self.suspended = suspended
     }
 
     public static let quiet = ClaudeStatus(sending: false, trouble: nil)

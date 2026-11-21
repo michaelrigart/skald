@@ -25,7 +25,7 @@ enum StatusState: Equatable {
         if let pausedUntil, pausedUntil > now { return .paused(until: pausedUntil) }
         if !claudeLanguages.isEmpty {
             if claude.sending { return .usingClaude(claudeLanguages, lastFailure: claude.trouble) }
-            if let trouble = claude.trouble { return .claudeTrouble(trouble, fallbacks: fallbacks) }
+            if claude.suspended, let trouble = claude.trouble { return .claudeTrouble(trouble, fallbacks: fallbacks) }
         }
         if let apple { return .spellingOnly(apple) }
         if thermalPaused { return .spellingOnly(.thermalPause) }

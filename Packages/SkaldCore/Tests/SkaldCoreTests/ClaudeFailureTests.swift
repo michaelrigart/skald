@@ -122,7 +122,7 @@ struct ClaudeFailureTests {
         await type(variant(1), in: rig)
         let failedAt = rig.clock.now.offset
         #expect(await claude.requests.count == 2)
-        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable))
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: true))
 
         await type(variant(2), in: rig, at: failedAt + .seconds(29))
         #expect(await claude.requests.count == 2)
@@ -137,6 +137,25 @@ struct ClaudeFailureTests {
         #expect(await claude.requests.count == 4)
     }
 
+    @Test func theSuspensionIsOnlyTheClaudeIsSuspendedFlag() async {
+        let rig = makeRig(claude: failing())
+        await rig.focus(variant(0), caret: 3)
+        await rig.check()
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: .unreachable, suspended: false))
+
+        await rig.focus(flew, caret: 3, in: PipelineRig.fieldB)
+        await rig.check()
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: false))
+
+        await rig.focus(variant(1), caret: 3)
+        await rig.check()
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: true))
+
+        await rig.focus(flew, caret: 3, in: PipelineRig.fieldB)
+        await rig.check()
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: true))
+    }
+
     @Test func aSuccessClearsTheTroubleAndTheSuspension() async {
         let claude = FakeEngine { request, index in
             index < 2 ? .failure(.failed) : .success(replacingWords(in: request.text, corrections))
@@ -146,7 +165,7 @@ struct ClaudeFailureTests {
         await rig.check()
         await type(variant(1), in: rig)
         let failedAt = rig.clock.now.offset
-        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable))
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: true))
 
         await type(variant(2), in: rig, at: failedAt + .seconds(30))
         #expect(await claude.requests.count == 3)
@@ -242,7 +261,7 @@ struct ClaudeFailureTests {
         await rig.focus(variant(0), caret: 3)
         await rig.check()
         await type(variant(1), in: rig)
-        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable))
+        #expect(await status(rig) == ClaudeStatus(sending: false, trouble: .unreachable, suspended: true))
 
         await rig.recheckAtCaret()
         #expect(await claude.requests.count == 2)

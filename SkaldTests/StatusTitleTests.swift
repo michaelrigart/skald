@@ -79,7 +79,7 @@ private func resolve(
 
 @Test func claudeTroubleRanksBelowPauseAndAboveApple() {
     let fallbacks: [ClaudeFallback] = [.init(language: .nl, route: .model), .init(language: .fr, route: .off)]
-    let trouble = ClaudeStatus(sending: false, trouble: .unreachable)
+    let trouble = ClaudeStatus(sending: false, trouble: .unreachable, suspended: true)
     #expect(resolve(pausedUntil: halfPastTwo.addingTimeInterval(60), claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
         == .paused(until: halfPastTwo.addingTimeInterval(60)))
     #expect(resolve(apple: .appleIntelligenceOff, claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
@@ -89,6 +89,15 @@ private func resolve(
     #expect(resolve(apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: nil)) == .spellingOnly(.appleIntelligenceOff))
     #expect(resolve(claude: ClaudeStatus(sending: false, trouble: .rateLimited)) == .onThisMac)
     #expect(resolve(claude: ClaudeStatus(sending: false, trouble: nil), claudeLanguages: [.nl]) == .onThisMac)
+}
+
+@Test func troubleIsClaimedOnlyWhileClaudeIsSuspended() {
+    let fallbacks: [ClaudeFallback] = [.init(language: .nl, route: .spellingOnly(.languageOff)), .init(language: .fr, route: .off)]
+    let failedOnce = ClaudeStatus(sending: false, trouble: .unreachable, suspended: false)
+    #expect(resolve(claude: failedOnce, claudeLanguages: [.nl, .fr], fallbacks: fallbacks) == .onThisMac)
+    #expect(resolve(claude: failedOnce, claudeLanguages: [.nl, .fr], fallbacks: fallbacks).title() == "Checking on this Mac")
+    #expect(resolve(claude: ClaudeStatus(sending: false, trouble: .unreachable, suspended: true), claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
+        == .claudeTrouble(.unreachable, fallbacks: fallbacks))
 }
 
 @Test func whileARequestCanLeaveTheFirstLineIsTheClaudeLineAndAFailureIsASecondOne() {
