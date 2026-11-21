@@ -1,0 +1,36 @@
+{"id":"en1","lang":"en","ms":717.0000076293945,"output":"Hi Sarah, thanks for the quick reply. I've went through the logs and there is definitely something wrong with the backup job on the staging server."}
+{"id":"en2","lang":"en","ms":478.6839485168457,"output":"The new deployment pipeline runs every night at two, but its status isn't reported anywhere yet."}
+{"id":"en3","lang":"en","ms":505.29801845550537,"output":"Could you send me the updated contract before Friday? I want to review it with Pieter on Monday."}
+{"id":"en4","lang":"en","ms":545.5669164657593,"output":"We have tested the migration on a copy of production, and everything seem to work, although the indexes took longer then expected."}
+{"id":"en5","lang":"en","ms":456.4099311828613,"output":"Each of the clusters have its own ingress controller, which make debugging a lot easier."}
+{"output":"I received your invoice yesterday. Accounting will process it this week, so you should receive the payment by the end of the month.","ms":662.9879474639893,"id":"en6","lang":"en"}
+{"output":"Let's schedule a call for tomorrow afternoon to discuss the roadmap and who's responsible for which part.","ms":489.35508728027344,"id":"en7","lang":"en"}
+{"output":"The client asked if we could reduce the number of alerts, because they get too many notifications at night.","ms":506.39593601226807,"id":"en8","lang":"en"}
+{"output":"I merged the fix for the Talos upgrade into main. The kubelet config now pins the cgroup driver, so the nodes come back cleanly after a reboot.","ms":648.7780809402466,"id":"enc1","lang":"en"}
+{"output":"Quick update: the Rails app is on 8.1, Sidekiq jobs are green, and I've rotated the pg credentials in 1Password.","ms":637.6609802246094,"id":"enc2","lang":"en"}
+{"output":"Thanks for joining today's call. As agreed, Brightline will deliver the first draft of the integration by the 14th, and Northwind will review it the following week.","ms":705.6140899658203,"id":"enc3","lang":"en"}
+{"output":"lgtm, ship it. ping me if the canary looks off.","ms":449.5229721069336,"id":"enc4","lang":"en"}
+{"output":"Hallo Jan, de back-up word elke nacht om twee uur uitgevoerd, maar gisteren is er iets fout gegaan.","ms":619.2770004272461,"id":"nl1","lang":"nl"}
+{"output":"Ik heb de nieuwe versie gisteren gedownloaded en het probleem is nog steeds niet opgelost.","ms":544.1220998764038,"id":"nl2","lang":"nl"}
+{"output":"De server is veel sneller als de oude, maar het geheugengebruik is eigelijk hoger.","ms":544.0289974212646,"id":"nl3","lang":"nl"}
+{"output":"Kan je mij laten weten wanneer het contract getekend is? Dan stuur ik onmiddelijk de factuur.","ms":564.6500587463379,"id":"nl4","lang":"nl"}
+{"output":"Wat er gisteren gebeurt is, mag niet meer voorvallen. Ik stel voor dat we de alerts beter configureren.","ms":615.6820058822632,"id":"nl5","lang":"nl"}
+{"output":"Hun hebben de migratie nog niet getest, dus we wachten best tot volgende week.","ms":510.35892963409424,"id":"nl6","lang":"nl"}
+{"output":"De documentatie moet duidelijker worden, want nieuwe collega's begrijpen de setup niet. Wanneer wordt het aangepast?","ms":618.704080581665,"id":"nl7","lang":"nl"}
+{"output":"De klant is zeer geïnteresseerd in de nieuwe functionaliteit en wil volgende week een demo.","ms":547.8570461273193,"id":"nl8","lang":"nl"}
+{"output":"Ik heb de fix voor de Talos-upgrade gemerged. De nodes komen nu proper terug na een reboot.","ms":522.273063659668,"id":"nlc1","lang":"nl"}
+{"output":"Dag Pieter, bedankt voor je snelle antwoord. Ik bekijk het morgen en laat je weten tegen vrijdag.","ms":611.1960411071777,"id":"nlc2","lang":"nl"}
+{"output":"De pipeline draait groen, de Sidekiq-jobs lopen weer en de credentials staan in 1Password.","ms":561.9410276412964,"id":"nlc3","lang":"nl"}
+{"output":"Zoals afgesproken levert Brightline de eerste versie op tegen de 14e, en Northwind reviewt die de week erna.","ms":674.1069555282593,"id":"nlc4","lang":"nl"}
+{"output":"Bonjour Marie, je vous ai envoyé le contrat hier, mais je n'ai pas encore reçu de réponse.","ms":525.3119468688965,"id":"fr1","lang":"fr"}
+{"output":"La sauvegarde a échoué cette nuit à cause d'un problème de disque sur le serveur de test.","ms":564.376950263977,"id":"fr2","lang":"fr"}
+{"output":"Les serveurs de production sont maintenant à jour, et les tests passent sans problème.","ms":469.59495544433594,"id":"fr3","lang":"fr"}
+{"output":"Pouvez-vous me dire ou se trouve la documentation de l'API ? Je ne la trouve pas sur le wiki.","ms":543.0179834365845,"id":"fr4","lang":"fr"}
+{"output":"La facture que je vous ai envoyé la semaine dernière contient une erreur de TVA.","ms":495.3169822692871,"id":"fr5","lang":"fr"}
+{"output":"Nous avons déjà testé la migration, mais certaines requêtes sont encore trop lente.","ms":481.01890087127686,"id":"fr6","lang":"fr"}
+{"output":"Le client voudrait moins d'alertes la nuit, ces vraiment pénible pour son équipe.","ms":522.8070020675659,"id":"fr7","lang":"fr"}
+{"output":"Merci pour votre retour. Je regarderais ça demain matin et je vous tiens au courant.","ms":526.5839099884033,"id":"fr8","lang":"fr"}
+{"id":"frc1","ms":830.5660486221313,"output":"Bonjour Thomas, merci pour la réunion de ce matin. Comme convenu, nous livrerons la première version d'ici le 14. Le budget reste à septante mille euros.","lang":"fr"}
+{"id":"frc2","ms":567.0849084854126,"output":"J'ai mergé le correctif pour l'upgrade de Talos. Les nœuds redémarrent proprement maintenant.","lang":"fr"}
+{"id":"frc3","ms":554.953932762146,"output":"Le pipeline est vert, les jobs Sidekiq tournent à nouveau et les identifiants sont dans 1Password.","lang":"fr"}
+{"id":"frc4","ms":450.2750635147095,"output":"Pas de souci, on en reparle lundi. Bon week-end !","lang":"fr"}
