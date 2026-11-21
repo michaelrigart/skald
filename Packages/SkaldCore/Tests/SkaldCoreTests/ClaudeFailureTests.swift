@@ -227,6 +227,35 @@ struct ClaudeFailureTests {
         #expect(await status(rig).trouble == nil)
     }
 
+    @Test func aTextThatOnDeviceChecksAlreadyCoveredStillShowsWhyClaudeSkippedIt() async {
+        let claude = FakeEngine { request, _ in
+            request.text == dutch ? .failure(.failed) : .success(replacingWords(in: request.text, corrections))
+        }
+        var onDevice = claudeSettings()
+        onDevice.modelChecks[.nl] = true
+        let rig = makeRig(onDevice, claude: claude, engine: .correcting(["word": "wordt"]))
+        let inSecond = dutch.utf16.count + 1 + 3
+        await rig.focus(dutch + "\n" + dutch2, caret: 3)
+        await rig.check()
+        #expect(await rig.engine.texts == [dutch])
+
+        await rig.access.moveCaret(to: inSecond, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.texts == [dutch, dutch2])
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
+
+        await rig.access.moveCaret(to: 3, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.requests.count == 2)
+        #expect(await rig.engine.texts == [dutch])
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: .unreachable))
+
+        await rig.access.moveCaret(to: inSecond, in: PipelineRig.fieldA)
+        await rig.recheckAtCaret()
+        #expect(await claude.requests.count == 2)
+        #expect(await status(rig).trouble == nil)
+    }
+
     @Test func aTimeoutIsAFailure() async {
         let claude = FakeEngine.correcting(corrections, gated: true)
         let rig = makeRig(claude: claude)
