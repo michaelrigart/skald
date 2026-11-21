@@ -12,8 +12,8 @@ final class ReviewSession {
         let writes: () -> Bool
         /// Shows the issue's card; `index` counts from 0 in the list `count` long.
         let show: (Issue, _ index: Int, _ count: Int) -> Void
-        /// Accepts through the shown card, so it says "Applying the fix…".
-        let accept: (UUID) async -> ReplaceOutcome
+        /// Accepts through the shown card, so it says "Applying the fix…"; the guess's index, or nil for the fix.
+        let accept: (UUID, Int?) async -> ReplaceOutcome
         let copy: (UUID) -> Void
         let dismiss: (UUID) -> Void
         /// The "Checking…" card.
@@ -33,6 +33,8 @@ final class ReviewSession {
     /// pipeline has not dropped yet.
     private var issues: [Issue] = []
     private var dismissed: Set<UUID> = []
+    /// The guess the accept being run was asked for with the mouse; nil for ↩.
+    private var alternative: Int?
     private var wait: Task<Void, Never>?
     /// Bumped by every `.close`, so the outcome of a write or the end of a wait that belongs to an earlier opening
     /// reaches nothing.
@@ -87,6 +89,18 @@ final class ReviewSession {
         run(mode.left())
     }
 
+    /// The card's Accept or guess button: ↩'s step, for a guess when `alternative` is given.
+    func accept(alternative: Int?) {
+        self.alternative = alternative
+        pressed(.accept)
+        self.alternative = nil
+    }
+
+    /// The card's Dismiss button: ⌫'s step.
+    func dismiss() {
+        pressed(.dismiss)
+    }
+
     private func pressed(_ key: ReviewMode.Key) {
         run(mode.key(key, issues: issues, writes: actions.writes()))
     }
@@ -95,7 +109,7 @@ final class ReviewSession {
         for effect in effects {
             switch effect {
             case .show(let id): show(id)
-            case .accept(let id): accept(id)
+            case .accept(let id): accepting(id)
             case .copy(let id): actions.copy(id)
             case .dismiss(let id):
                 dismissed.insert(id)
@@ -113,10 +127,11 @@ final class ReviewSession {
         announcer.announce(Self.announcement(label: IssueCardModel.label(for: issues[index]), index: index, count: issues.count))
     }
 
-    private func accept(_ id: UUID) {
+    private func accepting(_ id: UUID) {
         let epoch = epoch
+        let alternative = alternative
         Task { [actions] in
-            let outcome = await actions.accept(id)
+            let outcome = await actions.accept(id, alternative)
             guard epoch == self.epoch else { return }
             run(mode.finished(outcome))
         }

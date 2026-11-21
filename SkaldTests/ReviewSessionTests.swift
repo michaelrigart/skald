@@ -59,6 +59,7 @@ private final class Announcer: Announcing {
     private var shown: [Issue] = []
     private var places: [(index: Int, count: Int)] = []
     private var accepting: [UUID] = []
+    private var alternatives: [Int?] = []
     private var copied: [UUID] = []
     private var dismissed: [UUID] = []
     private var checkingShown = 0
@@ -83,8 +84,9 @@ private final class Announcer: Announcing {
                     shown.append(issue)
                     places.append((index, count))
                 },
-                accept: { [unowned self] id in
+                accept: { [unowned self] id, alternative in
                     accepting.append(id)
+                    alternatives.append(alternative)
                     return outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
                 },
                 copy: { [unowned self] in copied.append($0) },
@@ -264,5 +266,31 @@ private final class Announcer: Announcing {
         session.edited()
         session.left()
         #expect(shown.map(\.id) == [a.id] && closed == 1 && registrar.held.isEmpty)
+    }
+
+    @Test func aGuessAcceptedWithTheMouseGoesThroughTheModeAndWaitsForTheRecheck() async {
+        session.toggle()
+        session.accept(alternative: 1)
+        await settle()
+        #expect(accepting == [a.id] && alternatives == [1])
+        #expect(session.isOpen && registrar.held.count == 6 && checkingShown == 1)
+        session.edited()
+        #expect(session.isOpen)
+        session.snapshot([], checked: false, sameField: true)
+        session.snapshot([b], checked: true, sameField: true)
+        #expect(shown.map(\.id) == [a.id, b.id])
+    }
+
+    @Test func theKeyAcceptsTheFixItself() async {
+        session.toggle()
+        tap(36)
+        await settle()
+        #expect(alternatives == [nil])
+    }
+
+    @Test func aMouseDismissMovesOnLikeTheKey() {
+        session.toggle()
+        session.dismiss()
+        #expect(dismissed == [a.id] && shown.map(\.id) == [a.id, b.id])
     }
 }

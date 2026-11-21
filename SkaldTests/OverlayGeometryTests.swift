@@ -194,4 +194,15 @@ struct OverlayGeometryTests {
         let all = [word(at: 20), word(at: 120), word(at: 300)]
         #expect(OverlayGeometry.issues(all, meeting: nil).map(\.id) == all.map(\.id))
     }
+
+    @Test func aReviewCardOpensAtOnceOnTheNearestKnownPlace() {
+        let drawn = CGRect(x: 10, y: 20, width: 30, height: 16)
+        let panel = CGRect(x: 100, y: 200, width: 320, height: 90)
+        let badge = CGRect(x: 500, y: 40, width: 18, height: 18)
+        let pointer = CGRect(x: 7, y: 8, width: 0, height: 0)
+        #expect(OverlayGeometry.provisionalReviewAnchor(drawn: drawn, panel: panel, badge: badge, pointer: pointer) == drawn)
+        #expect(OverlayGeometry.provisionalReviewAnchor(drawn: nil, panel: panel, badge: badge, pointer: pointer) == panel)
+        #expect(OverlayGeometry.provisionalReviewAnchor(drawn: nil, panel: nil, badge: badge, pointer: pointer) == badge)
+        #expect(OverlayGeometry.provisionalReviewAnchor(drawn: nil, panel: nil, badge: nil, pointer: pointer) == pointer)
+    }
 }

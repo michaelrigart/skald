@@ -164,7 +164,6 @@ final class OverlayController {
         }
         // Every snapshot, in the order the pipeline publishes them: review mode waits for a recheck by their order.
         review.snapshot(snapshot.issues, checked: new.checked, sameField: new.field != nil && !fieldChanged)
-        if paused { review.left() }
         if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
         if fieldChanged || badgeState == nil { badge.hide() }
         requestRedraw()
@@ -275,7 +274,7 @@ final class OverlayController {
                     return capabilities.map { $0.field == field && $0.value.contains(.cleanWrite) } ?? false
                 },
                 show: { [weak self] issue, _, _ in self?.showReviewCard(for: issue) },
-                accept: { [weak self] id in await self?.acceptReviewed(id) ?? .failed },
+                accept: { [weak self] id, alternative in await self?.acceptReviewed(id, alternative: alternative) ?? .failed },
                 copy: { [weak self] id in self?.reviewCard(id)?.copyFix() },
                 dismiss: { [weak self] id in self?.dismissReviewed(id) },
                 showChecking: { [weak self] in self?.showChecking() },
@@ -288,41 +287,53 @@ final class OverlayController {
         reviewCard.flatMap { $0.id == id ? $0 : nil }
     }
 
-    /// The issue's card alone, over its drawn word.
+    /// The issue's card alone. It opens at once, over its drawn word or else the nearest known place, so what is
+    /// on screen is what the keys act on; where the word isn't drawn, its bounds are read and the panel moves there.
     private func showReviewCard(for issue: Issue) {
         reviewShow?.cancel()
         let model = card(issue)
         model.reviewing = true
+        model.reviewRoute = .init(
+            accept: { [weak self] alternative in self?.review.accept(alternative: alternative) },
+            dismiss: { [weak self] in self?.review.dismiss() }
+        )
         reviewCard = model
-        if let drawn = targets.first(where: { $0.id == issue.id })?.rect {
-            return open([model], anchor: drawn, hoverAnchor: nil)
-        }
+        let drawn = targets.first(where: { $0.id == issue.id })?.rect
+        open(
+            [model],
+            anchor: OverlayGeometry.provisionalReviewAnchor(
+                drawn: drawn, panel: cards.isOpen ? cards.anchor : nil, badge: badge.frame, pointer: Self.pointer
+            ),
+            hoverAnchor: nil
+        )
+        guard drawn == nil else { return }
         reviewShow = Task { [weak self] in
             guard let self else { return }
-            let anchor = await reviewAnchor(for: issue)
-            guard !Task.isCancelled, reviewCard === model else { return }
-            open([model], anchor: anchor, hoverAnchor: nil)
+            guard let anchor = await readAnchor(of: issue), !Task.isCancelled, reviewCard === model, cards.cards.contains(where: { $0 === model })
+            else { return }
+            let screen = NSScreen.screens.first { $0.frame.intersects(anchor) } ?? NSScreen.main
+            cards.reanchor(anchor, screen: screen?.visibleFrame ?? anchor)
         }
     }
 
-    /// Where an issue's card goes when its word isn't drawn: the word's bounds read now, else the badge, else the
-    /// field's frame, else the pointer.
-    private func reviewAnchor(for issue: Issue) async -> CGRect {
+    /// The word's bounds read now, else the field's frame; nil when the app gives neither. The word's bounds are only
+    /// asked of an app that gives range bounds.
+    private func readAnchor(of issue: Issue) async -> CGRect? {
+        guard let field = snapshot.field else { return nil }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        guard let field = snapshot.field else { return Self.pointer }
-        if let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil {
+        if capabilities.map({ $0.field == field && $0.value.contains(.rangeBounds) }) ?? true,
+           let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil {
             return OverlayGeometry.appKit(read, primaryHeight: primaryHeight)
         }
         if let badge = badge.frame { return badge }
-        if let frame = await access.frame(of: field) { return OverlayGeometry.appKit(frame, primaryHeight: primaryHeight) }
-        return Self.pointer
+        return await access.frame(of: field).map { OverlayGeometry.appKit($0, primaryHeight: primaryHeight) }
     }
 
     private static var pointer: CGRect { CGRect(origin: NSEvent.mouseLocation, size: .zero) }
 
-    private func acceptReviewed(_ id: UUID) async -> ReplaceOutcome {
+    private func acceptReviewed(_ id: UUID, alternative: Int?) async -> ReplaceOutcome {
         guard let card = reviewCard(id) else { return .failed }
-        await card.accept()
+        await card.accept(alternative: alternative)
         return card.outcome ?? .failed
     }
 

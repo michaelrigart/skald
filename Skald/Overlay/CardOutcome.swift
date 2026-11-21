@@ -107,6 +107,13 @@ struct CardContent: Equatable {
     private(set) var outcome: ReplaceOutcome?
     /// Set by the controller while review mode shows this card.
     var reviewing = false
+    /// Where the card's own buttons go while review mode shows it, so a mouse Accept or Dismiss is a review step
+    /// like ↩ and ⌫, not an edit that ends the mode.
+    struct ReviewRoute {
+        let accept: (Int?) -> Void
+        let dismiss: () -> Void
+    }
+    @ObservationIgnored var reviewRoute: ReviewRoute?
     @ObservationIgnored var onClose: (() -> Void)?
     /// Called once Accept's outcome left the card open with its reason.
     @ObservationIgnored var onFinish: (() -> Void)?
@@ -188,6 +195,17 @@ struct CardContent: Equatable {
             phase = .finished(reason: reason, offersCopy: offersCopy)
             onFinish?()
         }
+    }
+
+    /// The Accept and guess buttons: review mode's step when it shows this card, else the card's own accept.
+    func pressAccept(alternative: Int? = nil) {
+        if let reviewRoute { return reviewRoute.accept(alternative) }
+        Task { await accept(alternative: alternative) }
+    }
+
+    func pressDismiss() {
+        if let reviewRoute { return reviewRoute.dismiss() }
+        dismiss()
     }
 
     func copyFix() {

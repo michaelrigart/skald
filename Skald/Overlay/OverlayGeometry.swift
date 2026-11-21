@@ -56,6 +56,13 @@ enum OverlayGeometry {
         return CGRect(origin: cardOrigin(size: bounded, anchor: anchor, within: screen), size: bounded)
     }
 
+    /// Where a review card opens at once, before its word's bounds are read again: on its drawn word; else where
+    /// the panel already is (the last card or "Checking…"); else the badge; else the pointer. What is on screen is
+    /// then always the card the review keys act on.
+    static func provisionalReviewAnchor(drawn: CGRect?, panel: CGRect?, badge: CGRect?, pointer: CGRect) -> CGRect {
+        drawn ?? panel ?? badge ?? pointer
+    }
+
     /// What the badge says aloud: "No suggestions", or "3 suggestions: 2 spelling, 1 grammar".
     static func badgeLabel(_ issues: [Issue]) -> String {
         guard !issues.isEmpty else { return "No suggestions" }

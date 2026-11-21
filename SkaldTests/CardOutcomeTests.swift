@@ -408,4 +408,24 @@ import Testing
         let content = CardContent(issue: issue(in: prefix + "teh end", revised: prefix + "the end"), context: 10)
         #expect(content.before == "…" + String(repeating: "a ", count: 5))
     }
+
+    @Test func aReviewCardSendsItsButtonsToReviewModeInsteadOfActingItself() async {
+        let card = card()
+        var accepted: [Int?] = []
+        var dismissed = 0
+        card.reviewRoute = .init(accept: { accepted.append($0) }, dismiss: { dismissed += 1 })
+        card.pressAccept()
+        card.pressAccept(alternative: 1)
+        card.pressDismiss()
+        await Task.yield()
+        #expect(accepted == [nil, 1] && dismissed == 1)
+        #expect(card.phase == .ready)
+    }
+
+    @Test func aCardWithoutAReviewRouteActsItself() async {
+        let card = card()
+        card.pressAccept()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(card.phase == .closed)
+    }
 }

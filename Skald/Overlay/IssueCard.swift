@@ -102,6 +102,14 @@ final class CardPanel {
         panel.orderFrontRegardless()
     }
 
+    /// Moves the panel to a better anchor for the cards it already shows.
+    func reanchor(_ anchor: CGRect, screen: CGRect) {
+        guard isOpen else { return }
+        self.anchor = anchor
+        self.screen = screen
+        place(contentSize ?? panel.contentView?.fittingSize ?? CGSize(width: Self.width, height: 100))
+    }
+
     func clearStatus() {
         if stack.status != nil { close() }
     }
@@ -223,7 +231,7 @@ private struct IssueCardView: View {
                         ForEach(Array(card.alternatives.enumerated()), id: \.offset) { index, guess in
                             let copied = card.copiedAlternative == index
                             Button(copied ? "Copied" : guess) {
-                                if card.writes { Task { await card.accept(alternative: index) } } else { card.copy(alternative: index) }
+                                if card.writes { card.pressAccept(alternative: index) } else { card.copy(alternative: index) }
                             }
                             .lineLimit(1)
                             .accessibilityLabel("\(card.writes ? "Use" : copied ? "Copied" : "Copy") \(guess): \(card.label)")
@@ -232,12 +240,12 @@ private struct IssueCardView: View {
                 }
                 HStack(spacing: 6) {
                     if card.offersAccept {
-                        Button("Accept") { Task { await card.accept() } }
+                        Button("Accept") { card.pressAccept() }
                             .buttonStyle(.borderedProminent)
                             .accessibilityLabel("Accept: \(card.label)")
                     }
                     copyButton
-                    Button("Dismiss") { card.dismiss() }
+                    Button("Dismiss") { card.pressDismiss() }
                         .accessibilityLabel("Dismiss: \(card.label)")
                     Spacer(minLength: 0)
                     moreMenu
