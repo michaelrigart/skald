@@ -107,3 +107,37 @@ private func shown(_ reading: String, at time: Duration) -> ScrollSettle<String>
     #expect(settle.read("h", at: .seconds(20)) == [])
     #expect(settle.isHidden)
 }
+
+@Test func aReadShowsOnlyWhenItsConfirmingReadsFit() {
+    var settle = ScrollSettle<Int>(ceiling: c)
+    _ = settle.scrolled(at: .zero)
+    for n in 1...17 { _ = settle.read(n, at: c * n) }
+    #expect(settle.read(17, at: c * 18) == [.read(after: c)])
+    #expect(settle.read(17, at: c * 19) == [.read(after: c)])
+    #expect(settle.isHidden)
+    #expect(settle.read(17, at: c * 20) == [])
+    #expect(settle.isHidden)
+}
+
+@Test func theLastShowAtTheSeventeenthReadIsConfirmed() {
+    var settle = ScrollSettle<Int>(ceiling: c)
+    _ = settle.scrolled(at: .zero)
+    for n in 1...16 { _ = settle.read(n, at: c * n) }
+    #expect(settle.read(16, at: c * 17) == [.show, .read(after: c)])
+    #expect(settle.read(16, at: c * 18) == [.read(after: c)])
+    #expect(settle.read(16, at: c * 19) == [.read(after: c)])
+    #expect(settle.read(16, at: c * 20) == [])
+    #expect(!settle.isHidden)
+}
+
+@Test func aDifferingTwentiethReadWhileConfirmingHides() {
+    var settle = ScrollSettle<Int>(ceiling: c)
+    _ = settle.scrolled(at: .zero)
+    for n in 1...16 { _ = settle.read(n, at: c * n) }
+    _ = settle.read(16, at: c * 17)
+    _ = settle.read(16, at: c * 18)
+    _ = settle.read(16, at: c * 19)
+    #expect(settle.read(99, at: c * 20) == [.hide])
+    #expect(settle.isHidden)
+    #expect(settle.read(99, at: c * 30) == [])
+}

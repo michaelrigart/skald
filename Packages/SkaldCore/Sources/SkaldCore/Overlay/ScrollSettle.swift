@@ -36,20 +36,22 @@ public struct ScrollSettle<Reading: Equatable & Sendable>: Sendable {
 
     public mutating func read(_ reading: Reading, at now: Duration) -> [Action] {
         guard let ceiling, reads < Self.maxReads else { return [] }
-        if case .showing = state { return [] }
-        reads += 1
-        let spent = reads >= Self.maxReads
+        let taken = reads + 1
+        let spent = taken >= Self.maxReads
         switch state {
         case .showing:
             return []
         case let .hidden(lastScroll, previous):
-            if !spent, let previous, previous == reading, now - lastScroll >= ceiling * 2 {
+            reads = taken
+            // A read shows only when the confirming reads still fit in the bound.
+            if taken + Self.confirmingReads <= Self.maxReads, let previous, previous == reading, now - lastScroll >= ceiling * 2 {
                 state = .confirming(shown: reading, agreed: 0)
                 return [.show, .read(after: ceiling)]
             }
             state = .hidden(lastScroll: lastScroll, previous: reading)
             return spent ? [] : [.read(after: ceiling)]
         case let .confirming(shown, agreed):
+            reads = taken
             guard shown == reading else {
                 state = .hidden(lastScroll: now, previous: reading)
                 return spent ? [.hide] : [.hide, .read(after: ceiling)]
@@ -60,7 +62,7 @@ public struct ScrollSettle<Reading: Equatable & Sendable>: Sendable {
                 return []
             }
             state = .confirming(shown: shown, agreed: total)
-            return spent ? [] : [.read(after: ceiling)]
+            return [.read(after: ceiling)]
         }
     }
 
