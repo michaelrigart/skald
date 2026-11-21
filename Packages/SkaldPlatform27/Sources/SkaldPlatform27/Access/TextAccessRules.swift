@@ -172,8 +172,11 @@ enum TextAccessRules {
     }
 
     /// The whole paragraph is still there: its text, and a line break or the field's edge on either side of it.
-    static func paragraphUnchanged(_ expected: ExpectedText, read: (TextRange) -> String?, length: () -> Int?) -> Bool {
-        guard let current = read(expected.range), current.hasSameUTF16(as: expected.text), let total = length(), expected.range.end <= total else { return false }
+    static func paragraphUnchanged(
+        _ expected: ExpectedText, read: (TextRange) -> String?, length: () -> Int?,
+        sameText: (String, String) -> Bool = { $0.hasSameUTF16(as: $1) }
+    ) -> Bool {
+        guard let current = read(expected.range), sameText(current, expected.text), let total = length(), expected.range.end <= total else { return false }
         let range = expected.range
         let before = range.location == 0 || isLineBreak(read(TextRange(location: range.location - 1, length: 1)))
         let after = range.end == total || isLineBreak(read(TextRange(location: range.end, length: 1)))
@@ -247,19 +250,20 @@ enum TextAccessRules {
     }
 
     /// What the field shows after ⌘V: the paragraph with the replacement applied, the original one, or another.
-    /// A no-break space reads as a space: Mail's WebKit turns the spaces beside pasted text into no-break spaces.
     static func pasteRead(
         original: ExpectedText, revised: ExpectedText, read: (TextRange) -> String?, length: () -> Int?
     ) -> PastePlan.Read {
         guard length() != nil else { return .unreadable }
-        let shown: (TextRange) -> String? = { read($0).map(foldingNoBreakSpaces) }
-        if paragraphUnchanged(folded(revised), read: shown, length: length) { return .expected }
-        if paragraphUnchanged(folded(original), read: shown, length: length) { return .original }
+        if paragraphUnchanged(revised, read: read, length: length, sameText: showsSameText) { return .expected }
+        if paragraphUnchanged(original, read: read, length: length, sameText: showsSameText) { return .original }
         return .other
     }
 
-    private static func folded(_ expected: ExpectedText) -> ExpectedText {
-        ExpectedText(range: expected.range, text: foldingNoBreakSpaces(expected.text))
+    /// Whether a paste field shows `a` where `b` is expected: a no-break space reads as a space, because Mail's
+    /// WebKit turns the spaces beside pasted text into no-break spaces. The one equality for proving a paste, before
+    /// it (`changesText`) and after it (`pasteRead`); checks made before ⌘V stay exact.
+    static func showsSameText(_ a: String, _ b: String) -> Bool {
+        foldingNoBreakSpaces(a).hasSameUTF16(as: foldingNoBreakSpaces(b))
     }
 
     private static func foldingNoBreakSpaces(_ text: String) -> String {
@@ -299,10 +303,11 @@ enum TextAccessRules {
         return selectionCovers(range, text: text, selection: reader.selection(), selectedText: reader.selectedText())
     }
 
-    /// False when `replacement` is what `original` already holds at `range`, unit for unit: the field would show
-    /// the expected paragraph before any paste, so it could never prove one.
+    /// False when the field already shows `replacement` at `range` (`showsSameText`): it would show the expected
+    /// paragraph before any paste, so it could never prove one.
     static func changesText(_ original: ExpectedText, at range: TextRange, replacement: String) -> Bool {
-        text(of: original, at: range)?.hasSameUTF16(as: replacement) != true
+        guard let held = text(of: original, at: range) else { return true }
+        return !showsSameText(held, replacement)
     }
 
     /// The expected text at `range`, which lies inside `expected`.

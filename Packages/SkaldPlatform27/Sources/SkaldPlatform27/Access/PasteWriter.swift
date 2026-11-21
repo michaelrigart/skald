@@ -99,7 +99,7 @@ struct PastePlan {
     private var postRequested = false
     private var finished = false
 
-    /// `changesText` is false when the replacement equals the text at the range: the field would show the expected
+    /// `changesText` is false when the replacement shows as the text at the range: the field would show the expected
     /// paragraph before the paste lands, so it could never prove the paste. `hasText` is false for an empty
     /// replacement, which the core never sends: a paste of nothing would stage an empty clipboard.
     init(changesText: Bool = true, hasText: Bool = true) {
