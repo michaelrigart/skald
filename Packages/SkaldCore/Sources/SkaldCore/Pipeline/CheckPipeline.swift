@@ -3,7 +3,8 @@ import Foundation
 public struct IssueSnapshot: Sendable, Equatable {
     public let field: FieldID?
     public let issues: [Issue]
-    /// Whether Skald is not paused and a result is in for a paragraph of the field, so an empty list means a clean field.
+    /// Whether Skald is not paused, a result is in for the caret's paragraph and no model check is running for it, so an
+    /// empty list means a clean field.
     public let checked: Bool
 
     public init(field: FieldID?, issues: [Issue], checked: Bool) {
@@ -67,6 +68,11 @@ public actor CheckPipeline {
         let generation: Int
     }
 
+    private struct ModelJob {
+        let task: Task<Void, Never>
+        let key: ParagraphKey
+    }
+
     private enum ModelOutcome {
         /// The engine answered and the answer was judged: the paragraph counts as checked.
         case checked
@@ -116,8 +122,9 @@ public actor CheckPipeline {
     /// Called in a request's task after its cancellation check and before it is sent; tests hold requests here.
     private var requestHook: (@Sendable () async -> Void)?
     /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
-    /// cancels is removed without a report, since the scheduler has already let it go.
-    private var modelJobs: [Int: Task<Void, Never>] = [:]
+    /// cancels is removed without a report, since the scheduler has already let it go. A job knows its paragraph's key,
+    /// so a snapshot is not `checked` while the caret's paragraph still has one.
+    private var modelJobs: [Int: ModelJob] = [:]
     private var epoch = 0
     /// Advanced by every field event the scheduler acts on and every lifecycle change: pause, resume, update and
     /// recheck. A read keeps its answer only while the revision it started at is current.
@@ -358,7 +365,7 @@ public actor CheckPipeline {
         case .checkModel(let key, let chunk, let parent, let generation):
             startModel(key, chunk: chunk, parent: parent, generation: generation)
         case .cancelModel(let generation):
-            modelJobs.removeValue(forKey: generation)?.cancel()
+            modelJobs.removeValue(forKey: generation)?.task.cancel()
         }
     }
 
@@ -473,7 +480,7 @@ public actor CheckPipeline {
             let outcome = await pipeline.checkModel(key, chunk: chunk, language: language, generation: generation, epoch: epoch)
             pipeline.finishModel(generation, outcome)
         }
-        modelJobs[generation] = task
+        modelJobs[generation] = ModelJob(task: task, key: key)
     }
 
     private func checkModel(_ key: ParagraphKey, chunk: Paragraph, language: Language, generation: Int, epoch: Int) async -> ModelOutcome {
@@ -710,14 +717,15 @@ public actor CheckPipeline {
             }
     }
 
-    /// Every chunk of the paragraph holding the caret in the latest read of the field has a stored result; with the caret
-    /// in no paragraph, any result for the field counts.
+    /// Every chunk of the paragraph holding the caret in the latest read of the field has a stored result and no model
+    /// check is running for one of them; with the caret in no paragraph, any result for the field counts.
     private func hasCheckedCaretParagraph(in field: FieldID) -> Bool {
         guard let latest, latest.snapshot.field == field,
               let caret = Paragraphs.around(caret: latest.snapshot.selection.location, in: latest.paragraphs),
               let key = latest.keyed.first(where: { $0.1 == caret })?.0
         else { return tracker.hasResults(in: field) }
-        return tracker.hasResults(for: ParagraphKeys.chunkKeys(of: caret, key: key).map(\.0), in: field)
+        let keys = ParagraphKeys.chunkKeys(of: caret, key: key).map(\.0)
+        return tracker.hasResults(for: keys, in: field) && !modelJobs.values.contains { keys.contains($0.key) }
     }
 
     private func publish() {

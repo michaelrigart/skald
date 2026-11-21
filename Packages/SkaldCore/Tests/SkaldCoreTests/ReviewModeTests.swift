@@ -64,7 +64,7 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     #expect(mode.phase == .applying(a.id))
     for key in [ReviewMode.Key.next, .previous, .accept, .dismiss] { #expect(mode.key(key, issues: [a, b, c], writes: true) == []) }
     #expect(mode.issuesChanged([b, c], checked: true) == [])          // the pipeline dropped the accepted issue
-    #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(8))])
     #expect(mode.phase == .awaiting(a.id) && mode.holdsKeys)
     for key in [ReviewMode.Key.next, .previous, .accept, .dismiss] { #expect(mode.key(key, issues: [], writes: true) == []) }
     #expect(mode.edited() == [])                                      // Skald's own write
@@ -79,7 +79,7 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     var mode = open([a, b, c])
     _ = mode.key(.accept, issues: [a, b, c], writes: true)
     #expect(mode.issuesChanged([], checked: false) == [])             // while applying
-    #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    #expect(mode.finished(.replaced) == [.wait(a.id, .seconds(8))])
     #expect(mode.issuesChanged([b.moved(to: 21), c.moved(to: 32)], checked: true) == [.show(b.id)])
 }
 
@@ -102,13 +102,13 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     var stale = open([a, b, c])
     _ = stale.key(.accept, issues: [a, b, c], writes: true)
     #expect(stale.issuesChanged([b, c], checked: true) == [])
-    #expect(stale.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    #expect(stale.finished(.replaced) == [.wait(a.id, .seconds(8))])
     var again = open([a, b, c])
     _ = again.key(.accept, issues: [a, b, c], writes: true)
     _ = again.issuesChanged([], checked: false)
     _ = again.issuesChanged([b.moved(to: 21)], checked: true)
     #expect(again.issuesChanged([], checked: false) == [])
-    #expect(again.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    #expect(again.finished(.replaced) == [.wait(a.id, .seconds(8))])
 }
 
 @Test func aNewAcceptForgetsTheEarlierSuspension() {
@@ -128,7 +128,7 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     _ = early.issuesChanged([b, c], checked: true)
     #expect(early.finished(.replaced) == [.show(b.id)])
     #expect(early.key(.accept, issues: [b, c], writes: true) == [.accept(b.id)])
-    #expect(early.finished(.replaced) == [.wait(b.id, .seconds(6))])  // not a show from the earlier recheck's list
+    #expect(early.finished(.replaced) == [.wait(b.id, .seconds(8))])  // not a show from the earlier recheck's list
 }
 
 @Test func theRecheckFindingNothingEndsTheModeAndAnEarlierIssueIsShownWhenNoneFollows() {

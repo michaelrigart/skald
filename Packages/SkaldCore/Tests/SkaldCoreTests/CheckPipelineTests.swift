@@ -1325,4 +1325,19 @@ struct IssueDetailTests {
         await rig.pipeline.setPaused(true)
         #expect(await rig.pipeline.lastPublished.checked == false)
     }
+
+    @Test func theSnapshotIsNotCheckedWhileTheCaretsModelCheckRuns() async {
+        let rig = Rig(makeSettings(), engine: .correcting(["teh": "the", "paris": "Paris"], gated: true))
+        await rig.focus(flew, caret: 3)
+        rig.pass()
+        await rig.engine.waitForRequests(1)
+        #expect(await rig.visible().map(\.source) == [.spelling])
+        #expect(await rig.pipeline.lastPublished.checked == false)
+
+        await rig.engine.release(0)
+        await rig.pipeline.drain()
+        #expect(await rig.pipeline.lastPublished.checked == true)
+        #expect(await rig.modelIssues().map(\.word) == ["teh", "paris"])
+        #expect(await rig.pipeline.lastPublished.issues.contains { $0.source == .model })
+    }
 }

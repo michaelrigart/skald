@@ -167,7 +167,7 @@ final class OverlayController {
             cardAnchor = nil
         }
         // Review mode waits for a recheck by the order of the snapshots it sees. The pipeline buffers only the newest
-        // snapshot, so a dropped unchecked one makes the mode fall back to its 6 s wait.
+        // snapshot, so a dropped unchecked one makes the mode fall back to its 8 s wait.
         review.snapshot(snapshot.issues, checked: new.checked, sameField: new.field != nil && !fieldChanged)
         if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
         if fieldChanged || badgeState == nil { badge.hide() }

@@ -19,7 +19,7 @@ public struct ReviewMode: Sendable {
         case close
     }
 
-    public static let recheckWait: Duration = .seconds(6)
+    public static let recheckWait: Duration = .seconds(8)
 
     public init() {}
 
