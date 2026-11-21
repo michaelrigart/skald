@@ -43,12 +43,14 @@ public actor CheckPipeline {
     /// The newest read of the focused field, parsed once for language detection and anchoring.
     private struct LatestRead {
         let snapshot: FieldSnapshot
+        let keyed: [(ParagraphKey, Paragraph)]
         let paragraphs: [Paragraph]
         let parents: [ParagraphKey: Paragraph]
 
         init(_ snapshot: FieldSnapshot) {
             let keyed = ParagraphKeys.keyed(snapshot)
             self.snapshot = snapshot
+            self.keyed = keyed
             paragraphs = keyed.map(\.1)
             parents = ParagraphKeys.parents(keyed)
         }
@@ -221,6 +223,7 @@ public actor CheckPipeline {
             send(.reread)
         }
         let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
+        tracker.keepAlternatives { alternative, issue in !editGuard.touchesNeverTouch(alternative, in: issue.chunk.text) }
         if !touching.isEmpty { send(.forget(touching)) }
         publish()
         refreshClaudeStatus()
@@ -688,14 +691,24 @@ public actor CheckPipeline {
                 Issue(
                     key: key, parent: parent, chunk: chunk, edit: $0.edit, source: source, language: language, engine: engine,
                     kind: IssueClassifier.kind(of: $0.edit, in: chunk.text, language: language, source: source, facts: facts),
-                    alternatives: $0.alternatives
+                    alternatives: $0.alternatives.filter { !editGuard.touchesNeverTouch($0, in: chunk.text) }
                 )
             }
     }
 
+    /// Every chunk of the paragraph holding the caret in the latest read of the field has a stored result; with the caret
+    /// in no paragraph, any result for the field counts.
+    private func hasCheckedCaretParagraph(in field: FieldID) -> Bool {
+        guard let latest, latest.snapshot.field == field,
+              let caret = Paragraphs.around(caret: latest.snapshot.selection.location, in: latest.paragraphs),
+              let key = latest.keyed.first(where: { $0.1 == caret })?.0
+        else { return tracker.hasResults(in: field) }
+        return tracker.hasResults(for: ParagraphKeys.chunkKeys(of: caret, key: key).map(\.0), in: field)
+    }
+
     private func publish() {
         let visible = isPaused ? [] : currentField.map { tracker.visible(in: $0) } ?? []
-        let checked = !isPaused && (currentField.map { tracker.hasResults(in: $0) } ?? false)
+        let checked = !isPaused && (currentField.map(hasCheckedCaretParagraph) ?? false)
         let snapshot = IssueSnapshot(field: currentField, issues: visible, checked: checked)
         guard snapshot != lastPublished else { return }
         lastPublished = snapshot

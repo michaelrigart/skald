@@ -84,6 +84,14 @@ public struct IssueTracker: Sendable {
         return dropped
     }
 
+    /// Drops the alternatives `keep` refuses, from every issue that has one.
+    public mutating func keepAlternatives(where keep: (Edit, Issue) -> Bool) {
+        issues = issues.map { issue in
+            let kept = issue.keepingAlternatives { keep($0, issue) }
+            return kept.alternatives.count == issue.alternatives.count ? issue : kept
+        }
+    }
+
     public mutating func suspend(_ field: FieldID) {
         suspended.insert(field)
     }
@@ -142,6 +150,11 @@ public struct IssueTracker: Sendable {
     /// the field is suspended.
     public func hasResults(in field: FieldID) -> Bool {
         !suspended.contains(field) && resultKeys.contains { $0.field == field }
+    }
+
+    /// Whether every one of the keys has a stored result; false while the field is suspended.
+    public func hasResults(for keys: [ParagraphKey], in field: FieldID) -> Bool {
+        !suspended.contains(field) && keys.allSatisfy { resultKeys.contains($0) }
     }
 
     public func hasModelIssues(for key: ParagraphKey, from engine: EngineKind) -> Bool {

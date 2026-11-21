@@ -1215,6 +1215,52 @@ struct IssueDetailTests {
         #expect(await rig.pipeline.lastPublished.issues.map(\.id) == [issue.id])
     }
 
+    @Test func aWordBannedAfterwardsLeavesTheAlternativesAndCannotBeAccepted() async throws {
+        let settings = makeSettings(model: false)
+        let rig = Rig(settings, guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(issue.alternatives.map(\.replacement) == ["ten", "tea"])
+
+        var banned = settings
+        banned.addNeverTouch("tea")
+        await rig.update(banned)
+        let shown = try #require(await rig.pipeline.lastPublished.issues.first)
+        #expect(shown.id == issue.id)
+        #expect(shown.alternatives.map(\.replacement) == ["ten"])
+        #expect(await rig.pipeline.accept(issue.id, alternative: 1) == .failed)
+        #expect(await rig.access.replacements.isEmpty)
+    }
+
+    @Test func aModelIssueIsClassifiedWithTheOraclesFacts() async {
+        let rig = Rig(makeSettings(), engine: .correcting(["wrod": "word"]), guesses: ["wrod": ["word"]])
+        await rig.focus("Ik heb gezien dat het wrod uitgerold.")
+        await rig.check()
+        let model = await rig.modelIssues()
+        #expect(model.map(\.word) == ["wrod"])
+        #expect(model.map(\.kind) == [.spelling])
+    }
+
+    @Test func theSnapshotIsNotCheckedUntilTheCaretsParagraphIsEvenWhenOthersAre() async {
+        let first = "I saw teh logs again today."
+        let second = "We found teh other file too."
+        let edited = "We found teh other file now."
+        let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
+        await rig.focus(first + "\n" + second, caret: first.utf16.count + 3)
+        await rig.check()
+        #expect(await rig.pipeline.lastPublished.checked == true)
+
+        await rig.spelling.hold(edited)
+        await rig.access.set(first + "\n" + edited, caret: first.utf16.count + 3, in: fieldA)
+        await rig.pipeline.receive(.edited(fieldA))
+        rig.pass()
+        await rig.spelling.waitForCalls(of: edited, 1)
+        #expect(await rig.pipeline.lastPublished.checked == false)
+
+        await rig.spelling.release(edited)
+        await rig.pipeline.drain()
+        #expect(await rig.pipeline.lastPublished.checked == true)
+    }
+
     @Test func theSnapshotSaysCheckedOnceAResultIsIn() async {
         let clean = "Everything here is spelled right."
         let rig = Rig(makeSettings(), engine: unchanged)

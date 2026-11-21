@@ -39,6 +39,14 @@ public struct Issue: Identifiable, Hashable, Sendable {
         self.alternatives = alternatives
     }
 
+    /// The same issue, with only the alternatives `keep` accepts.
+    func keepingAlternatives(where keep: (Edit) -> Bool) -> Issue {
+        Issue(
+            id: id, key: key, parent: parent, chunk: chunk, edit: edit, source: source, language: language, engine: engine,
+            kind: kind, alternatives: alternatives.filter(keep)
+        )
+    }
+
     public var fieldRange: TextRange {
         TextRange(location: chunk.range.location + edit.range.location, length: edit.range.length)
     }
