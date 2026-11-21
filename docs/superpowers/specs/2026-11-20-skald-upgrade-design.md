@@ -143,6 +143,11 @@ The real API run gates stage 1's PR leaving draft. **Decided 2026-11-21 (Michael
 built before the run, because no test key exists yet; the first draft of this spec put the run
 first. The risk taken is that the build is wasted if Haiku misses the bar on the real API.
 
+**Decided later on 2026-11-21 (Michael):** stage 1 merges into `feat/skald-v1` and ships with v1
+(PR #1) instead of having a PR of its own. The gate run then no longer holds a PR. It has to pass
+before the Claude switch is turned on for daily use; the switch ships off, so nothing goes to
+Claude until then. Delivery's "each stage with its own draft PR" no longer applies to stage 1.
+
 - Until the run, the typing request is sent with thinking disabled and without `fallbacks`; the
   run settles both as described below.
 - The eval modes land in a commit of their own, before the guard fix. The gate run is made from
