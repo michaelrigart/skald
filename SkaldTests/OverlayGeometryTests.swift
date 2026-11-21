@@ -29,6 +29,16 @@ struct OverlayGeometryTests {
         #expect(OverlayGeometry.distinct([spelling, model]) == [spelling, model])
     }
 
+    @Test func theBadgeLabelCountsByCategory() {
+        let spelling = issue(in: "teh cat", revised: "the cat", source: .spelling)
+        let accent = issue(in: "cafe", revised: "café", source: .spelling, kind: .accent)
+        let comma = issue(in: "Hi John", revised: "Hi, John", kind: .punctuation)
+        let grammar = issue(in: "They is ready", revised: "They are ready")
+        #expect(OverlayGeometry.badgeLabel([]) == "No suggestions")
+        #expect(OverlayGeometry.badgeLabel([spelling]) == "1 suggestion: 1 spelling")
+        #expect(OverlayGeometry.badgeLabel([grammar, spelling, accent, comma]) == "4 suggestions: 2 spelling, 1 punctuation, 1 grammar")
+    }
+
     /// Accessibility measures from the primary screen's top-left corner, AppKit from its bottom-left.
     @Test func theUnderlineIsTwoPointsAlongTheBottomOfTheBoundsInAppKitCoordinates() {
         let bounds = CGRect(x: 100, y: 200, width: 50, height: 18)

@@ -1,14 +1,24 @@
 import AppKit
 
-/// A small circle with the field's issue count. Clicking it opens the cards as a list; the click never
-/// activates Skald or takes focus from the field's app.
-final class BadgeView: NSView {
-    var count = 0 {
-        didSet {
-            if count != oldValue { needsDisplay = true }
-            setAccessibilityLabel(count == 1 ? "1 suggestion" : "\(count) suggestions")
-        }
+/// What the badge shows: the field's issue count, or a quiet tick for a checked field with none.
+enum BadgeContent: Equatable {
+    case count(Int), tick
+
+    /// What the badge shows after a snapshot; nil hides it. A snapshot that isn't `checked` is a recheck of the
+    /// same field in progress, or a new field, or a pause: the badge keeps what it showed only for the first.
+    static func next(current: BadgeContent?, issues: Int, checked: Bool, sameField: Bool, paused: Bool) -> BadgeContent? {
+        if issues > 0 { return .count(issues) }
+        if checked { return .tick }
+        return sameField && !paused ? current : nil
     }
+}
+
+/// A small circle with the field's issue count, or a tick. Clicking a count opens the cards as a list; the
+/// click never activates Skald or takes focus from the field's app, and a tick does nothing.
+final class BadgeView: NSView {
+    static let tickOpacity: CGFloat = 0.6
+
+    private(set) var content = BadgeContent.tick
 
     var onClick: (() -> Void)?
 
@@ -20,15 +30,29 @@ final class BadgeView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    func show(_ content: BadgeContent, label: String) {
+        if content != self.content { needsDisplay = true }
+        self.content = content
+        alphaValue = content == .tick ? Self.tickOpacity : 1
+        setAccessibilityLabel(label)
+    }
+
     override var isOpaque: Bool { false }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        onClick?()
+        if case .count = content { onClick?() }
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        switch content {
+        case .count(let count): drawCount(count)
+        case .tick: drawTick()
+        }
+    }
+
+    private func drawCount(_ count: Int) {
         NSColor.systemBlue.setFill()
         NSBezierPath(ovalIn: bounds).fill()
         let label = count > 99 ? "99+" : "\(count)"
@@ -38,6 +62,16 @@ final class BadgeView: NSView {
         ]
         let size = label.size(withAttributes: attributes)
         label.draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
+    }
+
+    /// An SF Symbol checkmark in a grey circle; `show` sets the whole view to 60 % opacity.
+    private func drawTick() {
+        NSColor.systemGray.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+        let configuration = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold).applying(.init(paletteColors: [.white]))
+        guard let tick = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return }
+        let size = tick.size
+        tick.draw(in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
     }
 }
 
@@ -54,8 +88,8 @@ final class BadgePanel {
 
     var frame: CGRect? { panel.isVisible ? panel.frame : nil }
 
-    func show(count: Int, at frame: CGRect) {
-        view.count = count
+    func show(_ content: BadgeContent, label: String, at frame: CGRect) {
+        view.show(content, label: label)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }

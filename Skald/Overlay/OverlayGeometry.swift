@@ -56,6 +56,16 @@ enum OverlayGeometry {
         return CGRect(origin: cardOrigin(size: bounded, anchor: anchor, within: screen), size: bounded)
     }
 
+    /// What the badge says aloud: "No suggestions", or "3 suggestions: 2 spelling, 1 grammar".
+    static func badgeLabel(_ issues: [Issue]) -> String {
+        guard !issues.isEmpty else { return "No suggestions" }
+        let parts = IssueCategory.allCases.compactMap { category -> String? in
+            let count = issues.filter { $0.kind.category == category }.count
+            return count == 0 ? nil : "\(count) \(category.title.lowercased())"
+        }
+        return "\(issues.count) \(issues.count == 1 ? "suggestion" : "suggestions"): \(parts.joined(separator: ", "))"
+    }
+
     /// The issues without a model twin: when spelling and the model fix a word the same way, the spelling issue
     /// stands for both, as it is already on screen when the model's result arrives.
     static func distinct(_ issues: [Issue]) -> [Issue] {

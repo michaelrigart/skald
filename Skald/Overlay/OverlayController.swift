@@ -19,6 +19,8 @@ final class OverlayController {
     /// Bumped by every snapshot, so a redraw read for an older one is dropped.
     private var generation = 0
     private var capabilities: (field: FieldID, value: AccessCapabilities)?
+    /// What the badge shows for the focused field; nil hides it. Kept across a recheck, so it doesn't blink.
+    private var badgeContent: BadgeContent?
     private var windows: [UnderlineWindow] = []
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
@@ -97,6 +99,10 @@ final class OverlayController {
         generation += 1
         let fieldChanged = new.field != snapshot.field
         if fieldChanged { capabilities = nil }
+        badgeContent = BadgeContent.next(
+            current: badgeContent, issues: OverlayGeometry.distinct(new.issues).count, checked: new.checked,
+            sameField: new.field != nil && !fieldChanged, paused: settings.settings.pausedUntil.map { $0 > .now } ?? false
+        )
         snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues), checked: new.checked)
         let visible = Set(snapshot.issues.map(\.id))
         cards.retain { $0.survives(visible: visible, in: new.field) }
@@ -104,7 +110,8 @@ final class OverlayController {
             cards.show([parked.card], anchor: parked.anchor, screen: parked.screen)
             cardAnchor = nil
         }
-        if fieldChanged || snapshot.issues.isEmpty { hideMarks() }
+        if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
+        if fieldChanged || badgeContent == nil { badge.hide() }
         requestRedraw()
     }
 
@@ -227,34 +234,42 @@ final class OverlayController {
     private func drawMarks() async {
         let generation = self.generation
         let snapshot = self.snapshot
-        guard let field = snapshot.field, !snapshot.issues.isEmpty else { return hideMarks() }
+        guard let field = snapshot.field else { return hideMarks() }
         let capabilities = await capabilities(of: field)
         guard generation == self.generation else { return }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 
         if capabilities.contains(.rangeBounds) {
             let frame = await access.frame(of: field)
-            let visible = await access.visibleRange(of: field)
-            let issues = OverlayGeometry.issues(snapshot.issues, meeting: visible).sorted { $0.source == .model && $1.source != .model }
-            Log.ui.debug("redraw: \(snapshot.issues.count, privacy: .public) issues, \(issues.count, privacy: .public) ranges asked")
-            let allBounds = await access.bounds(issues.map(OverlayGeometry.underlineRange), in: field)
             var marks: [UnderlineView.Mark] = []
             var targets: [HoverTracker.Target] = []
-            for (issue, bounds) in zip(issues, allBounds) {
-                guard let bounds, OverlayGeometry.isVisible(bounds, in: frame) else { continue }
-                marks.append(.init(rect: OverlayGeometry.underline(for: bounds, primaryHeight: primaryHeight), source: issue.source))
-                targets.append(.init(id: issue.id, rect: OverlayGeometry.appKit(bounds, primaryHeight: primaryHeight)))
+            if !snapshot.issues.isEmpty {
+                let visible = await access.visibleRange(of: field)
+                let issues = OverlayGeometry.issues(snapshot.issues, meeting: visible).sorted { $0.source == .model && $1.source != .model }
+                Log.ui.debug("redraw: \(snapshot.issues.count, privacy: .public) issues, \(issues.count, privacy: .public) ranges asked")
+                let allBounds = await access.bounds(issues.map(OverlayGeometry.underlineRange), in: field)
+                for (issue, bounds) in zip(issues, allBounds) {
+                    guard let bounds, OverlayGeometry.isVisible(bounds, in: frame) else { continue }
+                    marks.append(.init(rect: OverlayGeometry.underline(for: bounds, primaryHeight: primaryHeight), category: issue.kind.category))
+                    targets.append(.init(id: issue.id, rect: OverlayGeometry.appKit(bounds, primaryHeight: primaryHeight)))
+                }
             }
             guard generation == self.generation else { return }
-            badge.hide()
             show(marks, targets: targets)
+            showBadge(snapshot, frame: capabilities.contains(.fieldFrame) ? frame : nil, primaryHeight: primaryHeight)
         } else if capabilities.contains(.fieldFrame), let frame = await access.frame(of: field) {
             guard generation == self.generation else { return }
             show([], targets: [])
-            badge.show(count: snapshot.issues.count, at: OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight))
+            showBadge(snapshot, frame: frame, primaryHeight: primaryHeight)
         } else {
             hideMarks()
         }
+    }
+
+    /// The badge at the field's corner for what `next` says, beside underlines too; hidden without a frame.
+    private func showBadge(_ snapshot: IssueSnapshot, frame: CGRect?, primaryHeight: CGFloat) {
+        guard let badgeContent, let frame else { return badge.hide() }
+        badge.show(badgeContent, label: OverlayGeometry.badgeLabel(snapshot.issues), at: OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight))
     }
 
     private func capabilities(of field: FieldID) async -> AccessCapabilities {
@@ -271,8 +286,12 @@ final class OverlayController {
     }
 
     private func hideMarks() {
-        show([], targets: [])
+        hideUnderlines()
         badge.hide()
+    }
+
+    private func hideUnderlines() {
+        show([], targets: [])
         resetHover()
     }
 
