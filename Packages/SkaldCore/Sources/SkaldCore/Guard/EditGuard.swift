@@ -105,14 +105,18 @@ public struct EditGuard: Sendable {
     }
 
     static func words(in text: String) -> [String] {
-        Tokenizer.tokens(in: text).map(\.text).filter(isWord).map { $0.lowercased() }
+        wordTokens(in: text).map { $0.lowercased() }
+    }
+
+    static func wordTokens(in text: String) -> [String] {
+        Tokenizer.tokens(in: text).map(\.text).filter(isWord)
     }
 
     static func words(in edits: [Edit]) -> Set<String> {
         Set(edits.flatMap { words(in: $0.original) + words(in: $0.replacement) })
     }
 
-    private static func isFunctionWord(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
+    static func isFunctionWord(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
         facts.functionWords.contains(word) || FunctionWords.contains(word, language)
     }
 
@@ -149,7 +153,7 @@ public struct EditGuard: Sendable {
         return false
     }
 
-    private static func isWord(_ token: String) -> Bool {
+    static func isWord(_ token: String) -> Bool {
         token.contains { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 

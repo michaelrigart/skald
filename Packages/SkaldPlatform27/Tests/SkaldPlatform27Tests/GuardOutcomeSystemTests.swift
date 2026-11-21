@@ -26,6 +26,7 @@ private func expectOutcome(_ row: Row) async throws {
     let verdict = EditGuard(neverTouch: row.neverTouch)
         .verdict(for: found[0], in: row.paragraph, language: row.language, source: row.source, facts: facts)
     #expect(verdict == row.expected)
+    #expect(IssueClassifier.kind(of: found[0], in: row.paragraph, language: row.language, source: row.source, facts: facts) == row.kind)
 }
 
 @Test("Proposals judged together, with the system's word facts", .tags(.requiresSystem), arguments: resolveTable)
