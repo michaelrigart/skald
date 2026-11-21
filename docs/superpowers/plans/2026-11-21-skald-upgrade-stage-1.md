@@ -1,6 +1,6 @@
 # Skald Upgrade, Stage 1 (Engines) Implementation Plan
 
-**Status:** Not started; awaiting plan review.
+**Status:** In progress
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. In this repository the `plan-run` skill runs plans and takes precedence over both.
 

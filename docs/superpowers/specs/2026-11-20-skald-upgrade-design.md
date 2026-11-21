@@ -207,6 +207,14 @@ The run:
 - The menu's first line says which it is: "Dutch and French checks use Claude" or "Checking on
   this Mac". Below it, one item keeps the frontmost app on this Mac.
 - A card for an issue Claude found carries a small "Claude" label.
+- **Added in review, 2026-11-21:**
+  - While a request can leave, the first line is the Claude line, and a failed check shows as a
+    second line under it ("Last check failed: Claude unreachable"). The line that names the
+    fallback shows only while Claude checks are suspended.
+  - The menu's "Turn On for ‹App›" sets an app to This Mac only when it is off by default or the
+    Claude switch is on; unticking "Keep ‹App› on This Mac" is the step that lets it use Claude.
+  - Removing the key turns the Claude switch off, and storing a key never turns it on.
+  - The request log has one line for each request that was sent, with its outcome.
 
 ### When Claude can't answer
 
