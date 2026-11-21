@@ -31,6 +31,17 @@ struct PipelineRig {
         }
     }
 
+    final class OutcomeLog: @unchecked Sendable { // reason: the list is only touched under the lock
+        private let lock = NSLock()
+        private var seen: [ClaudeOutcome] = []
+
+        var outcomes: [ClaudeOutcome] { lock.withLock { seen } }
+
+        func record(_ outcome: ClaudeOutcome) {
+            lock.withLock { seen.append(outcome) }
+        }
+    }
+
     static func next(
         _ iterator: inout AsyncStream<IssueSnapshot>.Iterator,
         where matches: (IssueSnapshot) -> Bool
@@ -96,6 +107,7 @@ struct PipelineRig {
     let engine: FakeEngine
     let claude: (any Engine)?
     let claudeModels = ModelLog()
+    let claudeOutcomes = OutcomeLog()
     let key: Bool
     let spelling: FakeSpelling
     let oracle: GatedOracle
@@ -121,6 +133,7 @@ struct PipelineRig {
         oracle = GatedOracle(misspelled: Set(misspellings.keys.map { $0.lowercased() }), gated: oracleGated)
         router = LiveRouter(Self.engineRouter(settings, key: key))
         let models = claudeModels
+        let outcomes = claudeOutcomes
         let factory: (@Sendable (String) -> any Engine)? = claude.map { engine in
             { @Sendable model in
                 models.record(model)
@@ -132,6 +145,7 @@ struct PipelineRig {
             access: access,
             apple: engine,
             claude: factory,
+            onClaudeRequest: { outcomes.record($0) },
             spelling: spelling,
             detector: detector,
             oracle: oracle,

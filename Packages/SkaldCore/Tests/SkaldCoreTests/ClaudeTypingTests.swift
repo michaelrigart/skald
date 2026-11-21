@@ -402,6 +402,7 @@ struct ClaudeTypingTests {
 
         #expect(rig.claudeModels.models == ["claude-haiku-5-5"])
         #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes.isEmpty)
         #expect(await rig.modelIssues().isEmpty)
     }
 

@@ -256,6 +256,58 @@ struct ClaudeFailureTests {
         #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
     }
 
+    @Test func eachRequestSentReportsItsOutcome() async {
+        let answering = makeRig(claude: FakeEngine.correcting(corrections))
+        await answering.focus(dutch, caret: 3)
+        await answering.check()
+        #expect(answering.claudeOutcomes.outcomes == [.answered])
+
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let timedOut = makeRig(claude: claude)
+        await timedOut.focus(dutch, caret: 3)
+        timedOut.pass()
+        await claude.waitForRequests(1)
+        timedOut.clock.advance(by: CheckPipeline.claudeTimeout)
+        await timedOut.pipeline.drain()
+        #expect(timedOut.claudeOutcomes.outcomes == [.failed(.unreachable)])
+        await claude.open()
+
+        let outcomes: [(EngineFailure, ClaudeOutcome)] = [
+            (.unavailable(.claudeKeyRejected), .failed(.keyRejected)),
+            (.unavailable(.claudeRateLimited), .failed(.rateLimited)),
+            (.refused, .failed(.declined)),
+            (.failed, .failed(.unreachable)),
+        ]
+        for (failure, outcome) in outcomes {
+            let rig = makeRig(claude: failing(failure))
+            await rig.focus(dutch, caret: 3)
+            await rig.check()
+            #expect(rig.claudeOutcomes.outcomes == [outcome])
+        }
+    }
+
+    @Test func aNewerPauseReportsCancelledAndAKeylessRequestReportsNothing() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await claude.waitForRequests(1)
+        await rig.access.set(dutch + " nu", caret: 3, in: PipelineRig.fieldA)
+        await rig.pipeline.receive(.edited(PipelineRig.fieldA))
+        rig.pass()
+        await claude.waitForRequests(2)
+        #expect(rig.claudeOutcomes.outcomes == [.cancelled])
+        await claude.open()
+        await rig.pipeline.drain()
+        #expect(rig.claudeOutcomes.outcomes == [.cancelled, .answered])
+
+        let keyless = makeRig(claude: failing(.unavailable(.claudeKeyMissing)))
+        await keyless.focus(dutch, caret: 3)
+        await keyless.check()
+        #expect(await status(keyless).trouble == .keyRejected)
+        #expect(keyless.claudeOutcomes.outcomes.isEmpty)
+    }
+
     @Test func cancellationIsNotAFailure() async {
         let claude = FakeEngine.correcting(corrections, gated: true)
         let rig = makeRig(claude: claude)

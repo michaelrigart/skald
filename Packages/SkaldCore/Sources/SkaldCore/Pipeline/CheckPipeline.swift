@@ -72,6 +72,7 @@ public actor CheckPipeline {
     private let access: any TextAccess
     private let apple: any Engine
     private let claude: (@Sendable (_ model: String) -> any Engine)?
+    private let claudeOutcome: (@Sendable (ClaudeOutcome) -> Void)?
     private let spelling: any SpellingChecking
     private let detector: any LanguageDetecting
     private let detections: DetectionMemo
@@ -120,6 +121,7 @@ public actor CheckPipeline {
         access: any TextAccess,
         apple: any Engine,
         claude: (@Sendable (_ model: String) -> any Engine)? = nil,
+        onClaudeRequest: (@Sendable (ClaudeOutcome) -> Void)? = nil,
         spelling: any SpellingChecking,
         detector: any LanguageDetecting,
         oracle: any WordOracle,
@@ -133,6 +135,7 @@ public actor CheckPipeline {
         self.access = access
         self.apple = apple
         self.claude = claude
+        claudeOutcome = onClaudeRequest
         self.spelling = spelling
         self.detector = detector
         detections = DetectionMemo(detector)
@@ -438,7 +441,8 @@ public actor CheckPipeline {
             }
             let engine = makeEngine(settings.claudeTypingModel)
             publishClaudeStatus(ClaudeStatus(sending: true, trouble: backoff.trouble))
-            let result = await ask(engine, request)
+            let (result, sent) = await ask(engine, request)
+            if sent, let outcome = ClaudeOutcome(result) { claudeOutcome?(outcome) }
             switch result {
             case .success:
                 backoff.succeeded()
@@ -523,37 +527,49 @@ public actor CheckPipeline {
 
     /// Races the request against the deadline on the injected clock. At the deadline, or when the caller is
     /// cancelled, the request's task is cancelled and its answer, if it comes, is never read. A caller already
-    /// cancelled sends nothing.
-    private func ask(_ engine: any Engine, _ request: EngineRequest) async -> Result<String, EngineFailure> {
-        guard !Task.isCancelled else { return .failure(.cancelled) }
-        let (outcomes, continuation) = AsyncStream.makeStream(of: Result<String, EngineFailure>.self)
+    /// cancelled sends nothing. `sent` is whether the engine was asked.
+    private func ask(_ engine: any Engine, _ request: EngineRequest) async -> (result: Result<String, EngineFailure>, sent: Bool) {
+        guard !Task.isCancelled else { return (.failure(.cancelled), false) }
+        enum Event: Sendable {
+            case sent
+            case ended(Result<String, EngineFailure>)
+        }
+        let (events, continuation) = AsyncStream.makeStream(of: Event.self)
         let deadline = timing.elapsed() + Self.claudeTimeout
         let sleep = timing.sleep
         let call = Task {
             guard !Task.isCancelled else {
-                continuation.yield(.failure(.cancelled))
+                continuation.yield(.ended(.failure(.cancelled)))
                 return
             }
+            continuation.yield(.sent)
             do throws(EngineFailure) {
-                continuation.yield(.success(try await engine.run(request)))
+                continuation.yield(.ended(.success(try await engine.run(request))))
             } catch {
-                continuation.yield(.failure(error))
+                continuation.yield(.ended(.failure(error)))
             }
         }
         let timer = Task {
-            if (try? await sleep(deadline)) != nil { continuation.yield(.failure(.timedOut)) }
+            if (try? await sleep(deadline)) != nil { continuation.yield(.ended(.failure(.timedOut))) }
         }
-        let first = await withTaskCancellationHandler {
-            await outcomes.first { _ in true }
+        var sent = false
+        let result = await withTaskCancellationHandler {
+            for await event in events {
+                switch event {
+                case .sent: sent = true
+                case .ended(let result): return result
+                }
+            }
+            return Result<String, EngineFailure>.failure(.cancelled)
         } onCancel: {
             call.cancel()
             timer.cancel()
-            continuation.yield(.failure(.cancelled))
+            continuation.yield(.ended(.failure(.cancelled)))
         }
         call.cancel()
         timer.cancel()
         continuation.finish()
-        return first ?? .failure(.cancelled)
+        return (result, sent)
     }
 
     private func finishModel(_ generation: Int, _ outcome: ModelOutcome) {
