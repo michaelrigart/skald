@@ -25,6 +25,7 @@ final class CompositionRoot {
     private var overlay: OverlayController?
     private var panel: PanelController?
     private var panelWindow: PanelWindow?
+    private var panelHotkey: HotkeyToken?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var pauseEnd: Task<Void, Never>?
     private var frontApp: NSRunningApplication?
@@ -250,10 +251,10 @@ final class CompositionRoot {
     // MARK: The panel
 
     private func registerPanelHotkey() {
-        hotkeys.unregisterAll()
+        if let panelHotkey { hotkeys.unregister(panelHotkey) }
         let hotkey = model.settings.panelHotkey
-        let registered = hotkeys.register(hotkey) { [weak self] in self?.panelHotkeyPressed() }
-        model.hotkeyNote = registered ? nil : "macOS didn't accept \(hotkey.displayName); it may be reserved or taken by another app. Record another shortcut."
+        panelHotkey = hotkeys.register(hotkey) { [weak self] in self?.panelHotkeyPressed() }
+        model.hotkeyNote = panelHotkey != nil ? nil : "macOS didn't accept \(hotkey.displayName); it may be reserved or taken by another app. Record another shortcut."
     }
 
     /// Captures the focused field before the panel shows: the selection, or the caret's paragraph. With no

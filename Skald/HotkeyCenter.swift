@@ -2,11 +2,27 @@ import AppKit
 import Carbon.HIToolbox
 import SkaldCore
 
+/// One registered hotkey, to release it alone.
+struct HotkeyToken: Hashable {
+    let id: UInt32
+
+    init(_ id: UInt32) {
+        self.id = id
+    }
+}
+
+protocol KeyRegistering: AnyObject {
+    /// nil: the system refused it. `released` is called when the key comes up.
+    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void, released: (@MainActor () -> Void)?) -> HotkeyToken?
+    func unregister(_ token: HotkeyToken)
+}
+
 /// Global hotkeys through Carbon's `RegisterEventHotKey`, which needs no Accessibility or Input Monitoring grant.
-final class HotkeyCenter {
+final class HotkeyCenter: KeyRegistering {
     private static let signature: OSType = 0x534B_4C44 // "SKLD"
 
     private var actions: [UInt32: @MainActor () -> Void] = [:]
+    private var releases: [UInt32: @MainActor () -> Void] = [:]
     private var refs: [UInt32: EventHotKeyRef] = [:]
     private var nextID: UInt32 = 1
     private var handler: EventHandlerRef?
@@ -18,10 +34,14 @@ final class HotkeyCenter {
         }
     }
 
-    /// False when the system refused the hotkey, for one it reserves or another app holds.
+    /// nil when the system refused the hotkey, for one it reserves or another app holds.
     @discardableResult
-    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void) -> Bool {
-        guard installHandler() else { return false }
+    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void) -> HotkeyToken? {
+        register(h, action: action, released: nil)
+    }
+
+    func register(_ h: Hotkey, action: @escaping @MainActor () -> Void, released: (@MainActor () -> Void)?) -> HotkeyToken? {
+        guard installHandler() else { return nil }
         let id = nextID
         nextID += 1
         var ref: EventHotKeyRef?
@@ -30,28 +50,42 @@ final class HotkeyCenter {
         )
         guard status == noErr, let ref else {
             Log.app.notice("hotkey not registered: OSStatus \(status)")
-            return false
+            return nil
         }
         refs[id] = ref
         actions[id] = action
-        return true
+        releases[id] = released
+        return HotkeyToken(id)
+    }
+
+    func unregister(_ token: HotkeyToken) {
+        if let ref = refs.removeValue(forKey: token.id) { UnregisterEventHotKey(ref) }
+        actions[token.id] = nil
+        releases[token.id] = nil
     }
 
     func unregisterAll() {
         refs.values.forEach { UnregisterEventHotKey($0) }
         refs = [:]
         actions = [:]
+        releases = [:]
     }
 
     fileprivate func pressed(_ id: UInt32) {
         actions[id]?()
     }
 
+    fileprivate func released(_ id: UInt32) {
+        releases[id]?()
+    }
+
     private func installHandler() -> Bool {
         if handler != nil { return true }
-        var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var types = [UInt32(kEventHotKeyPressed), UInt32(kEventHotKeyReleased)].map {
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: $0)
+        }
         let status = InstallEventHandler(
-            GetApplicationEventTarget(), hotkeyPressed, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler
+            GetApplicationEventTarget(), hotkeyEvent, types.count, &types, Unmanaged.passUnretained(self).toOpaque(), &handler
         )
         guard status == noErr else {
             Log.app.notice("hotkey handler not installed: OSStatus \(status)")
@@ -62,7 +96,7 @@ final class HotkeyCenter {
 }
 
 /// Carbon delivers hotkey events on the main thread's event loop.
-private nonisolated func hotkeyPressed(_ call: EventHandlerCallRef?, _ event: EventRef?, _ context: UnsafeMutableRawPointer?) -> OSStatus {
+private nonisolated func hotkeyEvent(_ call: EventHandlerCallRef?, _ event: EventRef?, _ context: UnsafeMutableRawPointer?) -> OSStatus {
     guard let event, let context else { return OSStatus(eventNotHandledErr) }
     var id = EventHotKeyID()
     let status = GetEventParameter(
@@ -70,7 +104,10 @@ private nonisolated func hotkeyPressed(_ call: EventHandlerCallRef?, _ event: Ev
     )
     guard status == noErr else { return status }
     let center = Unmanaged<HotkeyCenter>.fromOpaque(context).takeUnretainedValue()
-    MainActor.assumeIsolated { center.pressed(id.id) }
+    let kind = GetEventKind(event)
+    MainActor.assumeIsolated {
+        if kind == UInt32(kEventHotKeyReleased) { center.released(id.id) } else { center.pressed(id.id) }
+    }
     return noErr
 }
 
