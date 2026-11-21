@@ -236,9 +236,12 @@ Offline, a timeout, a rejected key, a rate limit or a refusal:
   | "gemerged" → "gemerkt" | "de fix … gemerged" | drop (unchanged) |
 
   The builder adds a Dutch keep row of the same shape and any row review turns up. Every existing
-  row keeps its keep, drop or undecided outcome; a drop's recorded reason may change. A word
-  borrowed through an English stem ("gemerged", "mergé") stays borrowed even where the native
-  dictionary accepts it.
+  row keeps its keep, drop or undecided outcome. A word borrowed through an English stem
+  ("gemerged", "mergé") stays borrowed even where the native dictionary accepts it.
+- **Narrowed in review, 2026-11-21:** the outcome holds only when the edit replaces the word
+  one-for-one with a close native form of itself ("Tout" → "Tous", "warm" → "warme"). Translating
+  a loanword the native dictionary accepts ("weekend" → "fin de semaine", "deadline" → "uiterste
+  datum") stays dropped, as v1 requires; both are rows.
 - The mechanism is the builder's. It is found by review with synthetic cases, then both sets are
   graded once more; a held-out result never feeds back into the rule.
 - **`fr-h07` is an exposed case:** the defect was found on it, so its result after the fix proves
