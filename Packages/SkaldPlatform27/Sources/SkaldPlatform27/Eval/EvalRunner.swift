@@ -72,6 +72,9 @@ public struct EvalOptions: Equatable, Sendable {
         if mode == .claude {
             guard let claudeModel else { throw EvalUsageError(message: "--mode claude needs --claude-model") }
             guard ModelPrice.forModel(claudeModel) != nil else { throw EvalUsageError(message: "no price for \(claudeModel)") }
+            if ModelPrice.requiresThinking(claudeModel) && (thinking ?? ClaudeRequestOptions.typing.thinking) == .disabled {
+                throw EvalUsageError(message: "\(claudeModel) rejects disabled thinking; pass --thinking on")
+            }
             guard maxCost != nil else { throw EvalUsageError(message: "--mode claude needs --max-cost") }
             guard out != nil else { throw EvalUsageError(message: "--mode claude needs --out, to keep the answers it pays for") }
         }

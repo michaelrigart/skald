@@ -26,19 +26,17 @@ do throws(EvalUsageError) {
     stop("\(error.message)\n\(EvalOptions.usage)")
 }
 
+do throws(EvalUsageError) {
+    try EvalOutputFiles.requireFresh(options)
+} catch {
+    stop(error.message)
+}
+
 let cases: [EvalCase]
 do {
     cases = try EvalScorer.loadJSONL(URL(filePath: options.set))
 } catch {
     stop("cannot read \(options.set): \(error)")
-}
-
-func write(_ outputs: [EvalOutput], to path: String) {
-    do {
-        try EvalOutputLines.encode(outputs).write(to: URL(filePath: path), options: .atomic)
-    } catch {
-        stop("cannot write \(path): \(error)")
-    }
 }
 
 var session: EvalClaudeSession?
@@ -79,8 +77,11 @@ if let session {
 } else {
     run = await runner.run(cases)
     if let out = options.out {
-        write(run.outputs, to: out)
-        if !run.raw.isEmpty { write(run.raw, to: out + ".raw.jsonl") }
+        do throws(EvalUsageError) {
+            try EvalOutputFiles.save(run, to: out)
+        } catch {
+            stop(error.message)
+        }
     }
 }
 

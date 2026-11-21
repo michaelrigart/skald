@@ -18,6 +18,12 @@ struct EvalOptionsTests {
             == EvalOptions(set: "s.jsonl", mode: .claude, guardOn: true, out: "o.jsonl", claudeModel: "claude-haiku-5-5", maxCost: 1.5, claudeRequest: .typing))
         #expect(try EvalOptions.parse(["--set", "s", "--mode", "claude", "--claude-model", "claude-haiku-5-5", "--max-cost", "1", "--out", "o", "--thinking", "on", "--fallbacks", "on"]).claudeRequest
             == ClaudeRequestOptions(thinking: .modelDefault, serverFallbacks: true))
+        for id in ["claude-sonnet-5-5", "claude-opus-5-5"] {
+            #expect(try EvalOptions.parse(["--set", "s", "--mode", "claude", "--claude-model", id, "--max-cost", "1", "--out", "o", "--thinking", "on"]).claudeRequest.thinking
+                == .modelDefault)
+        }
+        #expect(try EvalOptions.parse(["--set", "s", "--mode", "claude", "--claude-model", "claude-haiku-5-5", "--max-cost", "1", "--out", "o", "--thinking", "off"]).claudeRequest.thinking
+            == .disabled)
         #expect(try EvalOptions.parse(["--set", "s", "--mode", "replay", "--outputs", "r.jsonl", "--guard", "off"])
             == EvalOptions(set: "s", mode: .replay, guardOn: false, out: nil, outputs: "r.jsonl"))
     }
@@ -38,6 +44,8 @@ struct EvalOptionsTests {
         (["--set", "s", "--mode", "claude", "--claude-model", "claude-haiku-5-5", "--max-cost", "x", "--out", "o"], "--max-cost is a dollar amount above 0 and at most 5"),
         (["--set", "s", "--mode", "claude", "--claude-model", "claude-haiku-5-5", "--max-cost", "1", "--out", "o", "--thinking", "maybe"], "--thinking is on or off"),
         (["--set", "s", "--mode", "claude", "--claude-model", "claude-haiku-5-5", "--max-cost", "1", "--out", "o", "--fallbacks", "yes"], "--fallbacks is on or off"),
+        (["--set", "s", "--mode", "claude", "--claude-model", "claude-opus-5-5", "--max-cost", "1", "--out", "o", "--thinking", "off"], "claude-opus-5-5 rejects disabled thinking; pass --thinking on"),
+        (["--set", "s", "--mode", "claude", "--claude-model", "claude-sonnet-5-5", "--max-cost", "1", "--out", "o"], "claude-sonnet-5-5 rejects disabled thinking; pass --thinking on"),
         (["--set", "s", "--mode", "replay"], "--mode replay needs --outputs"),
         (["--set", "s", "--mode", "model", "--max-cost", "1"], "--claude-model, --max-cost, --thinking and --fallbacks are for --mode claude"),
         (["--set", "s", "--mode", "model", "--outputs", "r"], "--outputs is for --mode replay"),

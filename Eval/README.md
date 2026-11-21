@@ -33,7 +33,9 @@ cat Eval/seed.jsonl Eval/tuning.jsonl > build/eval/tuning-part.jsonl
 [--outputs <file.jsonl>]` prints the cases it got wrong, then each language's scores and the bar's
 verdict. A language with a failed request gets no verdict, which counts as a miss. It exits 0 when
 every language passes and 1 when any fails or has no verdict. `--guard off` skips the edit guard,
-for diagnosis only. Outputs stay under `build/`, which is not tracked.
+for diagnosis only. Outputs stay under `build/`, which is not tracked. No mode overwrites a
+file: if `--out`, or `<out>.raw.jsonl` on the model path (model and replay), already exists, the
+run stops with exit 2 before running, so pick a new `--out` for each run.
 
 The four modes:
 
@@ -44,7 +46,9 @@ The four modes:
   any other id has no price and is refused), `--max-cost` and `--out`, and the key in
   `SKALD_EVAL_CLAUDE_KEY`; no other variable is read, and a missing key stops the run before any
   request. `--thinking on|off` and `--fallbacks on|off` change the request, and both default to
-  off, which is the app's typing request. The latency bar is p90 under 2 s.
+  off, which is the app's typing request. `claude-sonnet-5-5` and `claude-opus-5-5` reject a
+  request with thinking disabled (a 400), so for them `--thinking off`, and leaving it out,
+  is refused at the start: pass `--thinking on`. The latency bar is p90 under 2 s.
 - **replay:** the answers recorded in `--outputs` (a `.raw.jsonl` file, or the proxy runs'
   `id`/`output` lines) go through the guard as if the engine had given them, in no time and at no
   cost. A case without a recorded answer is a request error. This is how guard-off runs and later

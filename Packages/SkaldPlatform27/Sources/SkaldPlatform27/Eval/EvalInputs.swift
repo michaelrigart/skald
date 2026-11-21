@@ -29,6 +29,40 @@ public enum EvalOutputLines {
     }
 }
 
+/// The files a run other than `--mode claude` writes: `--out`, and beside it `<out>.raw.jsonl` on the model path.
+/// No run overwrites an earlier run's record.
+public enum EvalOutputFiles {
+    public static func rawPath(_ out: String) -> String {
+        out + ".raw.jsonl"
+    }
+
+    /// Throws before anything runs when a file the run would write already exists. A claude run keeps its own files.
+    public static func requireFresh(_ options: EvalOptions) throws(EvalUsageError) {
+        guard options.mode != .claude, let out = options.out else { return }
+        for path in [out] + (options.mode.isModelPath ? [rawPath(out)] : []) where FileManager.default.fileExists(atPath: path) {
+            throw EvalUsageError(message: exists(path))
+        }
+    }
+
+    public static func save(_ run: EvalRun, to out: String) throws(EvalUsageError) {
+        try write(run.outputs, to: out)
+        if !run.raw.isEmpty { try write(run.raw, to: rawPath(out)) }
+    }
+
+    private static func write(_ outputs: [EvalOutput], to path: String) throws(EvalUsageError) {
+        guard !FileManager.default.fileExists(atPath: path) else { throw EvalUsageError(message: exists(path)) }
+        do {
+            try EvalOutputLines.encode(outputs).write(to: URL(filePath: path), options: .withoutOverwriting)
+        } catch {
+            throw EvalUsageError(message: "cannot write \(path): \(error)")
+        }
+    }
+
+    private static func exists(_ path: String) -> String {
+        "\(path) already exists; skald-eval never overwrites an earlier run's output"
+    }
+}
+
 /// The three files a paid run keeps its record in, created before the first request and never over an earlier run's.
 public actor EvalClaudeFiles {
     public nonisolated let out: URL

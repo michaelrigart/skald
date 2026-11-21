@@ -14,6 +14,11 @@ public struct ModelPrice: Equatable, Sendable {
         }
     }
 
+    /// The models that answer a request with disabled thinking by a 400.
+    public static func requiresThinking(_ id: String) -> Bool {
+        id == "claude-sonnet-5-5" || id == "claude-opus-5-5"
+    }
+
     public func cost(input: Int, output: Int) -> Double {
         Double(input) / 1e6 * inputPerMTok + Double(output) / 1e6 * outputPerMTok
     }
