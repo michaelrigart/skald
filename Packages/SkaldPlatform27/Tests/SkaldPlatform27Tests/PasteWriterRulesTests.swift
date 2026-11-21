@@ -219,6 +219,17 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
     #expect(plan.next(.clipboard(restorable: true)) == [])
 }
 
+@Test func aReplacementThatDiffersOnlyByANoBreakSpaceFailsBeforeTheSnapshotAndNeverPostsCommandV() {
+    let range = TextRange(location: 0, length: 14)
+    let field = ExpectedText(range: range, text: "They\u{A0}is ready.")
+    var plan = PastePlan(changesText: TextAccessRules.changesText(field, at: range, replacement: "They is ready."))
+    #expect(plan.start() == [.finish(.failed)])
+    #expect(plan.abortReason == "the replacement equals the text at the range")
+    #expect(plan.next(.clipboard(restorable: true)) == [])
+    #expect(plan.next(.staged(.staged)) == [])
+    #expect(plan.next(.rechecked(.posted(true))) == [])
+}
+
 @Test func anEmptyReplacementFailsBeforeTheSnapshotAndStagesNothing() {
     var plan = PastePlan(hasText: false)
     #expect(plan.start() == [.finish(.failed)])
@@ -257,7 +268,7 @@ private func afterPost(_ steps: [PastePlan.Step]) -> [PastePlan.Step] {
 private let original = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
 private let revised = TextAccessRules.applying("are", at: TextRange(location: 5, length: 2), to: original)
 
-private func read(_ text: String?) -> PastePlan.Read {
+private func read(_ text: String?, original: ExpectedText = original, revised: ExpectedText = revised) -> PastePlan.Read {
     TextAccessRules.pasteRead(
         original: original, revised: revised,
         read: { range in
@@ -274,6 +285,25 @@ private func read(_ text: String?) -> PastePlan.Read {
     #expect(read("He is ready.\nMore") == .other)
     #expect(read("They are ready. More") == .other)
     #expect(read(nil) == .unreadable)
+}
+
+/// Mail's WebKit turns the spaces beside pasted text into no-break spaces; the paste still landed.
+@Test func aNoBreakSpaceReadsAsTheSpaceItReplaced() {
+    #expect(read("They\u{A0}are\u{A0}ready.") == .expected)
+    #expect(read("They are\u{A0}ready.") == .expected)
+    #expect(read("They\u{A0}is ready.") == .original)
+    #expect(read("They\u{A0}was ready.") == .other)
+}
+
+/// The fold goes both ways: the expected text can hold the no-break space the field shows as a plain one.
+@Test func aNoBreakSpaceInTheExpectedTextReadsAsThePlainSpaceTheFieldShows() {
+    let held = ExpectedText(range: TextRange(location: 0, length: 14), text: "They\u{A0}is ready.")
+    let heldRevised = TextAccessRules.applying("are", at: TextRange(location: 5, length: 2), to: held)
+    #expect(heldRevised.text == "They\u{A0}are ready.")
+    #expect(read("They are ready.", original: held, revised: heldRevised) == .expected)
+    #expect(read("They is ready.", original: held, revised: heldRevised) == .original)
+    #expect(read("They\u{A0}are ready.", original: held, revised: heldRevised) == .expected)
+    #expect(read("They was ready.", original: held, revised: heldRevised) == .other)
 }
 
 @Test func theSelectionCoversTheRangeOnlyWithItsExactText() {

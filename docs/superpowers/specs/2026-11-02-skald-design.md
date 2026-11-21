@@ -713,6 +713,11 @@ Never user text, never the never-touch list, never the API key.
 
 **Claude's calls, for Michael to check:**
 
+- Mail drops the bold of a corrected word (measured at acceptance, 2026-11-21): the paste is
+  plain text, and WebKit doesn't give it the selection's style. v1 accepts this. Measured
+  alternatives: Edit > Paste and Match Style pressed through Accessibility keeps the bold, but
+  replaces the single ⌘V with a menu press; setting the selected text through Accessibility
+  reports success and changes nothing; the Match Style shortcut posted to Mail does nothing.
 - Checking while typing always runs on This Mac; the remote engines serve the panel only.
 - Apple's on-device model is the only local engine in v1; open models wait for one that beats
   it on the evaluation set (finding 4).

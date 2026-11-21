@@ -155,7 +155,8 @@ measured on macOS 27.2.
   takes it by paste, and Skald puts your clipboard back afterwards.
 - **Badge with a count, corrections applied in place:** Slack, Signal, Obsidian and Mail's
   compose window. These apps don't tell Skald where a word is, only where the field is.
-  Skald applies a correction by pasting it, and puts your clipboard back afterwards.
+  Skald applies a correction by pasting it, and puts your clipboard back afterwards. In Mail,
+  a corrected word loses its bold.
 - **Badge, Copy only:** Proton Mail. A paste adds a line break there, so the card offers Copy
   and you paste the correction yourself.
 - **Panel only:** an app that gives Skald the text but not the field's position gets neither

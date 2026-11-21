@@ -219,6 +219,34 @@ private func decide(
     #expect(TextAccessRules.changesText(angstrom, at: whole, replacement: "\u{C5}"))
 }
 
+/// Mail shows a no-break space where a space was pasted, so a replacement that differs from the text only by
+/// no-break versus plain spaces could never be proven by a paste.
+@Test func aReplacementThatDiffersOnlyByNoBreakSpacesChangesNothing() {
+    let noBreak = ExpectedText(range: TextRange(location: 10, length: 14), text: "They\u{A0}is ready.")
+    let whole = TextRange(location: 10, length: 14)
+    #expect(!TextAccessRules.changesText(noBreak, at: whole, replacement: "They is ready."))
+    #expect(!TextAccessRules.changesText(noBreak, at: TextRange(location: 14, length: 1), replacement: " "))
+    #expect(TextAccessRules.changesText(noBreak, at: whole, replacement: "They are ready."))
+
+    let plain = ExpectedText(range: TextRange(location: 10, length: 14), text: "They is ready.")
+    #expect(!TextAccessRules.changesText(plain, at: whole, replacement: "They\u{A0}is\u{A0}ready."))
+    #expect(TextAccessRules.changesText(plain, at: whole, replacement: "They\u{A0}are ready."))
+}
+
+/// What can be proven before the paste and what counts as confirmed after it are one rule: the paste of a
+/// replacement is provable exactly when the field showing the original paragraph does not already read as expected.
+@Test func aReplacementIsProvableExactlyWhenTheOriginalParagraphDoesNotReadAsExpected() {
+    let text = "They\u{A0}is ready."
+    let original = ExpectedText(range: TextRange(location: 0, length: 14), text: text)
+    let field = FakeField(text)
+    let range = TextRange(location: 4, length: 3)
+    for replacement in [" is", "\u{A0}is", "\u{A0}are", " are", "\u{A0}is\u{A0}", ""] {
+        let revised = TextAccessRules.applying(replacement, at: range, to: original)
+        let confirmed = TextAccessRules.pasteRead(original: original, revised: revised, read: field.string(for:), length: field.length) == .expected
+        #expect(TextAccessRules.changesText(original, at: range, replacement: replacement) == !confirmed, "\(replacement.debugDescription)")
+    }
+}
+
 // MARK: The recheck in the job that posts ⌘V
 
 private let checked = ExpectedText(range: TextRange(location: 0, length: 14), text: "They is ready.")
