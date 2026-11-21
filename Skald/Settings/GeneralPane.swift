@@ -32,7 +32,7 @@ struct GeneralPane: View {
                         }
                     } else {
                         LabeledContent("Checking is on") {
-                            Button("Pause for an Hour") { model.pauseForAnHour() }
+                            Button("Pause for an Hour") { model.pause(for: 60 * 60) }
                         }
                     }
                 }

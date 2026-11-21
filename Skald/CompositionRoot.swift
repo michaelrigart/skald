@@ -102,7 +102,7 @@ final class CompositionRoot {
         model.onClaudeKeyChange = { [weak self] in self?.commands.yield(.claudeKeyChanged) }
         statusItem = StatusItemController(
             actions: .init(
-                pauseForAnHour: { [model] in model.pauseForAnHour() },
+                pauseForAnHour: { [model] in model.pause(for: 60 * 60) },
                 resume: { [model] in model.resume() },
                 setApp: { [model] in model.setApp($0, mode: $1) },
                 grantAccess: { [weak self] in self?.showOnboarding() },

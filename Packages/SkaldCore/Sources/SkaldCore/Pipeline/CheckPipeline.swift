@@ -202,6 +202,11 @@ public actor CheckPipeline {
     /// running model check without starting the next chunk, lets spelling run again and checks after the pause.
     /// A running background check alone is forgotten and read for again, so its key is queued once it ends.
     public func update(settings new: Settings) {
+        if Self.differsOnlyInDisplay(new, from: settings) {
+            settings = new
+            publish()
+            return
+        }
         let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
             || new.claudeTyping != settings.claudeTyping || new.claudeLanguages != settings.claudeLanguages
             || new.appOverrides != settings.appOverrides
@@ -227,6 +232,14 @@ public actor CheckPipeline {
         if !touching.isEmpty { send(.forget(touching)) }
         publish()
         refreshClaudeStatus()
+    }
+
+    /// Whether the settings differ at most in what is shown: the hidden kinds and the review shortcut. Such a change
+    /// republishes and does nothing else. Every other field takes part in the comparison, so a new one can't slip by.
+    private static func differsOnlyInDisplay(_ new: Settings, from old: Settings) -> Bool {
+        var aligned = new
+        aligned.restoreDisplay(from: old)
+        return aligned == old && new != old
     }
 
     /// The field's last confident language, kept for the newest fields across focus changes; the panel's
@@ -707,7 +720,8 @@ public actor CheckPipeline {
     }
 
     private func publish() {
-        let visible = isPaused ? [] : currentField.map { tracker.visible(in: $0) } ?? []
+        let hidden = Set(settings.hiddenKinds)
+        let visible = isPaused ? [] : currentField.map { tracker.visible(in: $0).filter { !hidden.contains($0.kind) } } ?? []
         let checked = !isPaused && (currentField.map(hasCheckedCaretParagraph) ?? false)
         let snapshot = IssueSnapshot(field: currentField, issues: visible, checked: checked)
         guard snapshot != lastPublished else { return }

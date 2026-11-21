@@ -298,3 +298,35 @@ private let v1File = """
     try store.save(settings)
     #expect(store.load() == .loaded(settings))
 }
+
+@Test func hiddenKindsAndTheReviewShortcutRoundTrip() throws {
+    var settings = Settings()
+    settings.hide(.verbForm); settings.hide(.punctuation); settings.hide(.grammar); settings.hide(.spelling)
+    settings.reviewHotkey = Hotkey(keyCode: 45, modifiers: 0x0100)
+    #expect(settings.hiddenKinds == [.punctuation, .verbForm])
+    let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any]
+    #expect(json?["hiddenKinds"] as? [String] == ["punctuation", "verbForm"])
+    #expect(json?["version"] as? Int == 2)
+    #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings)) == settings)
+}
+
+@Test func showingAKindRemovesItFromTheHiddenOnes() {
+    var settings = Settings()
+    settings.hide(.capital); settings.hide(.accent)
+    settings.show(.capital)
+    #expect(settings.hiddenKinds == [.accent])
+}
+
+@Test func aStage1FileReadsWithNothingHiddenAndTheDefaultShortcut() throws {
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"version":2,"claudeTyping":true}"#.utf8))
+    #expect(settings.hiddenKinds == [])
+    #expect(settings.reviewHotkey == .review)
+    #expect(settings.reviewHotkey == Hotkey(keyCode: 15, modifiers: 6144))
+    #expect(settings.claudeTyping)
+}
+
+@Test func anUnknownOrUnhideableStoredKindIsDropped() throws {
+    let stored = #"{"version":2,"hiddenKinds":["verbForm","tone","grammar","verbForm","accent"]}"#
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(stored.utf8))
+    #expect(settings.hiddenKinds == [.accent, .verbForm])
+}

@@ -42,6 +42,10 @@ private func waitForCancelled(_ claude: FakeEngine, _ count: Int) async {
     Testing.Issue.record("fewer than \(count) Claude calls ended cancelled")
 }
 
+private func claudeKinds(_ rig: PipelineRig) async -> [IssueKind] {
+    await rig.pipeline.lastPublished.issues.filter { $0.source == .model }.map(\.kind)
+}
+
 /// Records whether a request began and whether its task was cancelled.
 private final class RequestSensor: @unchecked Sendable { // reason: both flags are only touched under the lock
     private let lock = NSLock()
@@ -468,6 +472,33 @@ struct ClaudeTypingTests {
         try? await Task.sleep(for: .milliseconds(100))
         #expect(await claude.requests.isEmpty)
         #expect(rig.claudeOutcomes.outcomes.isEmpty)
+    }
+
+    @Test func hidingAKindLeavesARunningRequestAlone() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let settings = claudeSettings()
+        let rig = makeRig(settings, claude: claude)
+        let hold = RequestHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+        await hold.release()
+        await claude.waitForRequests(1)
+
+        var hiding = settings
+        hiding.hide(.verbForm)
+        await rig.update(hiding)
+        await claude.open()
+        await rig.pipeline.drain()
+
+        #expect(await claude.requests.count == 1)
+        #expect(await claude.cancelled.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes == [.answered])
+        #expect(await claudeKinds(rig) == [.spelling])
+        await rig.update(settings)
+        #expect(await claudeKinds(rig) == [.spelling, .verbForm])
+        #expect(await claude.requests.count == 1)
     }
 
     @Test func aRequestIsSentOnlyIfItsOutcomeIsReported() async {

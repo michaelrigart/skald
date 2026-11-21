@@ -59,6 +59,23 @@ private final class ChangeLog {
         #expect(log.savedAtThatMoment == [.loaded(model.settings)])
     }
 
+    @Test func pausingSetsTheEndFromTheInterval() {
+        let (model, _) = makeModel()
+        model.pause(for: 30 * 60, now: Date(timeIntervalSince1970: 1000))
+        #expect(model.settings.pausedUntil == Date(timeIntervalSince1970: 2800))
+    }
+
+    @Test func hidingAndShowingAKindAreSavedAndReported() {
+        let (model, store) = makeModel()
+        let log = ChangeLog()
+        log.attach(to: model, store: store)
+        model.hide(.verbForm)
+        model.hide(.spelling)
+        model.show(.verbForm)
+        #expect(log.settings.map(\.hiddenKinds) == [[.verbForm], []])
+        #expect(log.savedAtThatMoment == [.loaded(log.settings[0]), .loaded(log.settings[1])])
+    }
+
     @Test func anUpdateThatChangesNothingIsNeitherSavedNorReported() {
         let (model, store) = makeModel()
         let log = ChangeLog()

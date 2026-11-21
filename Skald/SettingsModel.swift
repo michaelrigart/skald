@@ -65,12 +65,22 @@ import struct SwiftUI.Binding
 
     // MARK: Pause
 
-    func pauseForAnHour(now: Date = .now) {
-        update { $0.pausedUntil = now.addingTimeInterval(60 * 60) }
+    func pause(for interval: TimeInterval, now: Date = .now) {
+        update { $0.pausedUntil = now.addingTimeInterval(interval) }
     }
 
     func resume() {
         update { $0.pausedUntil = nil }
+    }
+
+    // MARK: Hidden kinds
+
+    func hide(_ kind: IssueKind) {
+        update { $0.hide(kind) }
+    }
+
+    func show(_ kind: IssueKind) {
+        update { $0.show(kind) }
     }
 
     // MARK: Apps

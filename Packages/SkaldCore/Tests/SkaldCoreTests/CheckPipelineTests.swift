@@ -1240,6 +1240,31 @@ struct IssueDetailTests {
         #expect(model.map(\.kind) == [.spelling])
     }
 
+    @Test func hidingAKindRepublishesWithoutIt() async {
+        let text = "Ik heb gezien dat het word uitgerold.\nWe saw teh logs again today."
+        let settings = makeSettings()
+        let rig = Rig(settings, engine: .correcting(["word": "wordt", "teh": "the"]))
+        await rig.focus(text)
+        await rig.check()
+        #expect(await rig.pipeline.lastPublished.issues.map(\.kind) == [.verbForm, .spelling])
+        #expect(await rig.pipeline.lastPublished.checked)
+        let requestsBefore = await rig.engine.requests.count
+        let spellingBefore = await rig.spelling.calls.count
+
+        var hiding = settings
+        hiding.hide(.verbForm)
+        await rig.update(hiding)
+        #expect(await rig.pipeline.lastPublished.issues.map(\.kind) == [.spelling])
+        #expect(await rig.pipeline.lastPublished.checked)
+        rig.pass()
+        await rig.pipeline.drain()
+        #expect(await rig.engine.requests.count == requestsBefore)
+        #expect(await rig.spelling.calls.count == spellingBefore)
+
+        await rig.update(settings)
+        #expect(await rig.pipeline.lastPublished.issues.map(\.kind) == [.verbForm, .spelling])
+    }
+
     @Test func theSnapshotIsNotCheckedUntilTheCaretsParagraphIsEvenWhenOthersAre() async {
         let first = "I saw teh logs again today."
         let second = "We found teh other file too."
