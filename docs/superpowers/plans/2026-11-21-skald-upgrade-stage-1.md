@@ -1043,7 +1043,7 @@ Outside the sandbox (`open` needs it; Michael approves the prompt). Each step re
 
 ## Owed: the gate run (Michael)
 
-**Not a task for an implementer. No agent runs these commands.** It needs the new, separate, revocable key (Decision 2) and gates the PR leaving draft. The total of every `--max-cost` passed below must not exceed **$5**; the planned caps sum to $4.05, which leaves $0.95 for one re-run. A claude run never overwrites: a re-run needs a new `--out` path, and `--max-cost` caps one run, not the total.
+**Not a task for an implementer. No agent runs these commands.** It needs the new, separate, revocable key (Decision 2) and must pass before the Claude switch is turned on for daily use (spec, "The gate": stage 1 ships with v1). The total of every `--max-cost` passed below must not exceed **$5**; the planned caps sum to $4.05, which leaves $0.95 for one re-run. A claude run never overwrites: a re-run needs a new `--out` path, and `--max-cost` caps one run, not the total.
 
 ```sh
 cd ~/Code/skald-feat-skald-upgrade
@@ -1085,6 +1085,8 @@ $E --set build/eval/heldout-without-fr-h07.jsonl --mode replay --outputs build/e
 With the switch on, type Dutch and French in Notes, Zen and Slack: the glyph shows the cloud only there. A "This Mac only" app and a secure field send nothing: `/usr/bin/log stream --predicate 'subsystem == "com.michaelrigart.skald" AND category == "claude"'` shows no new `typing request` line while typing in them. With the network off, the menu's first line says "Claude unreachable: …".
 
 ## Finishing (controller)
+
+> Superseded 2026-11-21 (Michael): stage 1 is merged into `feat/skald-v1` locally once the pre-merge review approves, and ships with PR #1; it gets no PR of its own.
 
 - Push `feat/skald-upgrade`; open a draft PR (`merge-request` skill) into `feat/skald-v1` while PR #1 is open, else `main`. Its body names the gate commit (Task 2), lists the Rulings, the Memory figures, and states that it leaves draft only after "Owed: the gate run" passes and is recorded.
 - The spec's **Status** stays `In progress`, citing stage 1's PR: it also holds stage 2, which is not built. At the final pre-merge commit only this plan is marked completed (`Implemented`, citing the PR; "do not run this plan again").
