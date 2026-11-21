@@ -21,6 +21,10 @@ public struct ModelPrice: Equatable, Sendable {
 
 public struct BudgetExceeded: Error {}
 
+public struct UsageLogUnwritable: Error {
+    public let message: String
+}
+
 /// Wraps the real transport and keeps `--max-cost` a strict bound: a request is sent only when its ceiling (the body's
 /// byte count as input tokens, `ClaudeEngine.maxTokens` as output) fits in what is left, and one whose answer carries
 /// no usage is charged that ceiling.
@@ -32,13 +36,13 @@ public actor CostTrackingTransport: HTTPTransport {
     private var requests = 0, inputTokens = 0, outputTokens = 0
     private var stoppedByBudget = false
     public private(set) var spent = 0.0
+    public private(set) var logFailure: String?
 
     public init(inner: any HTTPTransport, price: ModelPrice, maxCost: Double, usageLog: URL?) {
         self.inner = inner
         self.price = price
         self.maxCost = maxCost
         self.usageLog = usageLog
-        if let usageLog { try? Data().write(to: usageLog) }
     }
 
     public var summary: String {
@@ -50,6 +54,7 @@ public actor CostTrackingTransport: HTTPTransport {
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if let logFailure { throw UsageLogUnwritable(message: logFailure) }
         let ceiling = price.cost(input: request.httpBody?.count ?? 0, output: ClaudeEngine.maxTokens)
         guard spent + ceiling <= maxCost else {
             stoppedByBudget = true
@@ -76,10 +81,17 @@ public actor CostTrackingTransport: HTTPTransport {
         let tokens = usage.map { "\($0.inputTokens),\"output_tokens\":\($0.outputTokens)" } ?? "null,\"output_tokens\":null"
         let line = String(format: "{\"input_tokens\":%@,\"cost\":%.6f,\"total_cost\":%.6f}\n", tokens, charge, spent)
         FileHandle.standardError.write(Data("claude request: \(line)".utf8))
-        if let usageLog, let handle = try? FileHandle(forWritingTo: usageLog) {
-            handle.seekToEndOfFile()
-            handle.write(Data(line.utf8))
-            try? handle.close()
+        if let usageLog { append(Data(line.utf8), to: usageLog) }
+    }
+
+    private func append(_ line: Data, to url: URL) {
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: line)
+        } catch {
+            logFailure = "cannot write \(url.path): \(error.localizedDescription)"
         }
     }
 

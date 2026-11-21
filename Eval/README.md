@@ -52,15 +52,19 @@ The four modes:
 
 A claude run writes three files: `--out` (the graded outputs), `<out>.raw.jsonl` (each answer as
 cleaned, before the guard, replayable) and `<out>.usage.jsonl` (one line per request with its
-tokens, cost and the running total). Each request also prints its usage line on stderr, and the run
-ends with a summary line: requests, tokens, cost against the limit, the cost of a check and of a
-month at 500 checks a day.
+tokens, cost and the running total). All three are created before the first request, and the run
+stops with exit 2 and sends nothing if one of them already exists (a re-run never overwrites an
+earlier paid run's record) or cannot be created, such as in a missing directory. Each case's lines
+are appended as the case finishes, so an interrupted run keeps what it paid for; a failed write
+stops the run. Each request also prints its usage line on stderr, and the run ends with a summary
+line: requests, tokens, cost against the limit, the cost of a check and of a month at 500 checks a
+day.
 
 `--max-cost` (above 0, at most 5) is a strict bound. A request is sent only when its ceiling
 (the body's bytes as input tokens, plus the 4096 output tokens the request allows) fits in what is
 left, and a request whose answer carries no usage, lost to an error or a timeout, is charged that
-ceiling. Cases left once the limit is reached are request errors, and the summary says the run
-stopped at the cost limit.
+ceiling, and its usage line holds the ceiling as the cost with null token counts. Cases left once
+the limit is reached are request errors, and the summary says the run stopped at the cost limit.
 
 The runner takes each case through the app's own path, one case at a time:
 

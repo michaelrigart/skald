@@ -187,7 +187,7 @@ public struct EvalRunner: Sendable {
         self.confirmer = confirmer
     }
 
-    public func run(_ cases: [EvalCase]) async -> EvalRun {
+    public func run(_ cases: [EvalCase], onCase: (EvalOutput, EvalOutput?) async -> Void = { _, _ in }) async -> EvalRun {
         var run = EvalRun()
         let clock = ContinuousClock()
         for item in cases {
@@ -198,9 +198,12 @@ public struct EvalRunner: Sendable {
             default: await checkWithModel(item.id, item.text, item.lang)
             }
             let ms = Self.milliseconds(start.duration(to: clock.now))
-            run.outputs.append(EvalOutput(id: item.id, lang: item.lang, output: result.output, error: result.error, ms: ms))
-            if mode.isModelPath { run.raw.append(EvalOutput(id: item.id, lang: item.lang, output: result.raw, error: result.error, ms: ms)) }
+            let output = EvalOutput(id: item.id, lang: item.lang, output: result.output, error: result.error, ms: ms)
+            let raw = mode.isModelPath ? EvalOutput(id: item.id, lang: item.lang, output: result.raw, error: result.error, ms: ms) : nil
+            run.outputs.append(output)
+            if let raw { run.raw.append(raw) }
             if let reason = result.discarded { run.discarded[item.id] = reason }
+            await onCase(output, raw)
         }
         return run
     }

@@ -278,6 +278,23 @@ struct EvalClaudeRunnerTests {
         #expect(EvalBar.verdict(score, errors: run.outputs.filter { $0.error != nil }.count, mode: .replay) == .noVerdict(errors: 1))
     }
 
+    @Test func theRawAnswerIsRecordedBeforeTheGuardAndEachCaseIsReportedAsItFinishes() async {
+        let text = "The backup runs every night."
+        let dutch = "De back-up draait elke nacht."
+        let detector = MappedDetector(answers: [text: .en, dutch: .nl])
+        final class Finished: @unchecked Sendable { var ids: [String] = [] }
+        let finished = Finished()
+        let run = await runner(.claude, detector: detector, engine: ScriptedEngine(.success(dutch)))
+            .run([EvalCase(id: "x", lang: .en, text: text, ref: text)]) { output, raw in
+                finished.ids.append(output.id)
+                #expect(raw?.output == dutch)
+            }
+        #expect(run.discarded == ["x": .languageChanged])
+        #expect(run.outputs.map(\.output) == [text])
+        #expect(run.raw.map(\.output) == [dutch])
+        #expect(finished.ids == ["x"])
+    }
+
     @Test func claudeModeSendsEachCaseAsTheTypingRequestAndKeepsTheRawAnswer() async throws {
         let first = "Ik heb de fix nagekeken en het wordt morgen uitgerold."
         let second = "Nous avons livré la version hier soir."
