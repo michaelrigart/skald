@@ -76,7 +76,7 @@ private final class Announcer: Announcing {
 
     private func make(_ registrar: FakeRegistrar) -> ReviewSession {
         let gate = gate
-        let keys = ReviewKeys(registrar: registrar, sleep: { await gate.sleep($0) })
+        let keys = ReviewKeys(registrar: registrar, sleep: { await gate.sleep($0) }, isDown: { _ in false })
         return ReviewSession(
             keys: keys, announcer: announcer, sleep: { await gate.sleep($0) },
             actions: .init(

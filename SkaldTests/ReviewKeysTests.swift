@@ -22,15 +22,45 @@ import Testing
     }
 }
 
+/// A sleep the test ends one at a time, remembering how long each was asked for.
+@MainActor private final class Steps {
+    private(set) var asked: [Duration] = []
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func sleep(_ duration: Duration) async {
+        asked.append(duration)
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    /// Ends the oldest sleep, then lets the woken task run.
+    func step() async {
+        for _ in 0..<50 { await Task.yield() }
+        if !waiting.isEmpty { waiting.removeFirst().resume() }
+        for _ in 0..<50 { await Task.yield() }
+    }
+}
+
+/// The keys the system reports as physically down.
+@MainActor private final class Physical {
+    var down: Set<UInt16> = []
+}
+
 @MainActor final class ReviewKeysTests {
     private let sixKeyCodes: Set<UInt16> = [124, 48, 123, 36, 51, 53]
     private let registrar = FakeRegistrar()
     private let gate = Gate()
+    private let steps = Steps()
+    private let physical = Physical()
     private let keys: ReviewKeys
     private var pressed: [ReviewMode.Key] = []
 
     init() {
-        keys = ReviewKeys(registrar: registrar, sleep: { [gate] in await gate.sleep($0) })
+        keys = ReviewKeys(registrar: registrar, sleep: { [gate] in await gate.sleep($0) }, isDown: { [physical] in physical.down.contains($0) })
+    }
+
+    /// Keys whose sleeps `steps` ends by hand.
+    private func steppedKeys() -> ReviewKeys {
+        ReviewKeys(registrar: registrar, sleep: { [steps] in await steps.sleep($0) }, isDown: { [physical] in physical.down.contains($0) })
     }
 
     private func hold() -> Bool {
@@ -49,7 +79,7 @@ import Testing
     @Test func aKeyThatDoesNotRegisterHoldsNothing() {
         for refused: UInt16 in sixKeyCodes {
             let registrar = FakeRegistrar(refusing: [refused])
-            let keys = ReviewKeys(registrar: registrar, sleep: { [gate] in await gate.sleep($0) })
+            let keys = ReviewKeys(registrar: registrar, sleep: { [gate] in await gate.sleep($0) }, isDown: { _ in false })
             #expect(!keys.hold { _ in } && !keys.isHolding)
             #expect(registrar.held.isEmpty)
         }
@@ -86,7 +116,7 @@ import Testing
 
     @Test func theLimitIsOneSecond() async {
         var slept: [Duration] = []
-        let keys = ReviewKeys(registrar: registrar, sleep: { slept.append($0) })
+        let keys = ReviewKeys(registrar: registrar, sleep: { slept.append($0) }, isDown: { _ in false })
         _ = keys.hold { _ in }
         registrar.press(36)
         keys.release()
@@ -96,7 +126,7 @@ import Testing
 
     @Test func releasingWithEveryKeyUpStartsNoWait() async {
         var slept = 0
-        let keys = ReviewKeys(registrar: registrar, sleep: { _ in slept += 1 })
+        let keys = ReviewKeys(registrar: registrar, sleep: { _ in slept += 1 }, isDown: { _ in false })
         _ = keys.hold { _ in }
         registrar.press(36)
         registrar.lift(36)
@@ -171,5 +201,61 @@ import Testing
         await gate.open()
         registrar.lift(36)
         #expect(registrar.held.isEmpty)
+    }
+
+    @Test func aKeyPhysicallyDownPastTheLimitStaysHeldUntilItIsUp() async {
+        let keys = steppedKeys()
+        _ = keys.hold { _ in }
+        registrar.press(51)
+        physical.down = [51]
+        keys.release()
+        await steps.step()
+        #expect(registrar.held.map(\.keyCode) == [51])
+        for _ in 0..<3 {
+            await steps.step()
+            #expect(registrar.held.map(\.keyCode) == [51])
+        }
+        physical.down = []
+        await steps.step()
+        #expect(registrar.held.isEmpty)
+        #expect(steps.asked.first == ReviewKeys.lingerLimit)
+        #expect(steps.asked.dropFirst().allSatisfy { $0 == ReviewKeys.lingerCheck } && ReviewKeys.lingerCheck == .milliseconds(100))
+    }
+
+    @Test func aKeyPhysicallyDownThatCarbonNeverSawStaysHeld() async {
+        let keys = steppedKeys()
+        _ = keys.hold { _ in }
+        physical.down = [51]
+        keys.release()
+        #expect(registrar.held.map(\.keyCode) == [51])
+        await steps.step()
+        await steps.step()
+        #expect(registrar.held.map(\.keyCode) == [51])
+        registrar.lift(51)
+        #expect(registrar.held.isEmpty)
+    }
+
+    @Test func aCarbonReleaseFreesAKeyPhysicallyDownAtOnce() async {
+        let keys = steppedKeys()
+        _ = keys.hold { _ in }
+        registrar.press(51)
+        physical.down = [51]
+        keys.release()
+        await steps.step()
+        registrar.lift(51)
+        #expect(registrar.held.isEmpty)
+    }
+
+    @Test func aKeyPhysicallyDownCarriesIntoTheNextHold() {
+        _ = hold()
+        physical.down = [51]
+        keys.release()
+        #expect(hold())
+        pressed = []
+        registrar.press(51)
+        #expect(pressed.isEmpty)
+        registrar.lift(51)
+        registrar.press(51)
+        #expect(pressed == [.dismiss])
     }
 }

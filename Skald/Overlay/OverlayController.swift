@@ -271,7 +271,7 @@ final class OverlayController {
 
     private func makeReview() -> ReviewSession {
         ReviewSession(
-            keys: ReviewKeys(registrar: registrar, sleep: sleep), announcer: announcer, sleep: sleep,
+            keys: ReviewKeys(registrar: registrar, sleep: sleep, isDown: ReviewKeys.systemKeyIsDown), announcer: announcer, sleep: sleep,
             actions: .init(
                 issues: { [weak self] in self?.snapshot.issues ?? [] },
                 writes: { [weak self] in
