@@ -223,7 +223,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     }
 
     private func activated(pid: pid_t, app: String?) {
-        let app = app ?? "unknown"
+        let app = app ?? FieldID.unknownApp
         queue.enqueue { [self] in
             unresponsive.activated(app)
             driver.activated(pid: pid, app: app, enabled: isAppEnabled(app))

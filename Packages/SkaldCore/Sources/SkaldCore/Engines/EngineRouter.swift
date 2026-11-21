@@ -21,9 +21,10 @@ public struct EngineRouter: Sendable {
     }
 
     /// `.claude` when the language is Dutch or French, the switch is on, the language is ticked, a key is stored and
-    /// the app's mode is `.on`; otherwise the on-device route. Never `.claude` for English.
+    /// the app has a bundle identifier and its mode is `.on`; otherwise the on-device route. Never `.claude` for English.
     public func typing(_ language: Language, app: String) -> TypingRoute {
-        claudeTypingLanguages.contains(language) && settings.mode(app: app) == .on ? .claude : onDevice(language)
+        let identified = !app.isEmpty && app != FieldID.unknownApp
+        return identified && claudeTypingLanguages.contains(language) && settings.mode(app: app) == .on ? .claude : onDevice(language)
     }
 
     public func onDevice(_ language: Language) -> TypingRoute {

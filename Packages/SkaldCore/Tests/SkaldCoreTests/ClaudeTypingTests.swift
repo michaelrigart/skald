@@ -31,9 +31,26 @@ private func units(_ text: String) -> Int {
     text.utf16.count
 }
 
-/// Waits until the Claude fake has seen `count` calls end cancelled; a late call ends on its own task.
+/// Waits until the Claude fake has seen `count` calls end cancelled; a late call ends on its own task. A call
+/// that never ends fails the test after a bounded number of turns instead of waiting for the suite's limit.
 private func waitForCancelled(_ claude: FakeEngine, _ count: Int) async {
-    while await claude.cancelled.count < count { await Task.yield() }
+    for _ in 0..<50_000 {
+        if await claude.cancelled.count >= count { return }
+        await Task.yield()
+    }
+    Testing.Issue.record("fewer than \(count) Claude calls ended cancelled")
+}
+
+enum ClaudeRecheck: CaseIterable {
+    case switchOnOff, languageTicked, appKept
+
+    var off: Settings {
+        switch self {
+        case .switchOnOff: claudeSettings { $0.claudeTyping = false }
+        case .languageTicked: claudeSettings { $0.claudeLanguages[.nl] = false }
+        case .appKept: claudeSettings { $0.appOverrides[mail] = .thisMacOnly }
+        }
+    }
 }
 
 /// Holds the first route lookup of kind `.model` for Dutch until released.
@@ -212,7 +229,7 @@ struct ClaudeTypingTests {
         #expect(await rig.visible().map(\.word) == ["gisterren"])
     }
 
-    @Test(arguments: ["", "unknown"])
+    @Test(arguments: ["", FieldID.unknownApp])
     func aFieldWithoutABundleIdentifierSendsNothing(_ app: String) async {
         let claude = FakeEngine.correcting(corrections)
         let rig = makeRig(claude: claude)
@@ -323,6 +340,22 @@ struct ClaudeTypingTests {
         await hold.release()
         await rig.pipeline.drain()
         #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
+        #expect(await rig.modelIssues().isEmpty)
+    }
+
+    @Test func aPauseAfterTheCheckAndBeforeTheRequestIsCreatedSendsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = PipelineRig(
+            claudeSettings(), claude: claude, key: true,
+            onClaudeFactory: { withUnsafeCurrentTask { $0?.cancel() } },
+            misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+
+        #expect(rig.claudeModels.models == ["claude-haiku-5-5"])
+        #expect(await claude.requests.isEmpty)
         #expect(await rig.modelIssues().isEmpty)
     }
 
@@ -340,13 +373,14 @@ struct ClaudeTypingTests {
         await rig.pipeline.drain()
         await rig.check()
         #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeModels.models.isEmpty)
         #expect(await rig.visible().map(\.word) == ["gisterren"])
     }
 
-    @Test func turningClaudeOnRechecksTheField() async {
+    @Test(arguments: ClaudeRecheck.allCases)
+    func turningClaudeOnRechecksTheField(_ change: ClaudeRecheck) async {
         let claude = FakeEngine.correcting(corrections)
-        let off = claudeSettings { $0.claudeTyping = false }
-        let rig = makeRig(off, claude: claude)
+        let rig = makeRig(change.off, claude: claude)
         await rig.focus(dutch, caret: 3)
         await rig.check()
         #expect(await claude.requests.isEmpty)

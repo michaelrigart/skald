@@ -109,6 +109,7 @@ struct PipelineRig {
         engine: FakeEngine = .correcting(["teh": "the"]),
         claude: FakeEngine? = nil,
         key: Bool = false,
+        onClaudeFactory: (@Sendable () -> Void)? = nil,
         misspellings: [String: String] = ["teh": "the"],
         oracleGated: Bool = false,
         detector: any LanguageDetecting = FakeLanguageDetector()
@@ -123,6 +124,7 @@ struct PipelineRig {
         let factory: (@Sendable (String) -> any Engine)? = claude.map { engine in
             { @Sendable model in
                 models.record(model)
+                onClaudeFactory?()
                 return engine
             }
         }

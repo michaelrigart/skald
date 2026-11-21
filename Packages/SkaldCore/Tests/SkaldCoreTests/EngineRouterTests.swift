@@ -199,6 +199,13 @@ private func claudeRouter(
     #expect(router.typing(.nl, app: chat) == .claude)
 }
 
+@Test(arguments: ["", FieldID.unknownApp])
+func anAppWithoutABundleIdentifierNeverGoesToClaude(_ app: String) {
+    let router = claudeRouter()
+    #expect(router.typing(.nl, app: app) == .spellingOnly(.languageOff))
+    #expect(router.typing(.fr, app: app) == .off)
+}
+
 @Test func onlyAnAppThatIsOnGoesToClaude() {
     let ghostty = "com.mitchellh.ghostty"
     #expect(Settings.defaultMode(app: ghostty) == .off)

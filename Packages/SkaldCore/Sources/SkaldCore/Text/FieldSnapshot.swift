@@ -1,6 +1,9 @@
 import Foundation
 
 public struct FieldID: Hashable, Sendable {
+    /// The app name of a field whose app has no bundle identifier.
+    public static let unknownApp = "unknown"
+
     public let app: String
     public let token: String
 

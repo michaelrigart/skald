@@ -472,8 +472,10 @@ public actor CheckPipeline {
     }
 
     /// Races the request against the deadline on the injected clock. At the deadline, or when the caller is
-    /// cancelled, the request's task is cancelled and its answer, if it comes, is never read.
+    /// cancelled, the request's task is cancelled and its answer, if it comes, is never read. A caller already
+    /// cancelled sends nothing.
     private func ask(_ engine: any Engine, _ request: EngineRequest) async -> Result<String, EngineFailure> {
+        guard !Task.isCancelled else { return .failure(.cancelled) }
         let (outcomes, continuation) = AsyncStream.makeStream(of: Result<String, EngineFailure>.self)
         let deadline = timing.elapsed() + Self.claudeTimeout
         let sleep = timing.sleep
@@ -494,6 +496,8 @@ public actor CheckPipeline {
         let first = await withTaskCancellationHandler {
             await outcomes.first { _ in true }
         } onCancel: {
+            call.cancel()
+            timer.cancel()
             continuation.yield(.failure(.cancelled))
         }
         call.cancel()
@@ -524,20 +528,12 @@ public actor CheckPipeline {
 
     // MARK: Routing and publication
 
-    /// Only a field whose app has a bundle identifier can route to Claude: `EngineRouter` treats any other app
-    /// name as one whose mode is on.
     private func route(_ language: Language, _ lookup: RouteLookup, app: String) async -> TypingRoute {
         await routeHook?(language, lookup)
         let router = await router.current
-        var route = lookup == .model && claude != nil && Self.hasBundleIdentifier(app)
-            ? router.typing(language, app: app)
-            : router.onDevice(language)
+        var route = lookup == .model && claude != nil ? router.typing(language, app: app) : router.onDevice(language)
         if route == .model, let appleUnavailable { route = .spellingOnly(appleUnavailable) }
         return route
-    }
-
-    private static func hasBundleIdentifier(_ app: String) -> Bool {
-        !app.isEmpty && app != "unknown"
     }
 
     /// The paragraph's language by `LanguageDetecting.language(of:field:read:)`, read around in the latest snapshot of
