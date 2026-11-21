@@ -92,6 +92,7 @@ public actor CheckPipeline {
     private let apple: any Engine
     private let claude: (@Sendable (_ model: String) -> any Engine)?
     private let claudeOutcome: (@Sendable (ClaudeOutcome) -> Void)?
+    private let showClaude: (@Sendable (ClaudeStatus) async -> Void)?
     private let spelling: any SpellingChecking
     private let detector: any LanguageDetecting
     private let detections: DetectionMemo
@@ -144,6 +145,7 @@ public actor CheckPipeline {
         apple: any Engine,
         claude: (@Sendable (_ model: String) -> any Engine)? = nil,
         onClaudeRequest: (@Sendable (ClaudeOutcome) -> Void)? = nil,
+        showClaude: (@Sendable (ClaudeStatus) async -> Void)? = nil,
         spelling: any SpellingChecking,
         detector: any LanguageDetecting,
         oracle: any WordOracle,
@@ -158,6 +160,7 @@ public actor CheckPipeline {
         self.apple = apple
         self.claude = claude
         claudeOutcome = onClaudeRequest
+        self.showClaude = showClaude
         self.spelling = spelling
         self.detector = detector
         detections = DetectionMemo(detector)
@@ -353,6 +356,7 @@ public actor CheckPipeline {
         case .revalidate(let snapshot):
             let read = LatestRead(snapshot)
             latest = read
+            refreshClaudeStatus()
             detections.prune(keeping: Set(read.paragraphs.map(\.text)).union([snapshot.text]))
             let dropped = tracker.revalidate(snapshot)
             if !dropped.isEmpty { send(.forget(dropped)) }
@@ -495,8 +499,17 @@ public actor CheckPipeline {
             guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
                 return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
             }
+            let status = ClaudeStatus(sending: true, trouble: backoff.trouble)
+            publishClaudeStatus(status)
+            if let showClaude {
+                await showClaude(status)
+                let routed = await self.route(language, .model, app: app)
+                guard isCurrent(epoch, generation), routed == .claude else { return .dropped }
+                guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                    return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+                }
+            }
             let engine = makeEngine(settings.claudeTypingModel)
-            publishClaudeStatus(ClaudeStatus(sending: true, trouble: backoff.trouble))
             let (result, sent) = await ask(engine, request)
             if sent, let outcome = ClaudeOutcome(result) { claudeOutcome?(outcome) }
             switch result {
@@ -681,7 +694,16 @@ public actor CheckPipeline {
         guard claude != nil else { return }
         let routed = currentField.flatMap { field in fieldLanguages[field].map { router.typing($0, app: field.app) == .claude } } ?? false
         let suspended = backoff.isSuspended(at: timing.elapsed())
-        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: backoff.trouble, suspended: suspended))
+        let trouble = backoff.trouble ?? (routed ? currentField.flatMap(failedTrouble) : nil)
+        publishClaudeStatus(ClaudeStatus(sending: routed && !isPaused && !suspended, trouble: trouble, suspended: suspended))
+    }
+
+    /// Why Claude failed on the caret's text in `field` before, which is why it is not asked about it again.
+    private func failedTrouble(in field: FieldID) -> ClaudeTrouble? {
+        guard let snapshot = latest?.snapshot, snapshot.field == field else { return nil }
+        let backoff = self.backoff
+        return ParagraphKeys.chunkKeys(snapshot, caret: snapshot.selection.location).lazy
+            .compactMap { backoff.trouble(forFailedText: $0.chunk.text) }.first
     }
 
     private func publishClaudeStatus(_ status: ClaudeStatus) {

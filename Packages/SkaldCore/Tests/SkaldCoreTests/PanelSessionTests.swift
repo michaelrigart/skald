@@ -314,6 +314,23 @@ private func dutchRig(
     #expect(await failing.claude.requests.isEmpty)
 }
 
+@Test(arguments: [EngineAction.fix, .shorter])
+func anAppKeptOnThisMacWhileARunIsUnderWaySendsNothingMore(_ action: EngineAction) async {
+    let chat = "com.example.chat"
+    let claude = FakeEngine.correcting(["teh": "the"], gated: true)
+    let rig = Rig(text: flew + "\n\n" + dutch, claude: claude, app: chat)
+    let run = Task { await rig.session.run(action, on: .claude) }
+    await claude.waitForRequests(1)
+
+    var kept = makeSettings()
+    kept.appOverrides[chat] = .thisMacOnly
+    await rig.router.set(makeRouter(kept))
+    await claude.open()
+
+    #expect(await run.value == .unavailable(.claude, .keptOnThisMac, alternatives: [.thisMac]))
+    #expect(await claude.requests.count == 1)
+}
+
 @Test func claudeIsNeverCalledUnlessChosenOrTheDefault() async {
     let rig = Rig(text: flew)
     _ = await rig.session.run(.fix, on: nil)

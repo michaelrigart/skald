@@ -24,7 +24,7 @@ public struct ClaudeBackoff: Sendable {
     public private(set) var trouble: ClaudeTrouble?
     private var streak = 0
     private var suspendedUntil: Duration?
-    private var failedHashes: [Int] = []
+    private var failedTexts: [(hash: Int, trouble: ClaudeTrouble)] = []
 
     public init() {}
 
@@ -34,13 +34,18 @@ public struct ClaudeBackoff: Sendable {
     }
 
     public func mayAsk(about text: String, at now: Duration) -> Bool {
-        !isSuspended(at: now) && !failedHashes.contains(text.hashValue)
+        !isSuspended(at: now) && trouble(forFailedText: text) == nil
+    }
+
+    /// Why Claude failed on this text before, while it is remembered.
+    public func trouble(forFailedText text: String) -> ClaudeTrouble? {
+        failedTexts.last { $0.hash == text.hashValue }?.trouble
     }
 
     public mutating func failed(_ trouble: ClaudeTrouble, text: String, at now: Duration) {
-        failedHashes.append(text.hashValue)
-        if failedHashes.count > Self.rememberedTexts {
-            failedHashes.removeFirst(failedHashes.count - Self.rememberedTexts)
+        failedTexts.append((text.hashValue, trouble))
+        if failedTexts.count > Self.rememberedTexts {
+            failedTexts.removeFirst(failedTexts.count - Self.rememberedTexts)
         }
         self.trouble = trouble
         guard trouble != .declined else { return }

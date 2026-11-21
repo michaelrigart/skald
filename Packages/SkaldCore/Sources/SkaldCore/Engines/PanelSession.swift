@@ -100,8 +100,8 @@ public actor PanelSession {
         guard let engine = engines[kind] else { return .failed(.failed) }
         do {
             let revised = action == .fix
-                ? try await fix(parts, languages, with: engine)
-                : try await rewrite(parts, languages, action, with: engine)
+                ? try await fix(parts, languages, with: engine, kind: kind)
+                : try await rewrite(parts, languages, action, with: engine, kind: kind)
             guard !Task.isCancelled else { return .failed(.cancelled) }
             return .revised(text: revised, edits: TextDiff.edits(from: text, to: revised), engine: kind)
         } catch .unavailable(let reason) {
@@ -112,7 +112,7 @@ public actor PanelSession {
     }
 
     private func fix(
-        _ parts: [(text: String, separator: String)], _ languages: [Language?], with engine: any Engine
+        _ parts: [(text: String, separator: String)], _ languages: [Language?], with engine: any Engine, kind: EngineKind
     ) async throws(EngineFailure) -> String {
         var parts = parts
         for (index, language) in languages.enumerated() {
@@ -121,7 +121,7 @@ public actor PanelSession {
             let whole = Paragraph(range: TextRange(location: 0, length: paragraph.utf16.count), text: paragraph)
             var fixed = ""
             for chunk in Paragraphs.chunks(whole) {
-                fixed += try await fix(chunk.text, language: language, with: engine)
+                fixed += try await fix(chunk.text, language: language, with: engine, kind: kind)
             }
             parts[index].text = fixed
         }
@@ -129,8 +129,9 @@ public actor PanelSession {
     }
 
     /// The chunk with the edits the guard keeps applied; the chunk as it was when the answer is discarded whole.
-    private func fix(_ chunk: String, language: Language, with engine: any Engine) async throws(EngineFailure) -> String {
+    private func fix(_ chunk: String, language: Language, with engine: any Engine, kind: EngineKind) async throws(EngineFailure) -> String {
         guard !Task.isCancelled else { throw .cancelled }
+        try await stillAllowed(kind)
         let output = try await engine.run(EngineRequest(action: .fix, language: language, text: chunk))
         guard !Task.isCancelled else { throw .cancelled }
         let router = self.router
@@ -146,29 +147,38 @@ public actor PanelSession {
 
     /// One request for a selection in one language, else one per paragraph in its own language.
     private func rewrite(
-        _ parts: [(text: String, separator: String)], _ languages: [Language?], _ action: EngineAction, with engine: any Engine
+        _ parts: [(text: String, separator: String)], _ languages: [Language?], _ action: EngineAction,
+        with engine: any Engine, kind: EngineKind
     ) async throws(EngineFailure) -> String {
         var parts = parts
         let written = languages.enumerated().compactMap { index, language in language.map { (index, $0) } }
         guard let first = written.first else { return text }
         if written.allSatisfy({ $0.1 == first.1 }) {
             let (lead, body, trail) = OutputCleaner.edges(of: text)
-            return lead + (try await rewrite(body, action, language: first.1, with: engine)) + trail
+            return lead + (try await rewrite(body, action, language: first.1, with: engine, kind: kind)) + trail
         }
         for (index, language) in written {
             let (lead, body, trail) = OutputCleaner.edges(of: parts[index].text)
-            parts[index].text = lead + (try await rewrite(body, action, language: language, with: engine)) + trail
+            parts[index].text = lead + (try await rewrite(body, action, language: language, with: engine, kind: kind)) + trail
         }
         return PanelText.reassemble(parts)
     }
 
-    private func rewrite(_ body: String, _ action: EngineAction, language: Language, with engine: any Engine) async throws(EngineFailure) -> String {
+    private func rewrite(
+        _ body: String, _ action: EngineAction, language: Language, with engine: any Engine, kind: EngineKind
+    ) async throws(EngineFailure) -> String {
         guard !Task.isCancelled else { throw .cancelled }
+        try await stillAllowed(kind)
         let output = try await engine.run(EngineRequest(action: action, language: language, text: body))
         guard !Task.isCancelled else { throw .cancelled }
         let revised = OutputCleaner.clean(output, input: body)
         guard !revised.isEmpty else { throw .failed }
         return revised
+    }
+
+    /// Read before every request, since the app's mode can change while a run is under way.
+    private func stillAllowed(_ kind: EngineKind) async throws(EngineFailure) {
+        if case .unavailable(_, let reason, _) = await router.current.panel(requested: kind, app: app) { throw .unavailable(reason) }
     }
 
     // MARK: Languages

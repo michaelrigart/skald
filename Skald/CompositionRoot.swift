@@ -4,6 +4,16 @@ import SkaldCore
 import SkaldPlatform27
 import Synchronization
 
+/// Carries a Claude status from the pipeline to the menu bar item. The pipeline awaits `hook` before it sends a
+/// request, so the item has shown the status, and the cloud, by the time the request leaves.
+final class ClaudeStatusRelay {
+    var show: (@MainActor (ClaudeStatus) -> Void)?
+
+    var hook: @Sendable (ClaudeStatus) async -> Void {
+        { [self] status in await show?(status) }
+    }
+}
+
 /// Builds the app's parts once and keeps them in step: every settings save, thermal change and app activation
 /// sets a fresh router on `liveRouter`, then hands the settings to the pipeline, in that order.
 final class CompositionRoot {
@@ -63,6 +73,7 @@ final class CompositionRoot {
         textAccess = SystemTextAccess(isAppEnabled: { switches.isEnabled($0) }, clock: ContinuousClock())
         apple = AppleEngine()
         let claudeLog = ClaudeTypingLog()
+        let relay = ClaudeStatusRelay()
         let transport = transport
         liveRouter = LiveRouter(Self.router(settings, Self.conditions(claudeKeyPresent: model.claudeKeyStored)))
         pipeline = CheckPipeline(
@@ -70,6 +81,7 @@ final class CompositionRoot {
             apple: apple,
             claude: { model in ClaudeEngine(model: model, apiKey: { keychain.read() }, transport: transport, options: .typing) },
             onClaudeRequest: { claudeLog.record($0) },
+            showClaude: relay.hook,
             spelling: SpellingChecker(),
             detector: SystemLanguageDetector(),
             oracle: SystemWordOracle(),
@@ -94,13 +106,18 @@ final class CompositionRoot {
                 }
             }
         }
+        relay.show = { [weak self] in self?.receive($0) }
         statusTask = Task { [weak self, pipeline] in
             for await status in pipeline.claudeStatus {
                 guard let self else { return }
-                claudeStatus = status
-                refreshStatus()
+                receive(status)
             }
         }
+    }
+
+    private func receive(_ status: ClaudeStatus) {
+        claudeStatus = status
+        refreshStatus()
     }
 
     func start() {

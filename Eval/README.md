@@ -59,10 +59,12 @@ cleaned, before the guard, replayable) and `<out>.usage.jsonl` (one line per req
 tokens, cost and the running total). All three are created before the first request, and the run
 stops with exit 2 and sends nothing if one of them already exists (a re-run never overwrites an
 earlier paid run's record) or cannot be created, such as in a missing directory. Each case's lines
-are appended as the case finishes, so an interrupted run keeps what it paid for; a failed write
-stops the run. Each request also prints its usage line on stderr, and the run ends with a summary
-line: requests, tokens, cost against the limit, the cost of a check and of a month at 500 checks a
-day.
+are appended as the case finishes, so an interrupted run keeps the cases it finished, but it can
+lose the case in flight: its answer and, if the request was still open, its usage line, so its
+cost may be missing from the log. The run's `--max-cost` still bounds it, and each run's full
+`--max-cost` counts towards the $5 total. A failed write stops the run. Each request also prints
+its usage line on stderr, and the run ends with a summary line: requests, tokens, cost against
+the limit, the cost of a check and of a month at 500 checks a day.
 
 `--max-cost` (above 0, at most 5) is a strict bound. A request is sent only when its ceiling
 (the body's bytes as input tokens, plus the 4096 output tokens the request allows) fits in what is
