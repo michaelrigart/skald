@@ -829,6 +829,8 @@ git commit -m "Fall back and back off when Claude can't answer, and report it"
 
 ### Task 9: The menu bar shows when checks use Claude
 
+> Superseded in review (commits `6ca8fdc`, `7035de6`): there is no `LoggedEngine`; the pipeline reports each sent request's outcome through `onClaudeRequest` and `ClaudeTypingLog` records it. While a request can leave, the menu's first line is the Claude line and a failure is a second line. "Turn On" sets This Mac only for an app that is off by default or while Claude typing is on.
+
 **Safety boundary: showing what is sent; this task also turns the path on in the app. Per-task review.**
 
 **Depends on:** Task 8 (the previous task; `ClaudeStatus`, `resetClaude()`); Task 5 (`claudeTypingLanguages`, `onDevice`); Task 4 (`AppMode`); Task 1 (`ClaudeRequestOptions.typing`)
