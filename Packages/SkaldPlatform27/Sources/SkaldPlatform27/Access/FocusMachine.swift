@@ -26,6 +26,8 @@ struct FocusMachine {
         /// Watch the field's value and selection notifications (nil: none).
         case watch(FieldID?)
         case emit(FieldEvent)
+        /// The frontmost observed app's focus retries ran out without a focused element; nil once it gives one or another app is frontmost.
+        case unreadable(String?)
     }
 
     let ownPID: pid_t
@@ -35,6 +37,8 @@ struct FocusMachine {
     /// The frontmost app is observed: not Skald, and on in the app switches when it activated.
     private(set) var frontObserved = false
     private(set) var current: FieldID?
+    /// The app last reported unreadable, until an element or another activation clears it.
+    private var unreadableApp: String?
 
     init(ownPID: pid_t) {
         self.ownPID = ownPID
@@ -45,8 +49,9 @@ struct FocusMachine {
         frontPID = pid
         frontApp = app
         frontObserved = pid != ownPID && enabled
-        guard frontObserved else { return [.cancelRetries, .observe(pid: nil, app: nil)] + settle(nil) }
-        return [.cancelRetries, .observe(pid: pid, app: app), .query(pid: pid, app: app, .activation)]
+        let cleared = clearUnreadable()
+        guard frontObserved else { return cleared + [.cancelRetries, .observe(pid: nil, app: nil)] + settle(nil) }
+        return cleared + [.cancelRetries, .observe(pid: pid, app: app), .query(pid: pid, app: app, .activation)]
     }
 
     /// Accessibility was granted after launch: the frontmost app is observed and asked again, as on activation.
@@ -77,15 +82,29 @@ struct FocusMachine {
         started == generation && pid == frontPID
     }
 
+    /// The retries started for an activation ran out still without a focused element: the app is unreadable.
+    mutating func retriesEnded(generation started: Int, pid: pid_t) -> [Step] {
+        guard retryTick(generation: started, pid: pid), let frontApp, unreadableApp != frontApp else { return [] }
+        unreadableApp = frontApp
+        return [.unreadable(frontApp)]
+    }
+
     mutating func queried(_ query: Query, _ result: QueryResult) -> [Step] {
         switch result {
         case .element(let field):
-            guard query == .retry, let frontPID, let frontApp else { return settle(field) }
-            return [.ensureObserved(pid: frontPID, app: frontApp)] + settle(field)
+            let cleared = clearUnreadable()
+            guard query == .retry, let frontPID, let frontApp else { return cleared + settle(field) }
+            return cleared + [.ensureObserved(pid: frontPID, app: frontApp)] + settle(field)
         case .missing:
             guard query == .activation, let frontPID, let frontApp else { return settle(nil) }
             return settle(nil) + [.startRetries(generation: generation, pid: frontPID, app: frontApp)]
         }
+    }
+
+    private mutating func clearUnreadable() -> [Step] {
+        guard unreadableApp != nil else { return [] }
+        unreadableApp = nil
+        return [.unreadable(nil)]
     }
 
     /// The same field focused again is no event: a focus event cancels the running checks.
@@ -103,6 +122,7 @@ protocol FocusPort: AnyObject {
     func queryFocus(pid: pid_t, app: String) -> FocusMachine.QueryResult
     func watch(_ field: FieldID?)
     func emit(_ event: FieldEvent)
+    func unreadable(_ app: String?)
 }
 
 /// Feeds inputs to the focus machine and carries out its steps through the port, with retries on the clock.
@@ -160,16 +180,28 @@ final class FocusDriver: @unchecked Sendable { // reason: state is touched only 
                 run(machine.queried(query, port.queryFocus(pid: pid, app: app)))
             case let .startRetries(generation, pid, app):
                 PlatformLog.access.notice("no focused element at activation: \(app, privacy: .public)")
-                retries.start { [weak self, hop] in
+                retries.start({ [weak self, hop] in
                     guard let driver = self else { return .moved }
                     return await hop { driver.tick(generation: generation, pid: pid, app: app) }
-                }
+                }, ended: { [weak self, hop] in
+                    guard let driver = self else { return }
+                    _ = await hop { driver.retriesEnded(generation: generation, pid: pid, app: app) }
+                })
             case let .watch(field):
                 port?.watch(field)
             case let .emit(event):
                 port?.emit(event)
+            case let .unreadable(app):
+                port?.unreadable(app)
             }
         }
+    }
+
+    private func retriesEnded(generation: Int, pid: pid_t, app: String) -> FocusAttempt {
+        let steps = machine.retriesEnded(generation: generation, pid: pid)
+        if !steps.isEmpty { PlatformLog.access.notice("no focused element after the retries: \(app, privacy: .public)") }
+        run(steps)
+        return .missing
     }
 
     private func tick(generation: Int, pid: pid_t, app: String) -> FocusAttempt {

@@ -17,6 +17,8 @@ public final class SystemTextAccess: TextAccess {
     /// The focused field may have moved on screen: one of its app's windows moved or changed size, the caret
     /// moved, which can scroll the field, or its text was edited.
     public let geometryChanges: AsyncStream<GeometryChange>
+    /// The frontmost observed app once its focus retries ran out without a focused element; nil once it gives one or another app is frontmost.
+    public let unreadableApp: AsyncStream<String?>
 
     private let queue = AXQueue()
     private let isAppEnabled: @Sendable (String) -> Bool
@@ -27,15 +29,17 @@ public final class SystemTextAccess: TextAccess {
     public init(isAppEnabled: @escaping @Sendable (String) -> Bool, clock: any Clock<Duration>) {
         let (events, continuation) = AsyncStream.makeStream(of: FieldEvent.self)
         let (geometryChanges, geometry) = AsyncStream.makeStream(of: GeometryChange.self)
+        let (unreadableApp, unreadable) = AsyncStream.makeStream(of: String?.self)
         let waits = FocusWaits(clock: clock)
         let changes = ValueChanges()
         let writer = PasteWriter(clock: PasteClock(clock), changes: changes)
         self.events = events
         self.geometryChanges = geometryChanges
+        self.unreadableApp = unreadableApp
         self.isAppEnabled = isAppEnabled
         self.waits = waits
         self.writer = writer
-        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled, moved: { geometry.yield(.window) }) { event in
+        observer = FieldObserver(queue: queue, clock: clock, isAppEnabled: isAppEnabled, moved: { geometry.yield(.window) }, unreadable: { unreadable.yield($0) }) { event in
             continuation.yield(event)
             if let change = TextAccessRules.geometryChange(for: event) { geometry.yield(change) }
             switch event {

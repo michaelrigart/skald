@@ -979,6 +979,7 @@ private final class FakePort: FocusPort, @unchecked Sendable { // reason: each t
     private(set) var observed: [pid_t?] = []
     private(set) var ensured: [pid_t] = []
     private(set) var queries: [pid_t] = []
+    private(set) var unreadable: [String?] = []
 
     func observe(pid: pid_t?, app: String?) { observed.append(pid) }
     func ensureObserved(pid: pid_t, app: String) { ensured.append(pid) }
@@ -990,6 +991,7 @@ private final class FakePort: FocusPort, @unchecked Sendable { // reason: each t
 
     func watch(_ field: FieldID?) {}
     func emit(_ event: FieldEvent) { events.append(event) }
+    func unreadable(_ app: String?) { unreadable.append(app) }
 }
 
 private let skaldPID: pid_t = 7
@@ -1184,4 +1186,119 @@ private func makeDriver(_ clock: TestClock, port: FakePort) -> (FocusDriver, Asy
     driver.switchesChanged(isEnabled: { _ in true })
     #expect(port.observed == [nil])
     #expect(port.events == [.focused(nil)])
+}
+
+// MARK: An app that gives no focused element
+
+private func unreadableMachine(app: String = "com.example.app", pid: pid_t = obsidianPID) -> FocusMachine {
+    var machine = FocusMachine(ownPID: skaldPID)
+    _ = machine.activated(pid: pid, app: app, enabled: true)
+    _ = machine.queried(.activation, .missing)
+    return machine
+}
+
+@Test func anActivationAnsweredMissingIsNotYetUnreadable() {
+    var machine = FocusMachine(ownPID: skaldPID)
+    _ = machine.activated(pid: obsidianPID, app: "com.example.app", enabled: true)
+    let steps = machine.queried(.activation, .missing)
+    #expect(steps.contains(.startRetries(generation: machine.generation, pid: obsidianPID, app: "com.example.app")))
+    #expect(!steps.contains(.unreadable("com.example.app")))
+}
+
+@Test func retriesThatEndMissingMakeTheAppUnreadableOnce() {
+    var machine = unreadableMachine()
+    #expect(machine.retriesEnded(generation: machine.generation, pid: obsidianPID) == [.unreadable("com.example.app")])
+    #expect(machine.retriesEnded(generation: machine.generation, pid: obsidianPID).isEmpty)
+}
+
+@Test func anElementAfterAnUnreadableAppClearsIt() {
+    var machine = unreadableMachine()
+    _ = machine.retriesEnded(generation: machine.generation, pid: obsidianPID)
+    #expect(machine.queried(.focusChange, .element(obsidianField)).contains(.unreadable(nil)))
+    #expect(!machine.queried(.focusChange, .element(nil)).contains(.unreadable(nil)))
+}
+
+@Test func anActivationAfterAnUnreadableAppClearsIt() {
+    var machine = unreadableMachine()
+    _ = machine.retriesEnded(generation: machine.generation, pid: obsidianPID)
+    #expect(machine.activated(pid: notesPID, app: "com.apple.Notes", enabled: true).contains(.unreadable(nil)))
+    var other = unreadableMachine()
+    _ = other.retriesEnded(generation: other.generation, pid: obsidianPID)
+    #expect(other.activated(pid: skaldPID, app: "com.michaelrigart.skald", enabled: true).contains(.unreadable(nil)))
+}
+
+@Test func retriesEndedForAnOlderGenerationOrAnotherAppSaysNothing() {
+    var machine = unreadableMachine()
+    #expect(machine.retriesEnded(generation: machine.generation - 1, pid: obsidianPID).isEmpty)
+    #expect(machine.retriesEnded(generation: machine.generation, pid: notesPID).isEmpty)
+    let stale = machine.generation
+    _ = machine.activated(pid: notesPID, app: "com.apple.Notes", enabled: true)
+    #expect(machine.retriesEnded(generation: stale, pid: obsidianPID).isEmpty)
+    #expect(!machine.activated(pid: notesPID, app: "com.apple.Notes", enabled: true).contains(.unreadable(nil)))
+}
+
+@Test func theRetriesEndWhenTheLastAttemptStillMissesAndNotBefore() async {
+    let clock = TestClock()
+    let retries = FocusRetries(clock: clock)
+    let ends = Recorder<Duration>()
+    let task = retries.start({ .missing }, ended: { ends.append(clock.now.offset) })
+    for (calls, step) in [(1, 1), (2, 2), (3, 3), (4, 4)] {
+        await clock.waitForSleepCalls(calls)
+        #expect(ends.values.isEmpty)
+        clock.advance(by: .seconds(step))
+    }
+    await task.value
+    #expect(ends.values == [.seconds(10)])
+}
+
+@Test func retriesThatFindTheElementOrAreCancelledNeverEnd() async {
+    let clock = TestClock()
+    let retries = FocusRetries(clock: clock)
+    let ends = Recorder<Duration>()
+    let found = retries.start({ .found }, ended: { ends.append(clock.now.offset) })
+    await clock.waitForSleepCalls(1)
+    clock.advance(by: .seconds(1))
+    await found.value
+    let cancelled = retries.start({ .missing }, ended: { ends.append(clock.now.offset) })
+    await clock.waitForSleepCalls(2)
+    retries.cancel()
+    await cancelled.value
+    #expect(ends.values.isEmpty)
+}
+
+@Test func anAppWhoseRetriesRunOutIsReportedUnreadableUntilItGivesAnElement() async {
+    let clock = TestClock()
+    let port = FakePort()
+    let (driver, ticks) = makeDriver(clock, port: port)
+    var attempts = ticks.makeAsyncIterator()
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    #expect(port.unreadable.isEmpty)
+    for (calls, step) in [(1, 1), (2, 2), (3, 3)] {
+        await clock.waitForSleepCalls(calls)
+        clock.advance(by: .seconds(step))
+        #expect(await attempts.next() == .missing)
+        #expect(port.unreadable.isEmpty)
+    }
+    await clock.waitForSleepCalls(4)
+    clock.advance(by: .seconds(4))
+    #expect(await attempts.next() == .missing)
+    #expect(await attempts.next() == .missing)
+    #expect(port.unreadable == ["md.obsidian"])
+    port.focus[obsidianPID] = .element(obsidianField)
+    driver.focusChanged(pid: obsidianPID)
+    #expect(port.unreadable == ["md.obsidian", nil])
+}
+
+@Test func anAppWhoseElementAppearsOnARetryIsNeverUnreadable() async {
+    let clock = TestClock()
+    let port = FakePort()
+    let (driver, ticks) = makeDriver(clock, port: port)
+    var attempts = ticks.makeAsyncIterator()
+    driver.activated(pid: obsidianPID, app: "md.obsidian", enabled: true)
+    await clock.waitForSleepCalls(1)
+    port.focus[obsidianPID] = .element(obsidianField)
+    clock.advance(by: .seconds(1))
+    #expect(await attempts.next() == .found)
+    clock.advance(by: .seconds(20))
+    #expect(port.unreadable.isEmpty)
 }

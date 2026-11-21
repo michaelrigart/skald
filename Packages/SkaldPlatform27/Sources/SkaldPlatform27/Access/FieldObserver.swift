@@ -2,7 +2,8 @@ import AppKit
 import ApplicationServices
 import SkaldCore
 
-/// Asks again for the focused element at 1, 3, 6 and 10 s after activation, until it appears or focus moves.
+/// Asks again for the focused element at 1, 3, 6 and 10 s after activation, until it appears or focus moves;
+/// `ended` runs when the last of them still found nothing.
 final class FocusRetries: @unchecked Sendable { // reason: the pending task is only touched under the lock
     private let timer: @Sendable () -> @Sendable (Duration) async throws -> Void
     private let lock = NSLock()
@@ -17,7 +18,7 @@ final class FocusRetries: @unchecked Sendable { // reason: the pending task is o
 
     /// Replaces any pending retries. The activation's own query was the first attempt and found nothing.
     @discardableResult
-    func start(_ attempt: @escaping @Sendable () async -> FocusAttempt) -> Task<Void, Never> {
+    func start(_ attempt: @escaping @Sendable () async -> FocusAttempt, ended: @escaping @Sendable () async -> Void = {}) -> Task<Void, Never> {
         let sleep = timer()
         let task = Task {
             var attempts = 1
@@ -27,6 +28,7 @@ final class FocusRetries: @unchecked Sendable { // reason: the pending task is o
                 attempts += 1
                 outcome = await attempt()
             }
+            if outcome == .missing, !Task.isCancelled { await ended() }
         }
         lock.withLock {
             pending?.cancel()
@@ -159,6 +161,7 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
     private let isAppEnabled: @Sendable (String) -> Bool
     private let send: @Sendable (FieldEvent) -> Void
     private let moved: @Sendable () -> Void
+    private let reportUnreadable: @Sendable (String?) -> Void
 
     private var activation: NSObjectProtocol?
     private var registry = Registry(isSame: { $0.isSame(as: $1) }) {
@@ -172,12 +175,13 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     init(
         queue: AXQueue, clock: any Clock<Duration>, isAppEnabled: @escaping @Sendable (String) -> Bool,
-        moved: @escaping @Sendable () -> Void, emit: @escaping @Sendable (FieldEvent) -> Void
+        moved: @escaping @Sendable () -> Void, unreadable: @escaping @Sendable (String?) -> Void, emit: @escaping @Sendable (FieldEvent) -> Void
     ) {
         self.queue = queue
         driver = FocusDriver(ownPID: ProcessInfo.processInfo.processIdentifier, clock: clock) { body in await queue.run(body) }
         self.isAppEnabled = isAppEnabled
         self.moved = moved
+        reportUnreadable = unreadable
         send = emit
         driver.port = self
     }
@@ -304,6 +308,10 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     func emit(_ event: FieldEvent) {
         send(event)
+    }
+
+    func unreadable(_ app: String?) {
+        reportUnreadable(app)
     }
 
     private func context(for pid: pid_t) -> ObserverContext {
