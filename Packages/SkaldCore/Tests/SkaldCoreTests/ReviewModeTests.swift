@@ -83,6 +83,34 @@ private func open(_ issues: [Issue]) -> ReviewMode {
     #expect(mode.issuesChanged([b.moved(to: 21), c.moved(to: 32)], checked: true) == [.show(b.id)])
 }
 
+@Test func aRecheckThatFinishedBeforeTheWriteWasConfirmedIsUsedAtOnce() {
+    var mode = open([a, b, c])
+    _ = mode.key(.accept, issues: [a, b, c], writes: true)
+    #expect(mode.issuesChanged([], checked: false) == [])
+    #expect(mode.issuesChanged([b.moved(to: 21), c.moved(to: 32)], checked: true) == [])
+    #expect(mode.finished(.replaced) == [.show(b.id)])
+    #expect(mode.phase == .showing(b.id) && mode.position == 21)
+    var empty = open([a])
+    _ = empty.key(.accept, issues: [a], writes: true)
+    _ = empty.issuesChanged([], checked: false)
+    #expect(empty.issuesChanged([], checked: true) == [])
+    #expect(empty.finished(.replaced) == [.close])
+    #expect(!empty.holdsKeys)
+}
+
+@Test func aCheckedListBeforeTheSuspensionOrForgottenByALaterOneIsNeverUsed() {
+    var stale = open([a, b, c])
+    _ = stale.key(.accept, issues: [a, b, c], writes: true)
+    #expect(stale.issuesChanged([b, c], checked: true) == [])
+    #expect(stale.finished(.replaced) == [.wait(a.id, .seconds(6))])
+    var again = open([a, b, c])
+    _ = again.key(.accept, issues: [a, b, c], writes: true)
+    _ = again.issuesChanged([], checked: false)
+    _ = again.issuesChanged([b.moved(to: 21)], checked: true)
+    #expect(again.issuesChanged([], checked: false) == [])
+    #expect(again.finished(.replaced) == [.wait(a.id, .seconds(6))])
+}
+
 @Test func aNewAcceptForgetsTheEarlierSuspension() {
     var mode = open([a, b, c])
     _ = mode.key(.accept, issues: [a, b, c], writes: true)

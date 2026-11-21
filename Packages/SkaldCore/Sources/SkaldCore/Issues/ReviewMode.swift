@@ -29,6 +29,8 @@ public struct ReviewMode: Sendable {
     /// Whether an unchecked snapshot, the pipeline's suspension on Skald's own write, has come since the accept
     /// started. A checked snapshot before it still holds the old list.
     private var suspended = false
+    /// The list of the latest checked snapshot that came after the suspension while the write was still applied.
+    private var recheck: [Issue]?
 
     public var holdsKeys: Bool { phase != .closed }
 
@@ -65,6 +67,7 @@ public struct ReviewMode: Sendable {
                 guard writes else { return [.copy(id)] }
                 phase = .applying(id)
                 suspended = false
+                recheck = nil
                 return [.accept(id)]
             case .dismiss:
                 guard index != nil else { return [] }
@@ -77,6 +80,7 @@ public struct ReviewMode: Sendable {
     public mutating func finished(_ outcome: ReplaceOutcome) -> [Effect] {
         guard case .applying(let id) = phase else { return [] }
         guard outcome == .replaced else { return close() }
+        if let recheck { return showNearest(in: recheck) }
         phase = .awaiting(id)
         return [.wait(id, Self.recheckWait)]
     }
@@ -87,7 +91,12 @@ public struct ReviewMode: Sendable {
         case .closed:
             return []
         case .applying:
-            suspended = suspended || !checked
+            if !checked {
+                suspended = true
+                recheck = nil
+            } else if suspended {
+                recheck = issues
+            }
             return []
         case .showing(let id):
             if let shown = issues.first(where: { $0.id == id }) {
