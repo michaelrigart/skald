@@ -11,8 +11,8 @@ whether it is compatible with the one before. Each section says what changed.
 
 - Skald v1: check spelling as you type, on your Mac, in English and Dutch, and grammar with
   Apple's on-device model in English when Apple Intelligence is on. French is checked in the
-  panel. Change the languages in Settings. Issues are underlined in the field, or shown as a badge with a count where an app doesn't
-  give Skald the text's position, and a card offers the correction.
+  panel. Change the languages in Settings. Issues are underlined in the field where an app gives
+  Skald the text's position, a badge shows their count, and a card offers the correction.
 - A panel, opened with a hotkey, to fix or rewrite the selection or the current paragraph.
 - Optional remote engines for the panel: a Mac Studio (Settings > Engines > Mac Studio, which
   takes any Ollama or OpenAI-compatible server), and Claude.
@@ -45,8 +45,8 @@ whether it is compatible with the one before. Each section says what changed.
   issues from the keyboard, accepting or dismissing each one. Esc leaves it. VoiceOver announces
   each step.
 - The menu says where Skald can't work: an app it can't read, or one where it can't show issues.
-- Cards, underlines and the badge have VoiceOver labels.
-- "Pause for 30 Minutes" in the menu, next to the other pauses.
+- The badge, the list and the card controls have VoiceOver labels.
+- "Pause for 30 Minutes" in the menu, next to "Pause for an Hour".
 
 ### Changed
 
@@ -54,9 +54,9 @@ whether it is compatible with the one before. Each section says what changed.
 
 ### Fixed
 
-- Underlines are no longer drawn off the word after you scroll: they hide and come back. In an
-  app Skald hasn't measured, they stay hidden after a scroll until your next edit or caret move.
-
+- Underlines are no longer drawn off the word after you scroll: they hide on a scroll and come back
+  at your next edit or caret move. Skald brings them back sooner, once their position has settled,
+  in apps whose scroll lag it has measured (none yet).
 - A French or Dutch fix such as "Tout les" to "Tous les" is no longer dropped because the word
   also exists in English. A fix that translates an English word still is.
 - When Claude rejects your key or limits requests, the panel says why and offers the other

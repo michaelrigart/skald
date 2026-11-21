@@ -2,9 +2,9 @@
 
 Skald is a spelling and grammar checker for macOS that lives in the menu bar. It checks what
 you type in other apps, in English and Dutch, and in French in its panel, and runs on your
-Mac. It underlines issues in the field and offers the correction on a card. Where an app
-doesn't tell Skald where the text is, a small badge with a count of the issues sits on the
-field instead.
+Mac. It underlines issues in the field and offers the correction on a card. A small badge with
+a count of the issues sits on the field too, and where an app doesn't tell Skald where the text
+is, it is the only mark.
 
 ## Features
 
@@ -14,11 +14,12 @@ field instead.
   French is checked only in the panel. Change this in Settings > Languages with **Check while
   typing** and **Model checks (grammar and spelling)**.
 - Underlines an issue in the field in three colours (spelling, grammar and punctuation, with a
-  legend in the menu), or shows a badge with a count where the app doesn't allow that. A card
-  names the kind of issue, offers the correction and its alternatives, and can hide suggestions
-  like it (bring them back in Settings > Suggestions). The badge counts in every checked field.
+  legend in the menu), and shows a badge with a count in every checked field, the only mark where
+  the app doesn't allow underlines. A card names the kind of issue, offers the correction and its
+  alternatives, and can hide suggestions like it (bring them back in Settings > Suggestions).
 - Review mode (Control-Option-R by default, changeable in Settings > Suggestions) steps through
-  the issues from the keyboard. Cards, underlines and the badge have VoiceOver labels.
+  the issues from the keyboard, and VoiceOver announces each step. The badge, the list and the card
+  controls have VoiceOver labels.
 - A panel, opened with a hotkey (Control-Option-G by default), to fix or rewrite the selection
   or the current paragraph.
 - Checks while you type stay on your Mac, unless you turn on Claude for Dutch and French in

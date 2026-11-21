@@ -392,6 +392,10 @@ Pending Michael's confirmation (this changes the spec):
   mode goes on at the first checked result that follows the recheck's start (at once if the
   recheck already finished before a paste write was confirmed), or ends after 6 s. Alternative:
   carry the paragraph's other issues across Skald's own write.
+- The wait after an accept ends at the first checked result, even when Claude's answer for that
+  paragraph is still on its way.
+- While a write is applied or the recheck awaited, edits count as Skald's own: typing during
+  "Checking…" doesn't leave the mode, and the keys pressed then are swallowed.
 
 Inside the spec:
 
