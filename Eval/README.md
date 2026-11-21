@@ -59,7 +59,8 @@ cleaned, before the guard, replayable) and `<out>.usage.jsonl` (one line per req
 tokens, cost and the running total). All three are created before the first request, and the run
 stops with exit 2 and sends nothing if one of them already exists (a re-run never overwrites an
 earlier paid run's record) or cannot be created, such as in a missing directory. Each case's lines
-are appended as the case finishes, so an interrupted run keeps what it paid for; a failed write
+are appended as the case finishes, so an interrupted run keeps the cases it finished, but it can
+lose the answer of the case in flight, whose cost is already in the usage log; a failed write
 stops the run. Each request also prints its usage line on stderr, and the run ends with a summary
 line: requests, tokens, cost against the limit, the cost of a check and of a month at 500 checks a
 day.
