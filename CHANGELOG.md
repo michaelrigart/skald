@@ -35,8 +35,27 @@ whether it is compatible with the one before. Each section says what changed.
   nothing until you do.
 - If your Mac lacks Apple's language data for English or French, Skald asks macOS to download
   it the first time it checks that language.
+- Issues are underlined in three colours: spelling, grammar and punctuation (punctuation is also
+  dotted). The menu has a legend for them.
+- The card names the kind of issue, lists the alternatives, and has "Hide suggestions like this".
+  Hidden kinds come back from Settings > Suggestions.
+- The badge shows its count in every checked field, not only where an app hides the text's
+  position.
+- Review mode: press Control-Option-R (change it in Settings > Suggestions) to step through the
+  issues from the keyboard, accepting or dismissing each one. Esc leaves it. VoiceOver announces
+  each step.
+- The menu says where Skald can't work: an app it can't read, or one where it can't show issues.
+- Cards, underlines and the badge have VoiceOver labels.
+- "Pause for 30 Minutes" in the menu, next to the other pauses.
+
+### Changed
+
+- "Ignore" on a card is now "Dismiss", and "Never flag" is "Add to dictionary".
 
 ### Fixed
+
+- Underlines are no longer drawn off the word after you scroll: they hide and come back. In an
+  app Skald hasn't measured, they stay hidden after a scroll until your next edit or caret move.
 
 - A French or Dutch fix such as "Tout les" to "Tous les" is no longer dropped because the word
   also exists in English. A fix that translates an English word still is.

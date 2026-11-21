@@ -22,6 +22,10 @@ sandbox too.
 - Install: `rm -rf /Applications/Skald.app && ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app`
   (`ditto` merges into an existing bundle and would keep stale files)
 - Run: `open /Applications/Skald.app`
+- Scroll probe (Debug builds only): quit Skald, focus a long text, then
+  `open /Applications/Skald.app --args --probe-scroll --drive`. It writes
+  `~/Library/Application Support/com.michaelrigart.skald/probe/scroll-lag.json`; put the measured
+  ceilings in `ScrollLag.ceilings` in `Skald/Overlay/ScrollLag.swift`.
 - Script tests: `/usr/bin/python3 -m unittest discover -s scripts/tests -p 'test_*.py'` (the
   changelog tool), `scripts/tests/test-release-dry-run`
   (needs the signing certificate and Homebrew: it builds team-signed and runs `brew style`) and

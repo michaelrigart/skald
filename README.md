@@ -13,8 +13,12 @@ field instead.
   the on-device model's grammar checks are on for English only: Dutch gets spelling checks.
   French is checked only in the panel. Change this in Settings > Languages with **Check while
   typing** and **Model checks (grammar and spelling)**.
-- Underlines an issue in the field, or shows a badge with a count where the app doesn't allow
-  that. A card offers the correction.
+- Underlines an issue in the field in three colours (spelling, grammar and punctuation, with a
+  legend in the menu), or shows a badge with a count where the app doesn't allow that. A card
+  names the kind of issue, offers the correction and its alternatives, and can hide suggestions
+  like it (bring them back in Settings > Suggestions). The badge counts in every checked field.
+- Review mode (Control-Option-R by default, changeable in Settings > Suggestions) steps through
+  the issues from the keyboard. Cards, underlines and the badge have VoiceOver labels.
 - A panel, opened with a hotkey (Control-Option-G by default), to fix or rewrite the selection
   or the current paragraph.
 - Checks while you type stay on your Mac, unless you turn on Claude for Dutch and French in
@@ -126,6 +130,12 @@ rm -rf /Applications/Skald.app
 ditto build/dd.noindex/Build/Products/Debug/Skald.app /Applications/Skald.app
 open /Applications/Skald.app --args --probe
 ```
+
+`--probe-scroll --drive` measures how long an app's text positions lag behind a scroll. Quit
+Skald, focus a long text, then run `open /Applications/Skald.app --args --probe-scroll --drive`.
+It writes `~/Library/Application Support/com.michaelrigart.skald/probe/scroll-lag.json`. Until an
+app's lag is measured, Skald keeps its underlines hidden after a scroll until the next edit or
+caret move.
 
 ## Releasing
 

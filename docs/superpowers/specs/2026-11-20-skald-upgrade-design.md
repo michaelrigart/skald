@@ -382,6 +382,46 @@ Every issue gets a category, decided by Skald from the edit, never by the model:
   scrolling in a Zen textarea, underlines never drawn off the word; review mode end to end in
   Notes (Accessibility write), Zen (paste write) and Slack (badge list); one pass with VoiceOver.
 
+### Decided in stage 2's plan, 2026-11-21
+
+Pending Michael's confirmation (this changes the spec):
+
+- Review mode waits for Skald's recheck after an accept. Skald's own write hides the field's issues
+  until the paragraph is checked again, so "moves to the next issue when the write is confirmed"
+  has nothing to move to. A "Checking…" card shows, the keys stay held (only esc acts), and the
+  mode goes on at the first checked result that follows the recheck's start (at once if the
+  recheck already finished before a paste write was confirmed), or ends after 6 s. Alternative:
+  carry the paragraph's other issues across Skald's own write.
+
+Inside the spec:
+
+- While a request can leave, stage 1's "… checks use Claude" line stays first in the menu and the
+  "can't work here" line follows it; otherwise that line comes first.
+- A third menu line, "Skald can't show issues in this app", is for an app that gives text but
+  neither positions nor a frame. "Skald can't read text in this app" is said only once Skald's
+  focus retries ran out and the app has a window.
+- "Only esc is taken" while a write is applied means only esc acts; the other keys stay held so
+  they can't reach the app mid-write. A key still down when the mode ends stays held until it
+  comes up (at most 1 s), and a held key acts once, not on every repeat.
+- After an accept or a dismiss with no issue after the position, the mode goes to the last one
+  before it.
+- Punctuation is "only punctuation or spacing changes", measured on the words joined together: an
+  apostrophe or a space inside a word counts ("Lets" to "Let's", "fallback" to "fall back", "it's"
+  to "its").
+- One colour palette serves both appearances (Spelling #D55E00, Grammar #0072B2, Punctuation
+  #8B5CF6, Punctuation also dotted), because the text under an underline follows the page, not the
+  system appearance. Every pair stays apart under the three common colour-vision deficiencies and
+  each reads at 3.2:1 or more on white and on #1E1E1E.
+- Every scroll event counts, whatever window it happens in.
+- The badge keeps its last count while the same field is rechecked, and a field counts as checked
+  once the paragraph holding the caret has a result.
+- After a scroll, at most 20 position reads follow, and underlines come back only when their three
+  confirming reads still fit within those 20.
+- Where Skald has no clean write, each of the spell checker's other guesses is offered as Copy.
+- Measured scroll lags: none yet. The probe (`--probe-scroll`) is built; until Michael runs it for
+  Notes, TextEdit and Zen, every app keeps underlines hidden after a scroll until the next edit or
+  caret move.
+
 ## Delivery
 
 - **Two stages, each with its own plan and its own draft PR.** Stage 1 first: it is small (a
