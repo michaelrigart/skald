@@ -293,6 +293,18 @@ private final class FocusWait {
         #expect(controller.phase == .finished(revisedResult(engine: .claude)))
     }
 
+    @Test func anAppKeptOnThisMacSaysWhyThePanelOffersThisMacOnly() {
+        let controller = PanelController(window: window, clipboard: spy)
+        var kept = PanelOpening(session: FakeSession(), text: original, target: nil, engines: [.thisMac], engine: .thisMac)
+        kept.keptOnThisMac = "Notes"
+        controller.open(kept)
+        #expect(controller.keptNote == "Skald keeps Notes on this Mac, so the panel offers This Mac only.")
+        #expect(controller.phase == .ready)
+
+        controller.open(PanelOpening(session: FakeSession(), text: original, target: nil, engines: [.thisMac, .claude], engine: .thisMac))
+        #expect(controller.keptNote == nil)
+    }
+
     @Test func anUndetectableSelectionAsksForALanguageBeforeAnyRun() async {
         let session = FakeSession()
         let controller = PanelController(window: window, clipboard: spy)

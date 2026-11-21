@@ -81,6 +81,9 @@ struct PanelView: View {
             if controller.fromClipboard {
                 note(PanelController.clipboardLabel)
             }
+            if let keptNote = controller.keptNote {
+                note(keptNote)
+            }
             ScrollView {
                 Text(content)
                     .textSelection(.enabled)

@@ -14,6 +14,18 @@ import Testing
         )
     }
 
+    @Test func aCardForAnIssueClaudeFoundSaysClaude() {
+        func model(_ engine: EngineKind?, source: IssueSource = .model) -> IssueCardModel {
+            IssueCardModel(
+                issue: issue(in: "They is ready", revised: "They are ready", source: source, engine: engine), writes: true, clipboard: spy,
+                actions: .init(accept: { _ in .replaced }, ignore: { _ in }, neverFlag: { _ in })
+            )
+        }
+        #expect(model(.claude).byClaude)
+        #expect(!model(.thisMac).byClaude)
+        #expect(!model(nil, source: .spelling).byClaude)
+    }
+
     @Test func aReplacedFixClosesTheCard() async {
         let card = card(answer: .replaced)
         await card.accept()

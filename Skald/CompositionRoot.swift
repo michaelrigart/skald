@@ -307,6 +307,7 @@ final class CompositionRoot {
             opening.needsLanguage = await session.needsLanguage()
             if content == .unreadable { opening.notice = PanelController.unreadableNotice }
             if case .clipboard = content { opening.fromClipboard = true }
+            if let source, let app, settings.mode(app: app) == .thisMacOnly { opening.keptOnThisMac = source.localizedName ?? app }
             let opened = panel.open(opening, reserved: reserved)
             Log.ui.notice("panel opened: \(opened, privacy: .public), field \(capture != nil, privacy: .public), writes \(writes, privacy: .public)")
         }

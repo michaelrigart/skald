@@ -161,9 +161,17 @@ private struct IssueCardView: View {
 
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(change)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(change)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if card.byClaude {
+                    Text("Claude")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             switch card.phase {
             case .ready:
                 HStack(spacing: 6) {

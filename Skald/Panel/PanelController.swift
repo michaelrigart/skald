@@ -51,6 +51,8 @@ struct PanelOpening {
     var needsLanguage = false
     /// No field was focused, so the text is the clipboard's: the panel says so above it.
     var fromClipboard = false
+    /// The name of the app Skald keeps on this Mac: the panel offers This Mac only and says why.
+    var keptOnThisMac: String?
     /// Why there is nothing to run, when there isn't.
     var notice: String?
 }
@@ -76,6 +78,7 @@ struct PanelOpening {
     private(set) var original = ""
     /// The text came from the clipboard, not a field.
     private(set) var fromClipboard = false
+    private(set) var keptOnThisMac: String?
     private(set) var engines: [EngineKind] = []
     var engine: EngineKind = .thisMac
     private(set) var phase = Phase.blocked(PanelController.noTextNotice)
@@ -102,6 +105,10 @@ struct PanelOpening {
     init(window: any PanelPresenting, clipboard: any Clipboard) {
         self.window = window
         self.clipboard = clipboard
+    }
+
+    var keptNote: String? {
+        keptOnThisMac.map { "Skald keeps \($0) on this Mac, so the panel offers This Mac only." }
     }
 
     var revised: String? {
@@ -149,6 +156,7 @@ struct PanelOpening {
         self.opening = opening
         original = opening.text
         fromClipboard = opening.fromClipboard
+        keptOnThisMac = opening.keptOnThisMac
         engines = opening.engines.contains(opening.engine) ? opening.engines : opening.engines + [opening.engine]
         engine = opening.engine
         if let notice = opening.notice {

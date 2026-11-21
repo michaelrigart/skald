@@ -89,6 +89,8 @@ struct CardContent: Equatable {
     let id: UUID
     let field: FieldID
     let content: CardContent
+    /// Claude found the issue, so the card says so.
+    let byClaude: Bool
     /// False in a read-only app, where Copy fix takes Accept's place.
     let writes: Bool
     private(set) var phase: Phase = .ready
@@ -107,6 +109,7 @@ struct CardContent: Equatable {
         id = issue.id
         field = issue.key.field
         content = CardContent(issue: issue)
+        byClaude = issue.engine == .claude
         fix = issue.edit.replacement
         self.writes = writes
         self.clipboard = clipboard
