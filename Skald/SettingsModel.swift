@@ -29,8 +29,8 @@ import struct SwiftUI.Binding
         self.store = store
         self.keychain = keychain
         claudeKeyStored = keychain.containsValue()
-        if !claudeKeyStored { self.settings.claudeTyping = false }
         saveNote = readOnly ? Self.readOnlyNote : nil
+        if !claudeKeyStored { update { $0.claudeTyping = false } }
     }
 
     /// Why typing checks are spelling only right now, when they are.
@@ -43,8 +43,13 @@ import struct SwiftUI.Binding
         change(&next)
         guard next != settings else { return }
         settings = next
+        persist(next)
+        onChange?(next)
+    }
+
+    private func persist(_ settings: Settings) {
         do {
-            try store.save(next)
+            try store.save(settings)
             saveNote = nil
         } catch SettingsStoreError.readOnly {
             saveNote = Self.readOnlyNote
@@ -52,7 +57,6 @@ import struct SwiftUI.Binding
             Log.app.notice("settings not saved: \(String(describing: error), privacy: .private)")
             saveNote = "Skald couldn't save your settings. Changes last until Skald quits."
         }
-        onChange?(next)
     }
 
     func binding<Value>(_ path: WritableKeyPath<Settings, Value>) -> Binding<Value> {
@@ -152,7 +156,11 @@ import struct SwiftUI.Binding
     /// The cached presence the router reads, so routing never asks the Keychain. Without a key the Claude switch is off.
     private func claudeKeyChanged() {
         claudeKeyStored = keychain.containsValue()
-        if !claudeKeyStored { update { $0.claudeTyping = false } }
+        if claudeKeyStored {
+            persist(settings)
+        } else {
+            update { $0.claudeTyping = false }
+        }
         onChange?(settings)
         onClaudeKeyChange?()
     }

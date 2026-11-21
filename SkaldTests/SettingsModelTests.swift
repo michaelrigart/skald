@@ -130,10 +130,11 @@ private final class ChangeLog {
         defer { try? testKeychain.delete() }
         var stale = Settings()
         stale.claudeTyping = true
-        let (model, _) = makeModel(settings: stale)
+        let (model, store) = makeModel(settings: stale)
         #expect(!model.claudeKeyStored)
         #expect(!model.settings.claudeTyping)
         #expect(!model.claudeTypingIsOn)
+        #expect(store.load() == .loaded(model.settings))
 
         var reported: [Settings] = []
         model.onChange = { reported.append($0) }
@@ -142,8 +143,30 @@ private final class ChangeLog {
         #expect(!model.settings.claudeTyping)
         #expect(reported.allSatisfy { !$0.claudeTyping })
         #expect(!model.claudeTakes(.nl))
+
+        guard case .loaded(let onDisk) = store.load() else {
+            Testing.Issue.record("settings were not saved")
+            return
+        }
+        let relaunched = SettingsModel(settings: onDisk, store: store, keychain: testKeychain, readOnly: false)
+        #expect(relaunched.claudeKeyStored)
+        #expect(!relaunched.settings.claudeTyping)
+
         #expect(model.setClaudeTyping(true))
         #expect(model.claudeTakes(.nl))
+    }
+
+    @Test func aReadOnlyStoreIsNotWrittenToWhenTheSwitchIsCorrected() throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("settings.json")
+        try Data(#"{"version": 99}"#.utf8).write(to: file)
+        var stale = Settings()
+        stale.claudeTyping = true
+        let (model, _) = makeModel(directory, settings: stale, readOnly: true)
+        #expect(!model.settings.claudeTyping)
+        #expect(model.saveNote != nil)
+        #expect(try String(contentsOf: file, encoding: .utf8) == #"{"version": 99}"#)
     }
 
     @Test func theClaudeSwitchNeverRewritesTheOnDeviceSwitches() throws {
