@@ -8,8 +8,12 @@ private func paragraph(_ text: String) -> Paragraph {
     Paragraph(range: TextRange(location: 0, length: text.utf16.count), text: text)
 }
 
-private func flagged(_ text: String, _ language: Language, neverTouch: Set<String> = []) async -> [Edit] {
+private func flaggedWithAlternatives(_ text: String, _ language: Language, neverTouch: Set<String> = []) async -> [SpellingFlag] {
     await SpellingChecker().flags(in: paragraph(text), language: language, neverTouch: neverTouch)
+}
+
+private func flagged(_ text: String, _ language: Language, neverTouch: Set<String> = []) async -> [Edit] {
+    await flaggedWithAlternatives(text, language, neverTouch: neverTouch).map(\.edit)
 }
 
 private func resolved(_ text: String, _ language: Language) async -> [String] {
@@ -85,8 +89,19 @@ struct SpellingCheckerTests {
     func paragraphRelativeOffsets() async throws {
         let text = "Please recieve it."
         let shifted = Paragraph(range: TextRange(location: 500, length: text.utf16.count), text: text)
-        let edit = try #require(await SpellingChecker().flags(in: shifted, language: .en, neverTouch: []).first)
+        let edit = try #require(await SpellingChecker().flags(in: shifted, language: .en, neverTouch: []).first).edit
         #expect(edit.range == TextRange(location: 7, length: 7))
+    }
+
+    @Test("A flag's other guesses differ from its edit and from each other and share its range", .tags(.requiresSystem),
+          arguments: [("Het verjaardg was leuk.", "verjaardg", Language.nl), ("Il est arrivé deja hier.", "deja", .fr), ("Please recieve it.", "recieve", .en)])
+    func alternatives(_ text: String, _ word: String, _ language: Language) async throws {
+        let flag = try #require(await flaggedWithAlternatives(text, language).first { $0.edit.original == word })
+        let replacements = flag.alternatives.map(\.replacement)
+        #expect(!replacements.isEmpty)
+        #expect(!replacements.contains(flag.edit.replacement))
+        #expect(Set(replacements).count == replacements.count)
+        #expect(flag.alternatives.allSatisfy { $0.range == flag.edit.range })
     }
 
     @Test("Several checkers can run side by side and be released", .tags(.requiresSystem))

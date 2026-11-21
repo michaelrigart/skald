@@ -237,7 +237,7 @@ public struct EvalRunner: Sendable {
 
     private func checkSpelling(_ text: String, _ language: Language) async -> CaseResult {
         let paragraph = Paragraph(range: TextRange(location: 0, length: text.utf16.count), text: text)
-        let flags = await spelling.flags(in: paragraph, language: language, neverTouch: [])
+        let flags = await spelling.flags(in: paragraph, language: language, neverTouch: []).map(\.edit)
         guard guardOn else { return CaseResult(output: Self.apply(flags, to: text)) }
         let kept = await editGuard.resolve(flags, in: text, language: language, source: .spelling, oracle: oracle, confirmer: nil)
         return CaseResult(output: Self.apply(kept, to: text))

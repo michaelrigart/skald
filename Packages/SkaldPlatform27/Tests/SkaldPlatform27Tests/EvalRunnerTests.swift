@@ -178,8 +178,8 @@ private actor ScriptedEngine: Engine {
 private struct ScriptedSpelling: SpellingChecking {
     let flags: [Edit]
 
-    func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [Edit] {
-        flags
+    func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [SpellingFlag] {
+        flags.map { SpellingFlag(edit: $0) }
     }
 }
 

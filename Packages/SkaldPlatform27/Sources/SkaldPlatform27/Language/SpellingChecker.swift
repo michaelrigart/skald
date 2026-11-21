@@ -31,17 +31,17 @@ public final class SpellingChecker: SpellingChecking {
         }
     }
 
-    public func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [Edit] {
+    public func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [SpellingFlag] {
         let documentTag = documentTag
         let text = p.text
         return await queue.run { Self.flags(in: text, language: language, neverTouch: neverTouch, tag: documentTag.allocate()) }
     }
 
-    private static func flags(in text: String, language: Language, neverTouch: Set<String>, tag: Int) -> [Edit] {
+    private static func flags(in text: String, language: Language, neverTouch: Set<String>, tag: Int) -> [SpellingFlag] {
         let checker = NSSpellChecker.shared
         let ns = text as NSString
         let protected = protectedRanges(in: ns, neverTouch)
-        var edits: [Edit] = []
+        var flags: [SpellingFlag] = []
         var offset = 0
         while offset < ns.length {
             let found = checker.checkSpelling(
@@ -51,26 +51,46 @@ public final class SpellingChecker: SpellingChecking {
             offset = found.location + found.length
             if protected.contains(where: { NSLocationInRange(found.location, $0) && NSMaxRange(found) <= NSMaxRange($0) }) { continue }
             if language == .en, isAcceptedByBritishEnglish(ns.substring(with: found), checker, tag) { continue }
-            let guess = language == .en
-                ? britishGuess(forWordRange: found, in: text, checker, tag)
-                : checker.guesses(forWordRange: found, in: text, language: language.rawValue, inSpellDocumentWithTag: tag)?.first ?? ""
-            edits += TextDiff.edits(from: text, to: ns.replacingCharacters(in: found, with: guess))
+            let guesses = language == .en
+                ? britishGuesses(forWordRange: found, in: text, checker, tag)
+                : checker.guesses(forWordRange: found, in: text, language: language.rawValue, inSpellDocumentWithTag: tag) ?? []
+            let first = guesses.first ?? ""
+            for edit in TextDiff.edits(from: text, to: ns.replacingCharacters(in: found, with: first)) {
+                flags.append(SpellingFlag(edit: edit, alternatives: alternatives(guesses.dropFirst(), to: edit, in: ns, replacing: found)))
+            }
+        }
+        return flags
+    }
+
+    /// The guesses after the first as edits, each differing from the first and over the first's range, none twice.
+    private static func alternatives(_ guesses: ArraySlice<String>, to first: Edit, in text: NSString, replacing found: NSRange) -> [Edit] {
+        var seen: Set<String> = [first.replacement]
+        var edits: [Edit] = []
+        for guess in guesses where seen.insert(guess).inserted {
+            let diff = TextDiff.edits(from: text as String, to: text.replacingCharacters(in: found, with: guess))
+            if let edit = diff.first, diff.count == 1, edit.range == first.range { edits.append(edit) }
         }
         return edits
     }
 
     /// British spelling is the default: the American dictionary ranks its guesses better, so its first guess
     /// stands when the British dictionary accepts it, else the British guess closest to it ("behavior" →
-    /// "behaviour", "center" → "centre"), else the American guess. Without an American guess there is none.
-    private static func britishGuess(forWordRange range: NSRange, in text: String, _ checker: NSSpellChecker, _ tag: Int) -> String {
-        guard let american = checker.guesses(forWordRange: range, in: text, language: "en", inSpellDocumentWithTag: tag)?.first else { return "" }
-        if isAcceptedByBritishEnglish(american, checker, tag) { return american }
-        let british = checker.guesses(forWordRange: range, in: text, language: "en_GB", inSpellDocumentWithTag: tag) ?? []
-        let nearest = british.enumerated()
-            .map { (distance: distance($0.element, american), order: $0.offset, guess: $0.element) }
-            .filter { $0.distance <= 2 }
-            .min { ($0.distance, $0.order) < ($1.distance, $1.order) }
-        return nearest?.guess ?? american
+    /// "behaviour", "center" → "centre"), else the American guess. Without an American guess there is none. The
+    /// guesses after the first are the American ones the British dictionary accepts, without the one chosen.
+    private static func britishGuesses(forWordRange range: NSRange, in text: String, _ checker: NSSpellChecker, _ tag: Int) -> [String] {
+        let american = checker.guesses(forWordRange: range, in: text, language: "en", inSpellDocumentWithTag: tag) ?? []
+        guard let first = american.first else { return [] }
+        var chosen = first
+        if !isAcceptedByBritishEnglish(first, checker, tag) {
+            let british = checker.guesses(forWordRange: range, in: text, language: "en_GB", inSpellDocumentWithTag: tag) ?? []
+            let nearest = british.enumerated()
+                .map { (distance: distance($0.element, first), order: $0.offset, guess: $0.element) }
+                .filter { $0.distance <= 2 }
+                .min { ($0.distance, $0.order) < ($1.distance, $1.order) }
+            chosen = nearest?.guess ?? first
+        }
+        let others = american.filter { $0 != chosen && isAcceptedByBritishEnglish($0, checker, tag) }
+        return [chosen] + others
     }
 
     /// Edits between two words, a swap of neighbouring letters counting as one ("center", "centre").

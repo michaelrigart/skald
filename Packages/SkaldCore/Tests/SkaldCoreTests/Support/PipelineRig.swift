@@ -123,14 +123,16 @@ struct PipelineRig {
         key: Bool = false,
         onClaudeFactory: (@Sendable () -> Void)? = nil,
         misspellings: [String: String] = ["teh": "the"],
+        guesses: [String: [String]]? = nil,
         oracleGated: Bool = false,
         detector: any LanguageDetecting = FakeLanguageDetector()
     ) {
         self.engine = engine
         self.claude = claude
         self.key = key
-        spelling = FakeSpelling(misspellings)
-        oracle = GatedOracle(misspelled: Set(misspellings.keys.map { $0.lowercased() }), gated: oracleGated)
+        let guessed = guesses ?? misspellings.mapValues { [$0] }
+        spelling = FakeSpelling(guesses: guessed)
+        oracle = GatedOracle(misspelled: Set(guessed.keys.map { $0.lowercased() }), gated: oracleGated)
         router = LiveRouter(Self.engineRouter(settings, key: key))
         let models = claudeModels
         let outcomes = claudeOutcomes

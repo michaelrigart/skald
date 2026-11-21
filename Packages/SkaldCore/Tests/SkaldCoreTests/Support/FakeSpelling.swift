@@ -10,12 +10,16 @@ actor FakeSpelling: SpellingChecking {
         let neverTouch: Set<String>
     }
 
-    private let misspellings: [String: String]
+    private let guesses: [String: [String]]
     private(set) var calls: [Call] = []
     private var heldTexts: [String: CallGate] = [:]
 
+    init(guesses: [String: [String]]) {
+        self.guesses = guesses
+    }
+
     init(_ misspellings: [String: String]) {
-        self.misspellings = misspellings
+        self.init(guesses: misspellings.mapValues { [$0] })
     }
 
     /// Holds the first call for `text` until it is released or the hold is opened; later calls for it pass.
@@ -40,16 +44,20 @@ actor FakeSpelling: SpellingChecking {
         heldTexts[text]?.stopWaiting(id)
     }
 
-    func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [Edit] {
+    func flags(in p: Paragraph, language: Language, neverTouch: Set<String>) async -> [SpellingFlag] {
         calls.append(Call(text: p.text, language: language, neverTouch: neverTouch))
         if let index = heldTexts[p.text]?.arrive(), index == 0, heldTexts[p.text]?.mustWait(0) == true {
             await withCheckedContinuation { heldTexts[p.text]?.hold(0, $0) }
         }
         let text = p.text as NSString
-        return Tokenizer.tokens(in: p.text).flatMap { token -> [Edit] in
-            guard let suggestion = misspellings[token.text] else { return [] }
-            let revised = text.replacingCharacters(in: NSRange(location: token.range.location, length: token.range.length), with: suggestion)
-            return TextDiff.edits(from: p.text, to: revised)
+        return Tokenizer.tokens(in: p.text).flatMap { token -> [SpellingFlag] in
+            guard let guessed = guesses[token.text], let first = guessed.first else { return [] }
+            func edits(_ guess: String) -> [Edit] {
+                let revised = text.replacingCharacters(in: NSRange(location: token.range.location, length: token.range.length), with: guess)
+                return TextDiff.edits(from: p.text, to: revised)
+            }
+            let alternatives = guessed.dropFirst().compactMap { edits($0).first }
+            return edits(first).map { SpellingFlag(edit: $0, alternatives: alternatives) }
         }
     }
 

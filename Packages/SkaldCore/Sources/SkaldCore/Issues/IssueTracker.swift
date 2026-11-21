@@ -10,10 +10,13 @@ public struct IssueTracker: Sendable {
     private var suspended: Set<FieldID> = []
     private var ignored: Set<Ignored> = []
     private var modelResults: [ParagraphKey: [TextRange]] = [:]
+    /// The paragraphs a spelling or model result was stored for, until they are cleared or gone.
+    private var resultKeys: Set<ParagraphKey> = []
 
     public init() {}
 
     public mutating func setSpelling(_ issues: [Issue], for key: ParagraphKey) {
+        resultKeys.insert(key)
         self.issues.removeAll { $0.key == key && $0.source == .spelling }
         let modelRanges = modelResults[key]
         self.issues.append(contentsOf: issues.filter { issue in
@@ -23,6 +26,7 @@ public struct IssueTracker: Sendable {
     }
 
     public mutating func setModel(_ issues: [Issue], for key: ParagraphKey) {
+        resultKeys.insert(key)
         let kept = issues.filter { !ignored.contains(Ignored(key: $0.key, edit: $0.edit)) }
         let modelRanges = issues.map(\.edit.range)
         modelResults[key] = modelRanges
@@ -54,7 +58,9 @@ public struct IssueTracker: Sendable {
                     edit: issue.edit,
                     source: issue.source,
                     language: issue.language,
-                    engine: issue.engine
+                    engine: issue.engine,
+                    kind: issue.kind,
+                    alternatives: issue.alternatives
                 ))
                 continue
             }
@@ -72,6 +78,9 @@ public struct IssueTracker: Sendable {
             modelResults[key] = nil
             if !dropped.contains(key) { dropped.append(key) }
         }
+        resultKeys = resultKeys.filter { key in
+            key.field != s.field || ParagraphKeys.locate(key, in: parents) != nil || !ParagraphKeys.isGone(key, in: s)
+        }
         return dropped
     }
 
@@ -82,11 +91,13 @@ public struct IssueTracker: Sendable {
     public mutating func clear() {
         issues.removeAll()
         modelResults.removeAll()
+        resultKeys.removeAll()
     }
 
     public mutating func clear(_ key: ParagraphKey) {
         issues.removeAll { $0.key == key }
         modelResults[key] = nil
+        resultKeys.remove(key)
     }
 
     public mutating func ignore(_ id: UUID) {
@@ -125,6 +136,12 @@ public struct IssueTracker: Sendable {
         return issues
             .filter { $0.key.field == field }
             .sorted { $0.fieldRange.location < $1.fieldRange.location }
+    }
+
+    /// Whether a spelling or model result has been stored for a paragraph of the field and is still held; false while
+    /// the field is suspended.
+    public func hasResults(in field: FieldID) -> Bool {
+        !suspended.contains(field) && resultKeys.contains { $0.field == field }
     }
 
     public func hasModelIssues(for key: ParagraphKey, from engine: EngineKind) -> Bool {

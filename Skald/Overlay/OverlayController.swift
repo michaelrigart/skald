@@ -15,7 +15,7 @@ final class OverlayController {
     private let clipboard: any Clipboard
     private let sleep: (Duration) async throws -> Void
 
-    private var snapshot = IssueSnapshot(field: nil, issues: [])
+    private var snapshot = IssueSnapshot(field: nil, issues: [], checked: false)
     /// Bumped by every snapshot, so a redraw read for an older one is dropped.
     private var generation = 0
     private var capabilities: (field: FieldID, value: AccessCapabilities)?
@@ -97,7 +97,7 @@ final class OverlayController {
         generation += 1
         let fieldChanged = new.field != snapshot.field
         if fieldChanged { capabilities = nil }
-        snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues))
+        snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues), checked: new.checked)
         let visible = Set(snapshot.issues.map(\.id))
         cards.retain { $0.survives(visible: visible, in: new.field) }
         if let parked = parking.received(snapshot), !cards.isOpen {

@@ -11,6 +11,9 @@ public struct Issue: Identifiable, Hashable, Sendable {
     public let language: Language
     /// The engine that found a model issue; nil for spelling.
     public let engine: EngineKind?
+    public let kind: IssueKind
+    /// The checker's other guesses over the same range, relative to `chunk` like `edit`.
+    public let alternatives: [Edit]
 
     public init(
         id: UUID = UUID(),
@@ -20,7 +23,9 @@ public struct Issue: Identifiable, Hashable, Sendable {
         edit: Edit,
         source: IssueSource,
         language: Language,
-        engine: EngineKind? = nil
+        engine: EngineKind? = nil,
+        kind: IssueKind? = nil,
+        alternatives: [Edit] = []
     ) {
         self.id = id
         self.key = key
@@ -30,6 +35,8 @@ public struct Issue: Identifiable, Hashable, Sendable {
         self.source = source
         self.language = language
         self.engine = engine
+        self.kind = kind ?? (source == .spelling ? .spelling : .grammar)
+        self.alternatives = alternatives
     }
 
     public var fieldRange: TextRange {

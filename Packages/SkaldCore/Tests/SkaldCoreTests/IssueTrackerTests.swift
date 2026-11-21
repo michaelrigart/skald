@@ -359,3 +359,58 @@ private func longParagraph() -> String {
     #expect(tracker.revalidate(windowSnapshot(grown, window)) == [key])
     #expect(tracker.visible(in: fieldA).isEmpty)
 }
+
+@Test func aFieldHasResultsOnceASpellingOrModelResultIsStoredForIt() {
+    let snapshot = wholeSnapshot("a teh b")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    var tracker = IssueTracker()
+    #expect(!tracker.hasResults(in: fieldA))
+
+    tracker.setSpelling([], for: key)
+    #expect(tracker.hasResults(in: fieldA))
+    #expect(!tracker.hasResults(in: fieldB))
+
+    tracker.clear(key)
+    #expect(!tracker.hasResults(in: fieldA))
+
+    tracker.setModel([], for: key)
+    #expect(tracker.hasResults(in: fieldA))
+    tracker.clear()
+    #expect(!tracker.hasResults(in: fieldA))
+}
+
+@Test func aSuspendedFieldHasNoResultsAndARevalidatedOneKeepsOnlyTheParagraphsStillThere() {
+    let snapshot = wholeSnapshot("a teh b")
+    let key = ParagraphKeys.keyed(snapshot)[0].0
+    var tracker = IssueTracker()
+    tracker.setSpelling([], for: key)
+    tracker.suspend(fieldA)
+    #expect(!tracker.hasResults(in: fieldA))
+
+    tracker.revalidate(snapshot)
+    #expect(tracker.hasResults(in: fieldA))
+
+    tracker.revalidate(wholeSnapshot("a teh c"))
+    #expect(!tracker.hasResults(in: fieldA))
+}
+
+@Test func aRevalidatedIssueKeepsItsKindAndAlternatives() {
+    let snapshot = wholeSnapshot("a teh b")
+    let (key, parent) = ParagraphKeys.keyed(snapshot)[0]
+    let first = TextDiff.edits(from: parent.text, to: "a the b")[0]
+    let other = TextDiff.edits(from: parent.text, to: "a ten b")[0]
+    var tracker = IssueTracker()
+    tracker.setSpelling([
+        Issue(key: key, parent: parent, chunk: parent, edit: first, source: .spelling, language: .en, kind: .accent, alternatives: [other]),
+    ], for: key)
+    tracker.revalidate(wholeSnapshot("a teh b"))
+    let kept = tracker.visible(in: fieldA)
+    #expect(kept.map(\.kind) == [.accent])
+    #expect(kept.map(\.alternatives) == [[other]])
+}
+
+@Test func anIssueWithoutAKindIsSpellingOrGrammarBySource() {
+    let snapshot = wholeSnapshot("a teh b")
+    #expect(issue(in: snapshot, replacing: "teh", with: "the").kind == .spelling)
+    #expect(issue(in: snapshot, replacing: "teh", with: "the", source: .model).kind == .grammar)
+}

@@ -3,10 +3,13 @@ import Foundation
 public struct IssueSnapshot: Sendable, Equatable {
     public let field: FieldID?
     public let issues: [Issue]
+    /// Whether Skald is not paused and a result is in for a paragraph of the field, so an empty list means a clean field.
+    public let checked: Bool
 
-    public init(field: FieldID?, issues: [Issue]) {
+    public init(field: FieldID?, issues: [Issue], checked: Bool) {
         self.field = field
         self.issues = issues
+        self.checked = checked
     }
 }
 
@@ -51,6 +54,12 @@ public actor CheckPipeline {
         }
     }
 
+    /// A kept edit with the guesses the guard also kept over its range.
+    private struct Found {
+        let edit: Edit
+        var alternatives: [Edit] = []
+    }
+
     private struct BackgroundJob {
         let key: ParagraphKey
         let generation: Int
@@ -64,6 +73,8 @@ public actor CheckPipeline {
     }
 
     public static let claudeTimeout: Duration = .seconds(5)
+    /// The most guesses an issue offers after its first.
+    public static let maxAlternatives = 2
 
     public nonisolated let issues: AsyncStream<IssueSnapshot>
     private let publisher: AsyncStream<IssueSnapshot>.Continuation
@@ -85,7 +96,7 @@ public actor CheckPipeline {
     private var editGuard: EditGuard
     private var scheduler = CheckScheduler()
     private(set) var tracker = IssueTracker()
-    private(set) var lastPublished = IssueSnapshot(field: nil, issues: [])
+    private(set) var lastPublished = IssueSnapshot(field: nil, issues: [], checked: false)
     private var timing: Timing
     private var events: Task<Void, Never>?
     private var timer: Timer?
@@ -221,13 +232,22 @@ public actor CheckPipeline {
         fieldLanguages[field]
     }
 
-    public func accept(_ id: UUID) async -> ReplaceOutcome {
-        guard let issue = tracker.issue(id), !issue.edit.writeText.isEmpty else { return .failed }
-        let write = issue.edit.writeRange
+    /// Writes the issue's fix, or with `alternative` the guess at that index of its alternatives.
+    public func accept(_ id: UUID, alternative: Int? = nil) async -> ReplaceOutcome {
+        guard let issue = tracker.issue(id) else { return .failed }
+        let edit: Edit
+        if let alternative {
+            guard issue.alternatives.indices.contains(alternative) else { return .failed }
+            edit = issue.alternatives[alternative]
+        } else {
+            edit = issue.edit
+        }
+        guard !edit.writeText.isEmpty else { return .failed }
+        let write = edit.writeRange
         let outcome = await access.replace(
             TextRange(location: issue.chunk.range.location + write.location, length: write.length),
             expected: issue.expected,
-            with: issue.edit.writeText,
+            with: edit.writeText,
             in: issue.key.field
         )
         tracker.remove(id)
@@ -408,9 +428,15 @@ public actor CheckPipeline {
         }
         let flags = await spelling.flags(in: chunk, language: language, neverTouch: Set(settings.neverTouch))
         let editGuard = self.editGuard
-        let kept = await editGuard.resolve(flags, in: chunk.text, language: language, source: .spelling, oracle: oracle, confirmer: nil)
+        let resolved = await editGuard.resolve(
+            flags.map(\.edit) + flags.flatMap(\.alternatives), in: chunk.text, language: language, source: .spelling, oracle: oracle, confirmer: nil
+        )
+        let kept = Set(resolved)
+        let found = flags.filter { kept.contains($0.edit) }.map {
+            Found(edit: $0.edit, alternatives: Array($0.alternatives.filter(kept.contains).prefix(Self.maxAlternatives)))
+        }
         guard epoch == self.epoch, await route(language, .spelling, app: key.field.app) != .off, epoch == self.epoch, spellingJobs[key] == id,
-              let issues = anchored(kept, key: key, source: .spelling, language: language, engine: nil)
+              let issues = anchored(found, key: key, source: .spelling, language: language, engine: nil, facts: WordFacts())
         else {
             guard spellingJobs[key] == id else { return }
             return send(.forget([key]))
@@ -520,10 +546,12 @@ public actor CheckPipeline {
             await self?.mayConfirm(language, engine: engine, epoch: epoch, generation: generation) ?? false
         }
         let kept: [Edit]? = if case .kept(let edits) = answered { edits } else { nil }
+        // Awaited before the route lookup and the checks below, so a stale answer is still dropped.
+        let facts = if let kept, !kept.isEmpty { await oracle.facts(for: EditGuard.words(in: kept), language: language) } else { WordFacts() }
         let expected: TypingRoute = engine == .claude ? .claude : .model
         let current = fallingBack ? await onDeviceRoute(language) : await route(language, .model, app: key.field.app)
         guard isCurrent(epoch, generation), current == expected, isCurrent(epoch, generation),
-              let issues = anchored(kept ?? [], key: key, source: .model, language: language, engine: engine)
+              let issues = anchored((kept ?? []).map { Found(edit: $0) }, key: key, source: .model, language: language, engine: engine, facts: facts)
         else { return .dropped }
         guard kept != nil else { return .checked }
         tracker.setModel(issues, for: key)
@@ -650,16 +678,25 @@ public actor CheckPipeline {
     }
 
     /// Anchors kept edits to the key's paragraph in the latest snapshot, or returns nil when it is gone.
-    private func anchored(_ edits: [Edit], key: ParagraphKey, source: IssueSource, language: Language, engine: EngineKind?) -> [Issue]? {
+    private func anchored(
+        _ found: [Found], key: ParagraphKey, source: IssueSource, language: Language, engine: EngineKind?, facts: WordFacts
+    ) -> [Issue]? {
         guard let latest, let (parent, chunk) = ParagraphKeys.locate(key, in: latest.parents) else { return nil }
-        return edits
-            .filter { !editGuard.touchesNeverTouch($0, in: chunk.text) }
-            .map { Issue(key: key, parent: parent, chunk: chunk, edit: $0, source: source, language: language, engine: engine) }
+        return found
+            .filter { !editGuard.touchesNeverTouch($0.edit, in: chunk.text) }
+            .map {
+                Issue(
+                    key: key, parent: parent, chunk: chunk, edit: $0.edit, source: source, language: language, engine: engine,
+                    kind: IssueClassifier.kind(of: $0.edit, in: chunk.text, language: language, source: source, facts: facts),
+                    alternatives: $0.alternatives
+                )
+            }
     }
 
     private func publish() {
         let visible = isPaused ? [] : currentField.map { tracker.visible(in: $0) } ?? []
-        let snapshot = IssueSnapshot(field: currentField, issues: visible)
+        let checked = !isPaused && (currentField.map { tracker.hasResults(in: $0) } ?? false)
+        let snapshot = IssueSnapshot(field: currentField, issues: visible, checked: checked)
         guard snapshot != lastPublished else { return }
         lastPublished = snapshot
         publisher.yield(snapshot)

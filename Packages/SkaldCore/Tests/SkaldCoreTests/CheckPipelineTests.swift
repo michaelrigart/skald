@@ -728,7 +728,7 @@ struct CheckPipelineTests {
         await rig.pipeline.drain()
 
         #expect(await rig.visible().isEmpty)
-        #expect(await rig.pipeline.lastPublished == IssueSnapshot(field: fieldA, issues: []))
+        #expect(await rig.pipeline.lastPublished == IssueSnapshot(field: fieldA, issues: [], checked: false))
         #expect(await rig.engine.requests.isEmpty)
     }
 
@@ -743,7 +743,7 @@ struct CheckPipelineTests {
         await rig.pipeline.drain()
 
         #expect(await rig.visible(in: fieldA).isEmpty)
-        #expect(await rig.pipeline.lastPublished == IssueSnapshot(field: fieldB, issues: []))
+        #expect(await rig.pipeline.lastPublished == IssueSnapshot(field: fieldB, issues: [], checked: false))
         #expect(await rig.engine.requests.isEmpty)
     }
 
@@ -1156,5 +1156,81 @@ struct CheckPipelineTests {
         try await late.value
         try await early.value
         #expect(clock.wokenDeadlines.map(\.offset) == [.milliseconds(100), .milliseconds(200)])
+    }
+}
+
+private let sawTeh = "I saw teh logs again today."
+private let tehGuesses = ["teh": ["the", "ten", "tea", "tech"]]
+private let unchanged = FakeEngine { request, _ in .success(request.text) }
+
+@Suite(.timeLimit(.minutes(1)))
+struct IssueDetailTests {
+    private func spellingIssue(_ rig: Rig, in text: String = sawTeh) async throws -> Issue {
+        await rig.focus(text)
+        await rig.check()
+        return try #require(await rig.visible().first { $0.source == .spelling })
+    }
+
+    @Test func aSpellingIssueCarriesItsKindAndTheFirstTwoOtherGuesses() async throws {
+        let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(issue.kind == .spelling)
+        #expect(issue.edit.replacement == "the")
+        #expect(issue.alternatives.map(\.replacement) == ["ten", "tea"])
+    }
+
+    @Test func aModelIssueIsClassified() async {
+        let rig = Rig(makeSettings(), engine: .correcting(["word": "wordt"]), misspellings: [:])
+        await rig.focus("Ik heb gezien dat het word uitgerold.")
+        await rig.check()
+        #expect(await rig.pipeline.lastPublished.issues.map(\.kind) == [.verbForm])
+        #expect(await rig.pipeline.lastPublished.issues.map(\.alternatives) == [[]])
+    }
+
+    @Test func aNeverTouchGuessIsNotOfferedAndTheNextOneIs() async throws {
+        let rig = Rig(makeSettings(model: false, neverTouch: ["ten"]), guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(issue.alternatives.map(\.replacement) == ["tea", "tech"])
+    }
+
+    @Test func acceptingAnAlternativeWritesItsText() async throws {
+        let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(await rig.pipeline.accept(issue.id, alternative: 1) == .replaced)
+        let written = try #require(await rig.access.replacements.last)
+        #expect(await rig.access.replacements.count == 1)
+        let result = (sawTeh as NSString).replacingCharacters(in: NSRange(location: written.range.location, length: written.range.length), with: written.text)
+        #expect(result == "I saw tea logs again today.")
+        #expect(written.expected == issue.expected)
+        #expect(written.field == fieldA)
+        #expect(await rig.pipeline.lastPublished.issues.isEmpty)
+    }
+
+    @Test func anUnknownAlternativeIsRefused() async throws {
+        let rig = Rig(makeSettings(model: false), guesses: tehGuesses)
+        let issue = try await spellingIssue(rig)
+        #expect(await rig.pipeline.accept(issue.id, alternative: 2) == .failed)
+        #expect(await rig.pipeline.accept(issue.id, alternative: -1) == .failed)
+        #expect(await rig.access.replacements.isEmpty)
+        #expect(await rig.pipeline.lastPublished.issues.map(\.id) == [issue.id])
+    }
+
+    @Test func theSnapshotSaysCheckedOnceAResultIsIn() async {
+        let clean = "Everything here is spelled right."
+        let rig = Rig(makeSettings(), engine: unchanged)
+        await rig.spelling.hold(clean)
+        await rig.focus(clean)
+        rig.pass()
+        await rig.spelling.waitForCalls(of: clean, 1)
+        #expect(await rig.pipeline.lastPublished.checked == false)
+        #expect(await rig.pipeline.lastPublished.issues.isEmpty)
+
+        await rig.spelling.release(clean)
+        await rig.pipeline.drain()
+        #expect(await rig.pipeline.lastPublished.checked == true)
+        #expect(await rig.pipeline.lastPublished.issues.isEmpty)
+
+        await rig.pipeline.setPaused(true)
+        #expect(await rig.pipeline.lastPublished.checked == false)
     }
 }

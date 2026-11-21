@@ -40,7 +40,7 @@ private func resolveRow(_ row: ResolveRow) async {
 private func britishGuessIsKept() async {
     let text = "His behavour was odd during the call."
     let flags = await SpellingChecker().flags(in: Paragraph(range: TextRange(location: 0, length: text.utf16.count), text: text),
-                                              language: .en, neverTouch: [])
+                                              language: .en, neverTouch: []).map(\.edit)
     let kept = await EditGuard(neverTouch: [])
         .resolve(flags, in: text, language: .en, source: .spelling, oracle: SystemWordOracle(), confirmer: nil)
     #expect(kept.map { "\($0.original) → \($0.replacement)" } == ["behavour → behaviour"])

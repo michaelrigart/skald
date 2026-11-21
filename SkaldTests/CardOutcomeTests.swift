@@ -190,17 +190,17 @@ import Testing
         var parking = CardParking()
         let (card, after) = await finishAfterFocusMoved(.unconfirmed, parking: &parking)
         #expect(after == .hides)
-        #expect(parking.received(IssueSnapshot(field: otherField, issues: [])) == nil)
+        #expect(parking.received(IssueSnapshot(field: otherField, issues: [], checked: true)) == nil)
 
         let cached = issue(in: "We was late", revised: "We were late")
-        let shown = parking.received(IssueSnapshot(field: flagged.key.field, issues: [cached]))
+        let shown = parking.received(IssueSnapshot(field: flagged.key.field, issues: [cached], checked: true))
         #expect(shown?.card === card)
         #expect(card.phase == .notice)
         #expect(!card.offersAccept && !card.offersCopy && card.neverFlagWord == nil)
         #expect(parking.parked == nil)
 
         let revalidated = issue(in: "We was late today", revised: "We were late today")
-        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [revalidated])) == nil)
+        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [revalidated], checked: true)) == nil)
         #expect(card.survives(visible: [revalidated.id], in: flagged.key.field))
         #expect(card.phase == .notice)
         #expect(card.survives(.caret))
@@ -212,15 +212,15 @@ import Testing
         var parking = CardParking()
         let (_, after) = await finishAfterFocusMoved(.failed, parking: &parking)
         #expect(after == .closes)
-        #expect(parking.received(IssueSnapshot(field: otherField, issues: [])) == nil)
-        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
+        #expect(parking.received(IssueSnapshot(field: otherField, issues: [], checked: true)) == nil)
+        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [], checked: true)) == nil)
     }
 
     @Test func aParkedCardIsDroppedWhenAnotherCardOpens() async {
         var parking = CardParking()
         let (card, _) = await finishAfterFocusMoved(.unconfirmed, parking: &parking)
         parking.otherCardOpened()
-        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [])) == nil)
+        #expect(parking.received(IssueSnapshot(field: flagged.key.field, issues: [], checked: true)) == nil)
         #expect(card.phase != .notice)
     }
 
