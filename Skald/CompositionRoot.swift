@@ -47,9 +47,10 @@ final class CompositionRoot {
     init() {
         let keychain = KeychainStore.claudeKey
         let store = SettingsStore(directory: Self.settingsDirectory)
-        let (settings, readOnly) = Self.load(store)
-        let model = SettingsModel(settings: settings, store: store, keychain: keychain, readOnly: readOnly)
+        let (loaded, readOnly) = Self.load(store)
+        let model = SettingsModel(settings: loaded, store: store, keychain: keychain, readOnly: readOnly)
         self.model = model
+        let settings = model.settings
         applied = settings
         let switches = AppSwitches(settings)
         self.switches = switches

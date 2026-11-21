@@ -29,6 +29,7 @@ import struct SwiftUI.Binding
         self.store = store
         self.keychain = keychain
         claudeKeyStored = keychain.containsValue()
+        if !claudeKeyStored { self.settings.claudeTyping = false }
         saveNote = readOnly ? Self.readOnlyNote : nil
     }
 
@@ -113,9 +114,12 @@ import struct SwiftUI.Binding
         Binding(get: { self.settings.claudeLanguages[language] ?? false }, set: { on in self.update { $0.claudeLanguages[language] = on } })
     }
 
-    /// Whether Claude takes this language's typing checks, the Settings counterpart of the router's rule.
+    var claudeTypingIsOn: Bool {
+        settings.claudeTypingIsOn(keyStored: claudeKeyStored)
+    }
+
     func claudeTakes(_ language: Language) -> Bool {
-        settings.claudeTyping && claudeKeyStored && language != .en && settings.claudeLanguages[language] == true
+        settings.claudeTakes(language, keyStored: claudeKeyStored)
     }
 
     // MARK: Claude key
@@ -141,14 +145,14 @@ import struct SwiftUI.Binding
         } catch {
             return false
         }
-        update { $0.claudeTyping = false }
         claudeKeyChanged()
         return true
     }
 
-    /// The cached presence the router reads, so routing never asks the Keychain.
+    /// The cached presence the router reads, so routing never asks the Keychain. Without a key the Claude switch is off.
     private func claudeKeyChanged() {
         claudeKeyStored = keychain.containsValue()
+        if !claudeKeyStored { update { $0.claudeTyping = false } }
         onChange?(settings)
         onClaudeKeyChange?()
     }

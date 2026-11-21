@@ -28,10 +28,12 @@ private final class ChangeLog {
         try testKeychain.delete()
     }
 
-    private func makeModel(_ directory: URL = temporaryDirectory(), readOnly: Bool = false) -> (SettingsModel, SettingsStore) {
+    private func makeModel(
+        _ directory: URL = temporaryDirectory(), settings: Settings = Settings(), readOnly: Bool = false
+    ) -> (SettingsModel, SettingsStore) {
         let store = SettingsStore(directory: directory)
         if readOnly { _ = store.load() }
-        return (SettingsModel(settings: Settings(), store: store, keychain: testKeychain, readOnly: readOnly), store)
+        return (SettingsModel(settings: settings, store: store, keychain: testKeychain, readOnly: readOnly), store)
     }
 
     @Test func anAppOverrideIsStoredOnlyWhereItDiffersFromTheShippedDefault() {
@@ -122,6 +124,26 @@ private final class ChangeLog {
         #expect(model.saveClaudeKey("sk-test"))
         #expect(model.setClaudeTyping(true))
         #expect(model.settings.claudeTyping)
+    }
+
+    @Test func aSwitchLeftOnWithoutAKeyStaysOffWhenAKeyIsStored() throws {
+        defer { try? testKeychain.delete() }
+        var stale = Settings()
+        stale.claudeTyping = true
+        let (model, _) = makeModel(settings: stale)
+        #expect(!model.claudeKeyStored)
+        #expect(!model.settings.claudeTyping)
+        #expect(!model.claudeTypingIsOn)
+
+        var reported: [Settings] = []
+        model.onChange = { reported.append($0) }
+        #expect(model.saveClaudeKey("sk-test"))
+        #expect(model.claudeKeyStored)
+        #expect(!model.settings.claudeTyping)
+        #expect(reported.allSatisfy { !$0.claudeTyping })
+        #expect(!model.claudeTakes(.nl))
+        #expect(model.setClaudeTyping(true))
+        #expect(model.claudeTakes(.nl))
     }
 
     @Test func theClaudeSwitchNeverRewritesTheOnDeviceSwitches() throws {

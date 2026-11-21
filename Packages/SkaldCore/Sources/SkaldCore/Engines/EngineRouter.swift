@@ -40,8 +40,7 @@ public struct EngineRouter: Sendable {
     }
 
     public var claudeTypingLanguages: [Language] {
-        guard settings.claudeTyping, claudeKeyPresent else { return [] }
-        return [Language.nl, .fr].filter { settings.claudeLanguages[$0] == true }
+        settings.claudeTypingLanguages(keyStored: claudeKeyPresent)
     }
 
     public func panel(requested: EngineKind?, app: String?) -> PanelRoute {

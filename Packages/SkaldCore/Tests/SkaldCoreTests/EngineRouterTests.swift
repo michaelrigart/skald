@@ -224,6 +224,24 @@ func anAppWithoutABundleIdentifierNeverGoesToClaude(_ app: String) {
     #expect(router.claudeTypingLanguages == [])
 }
 
+@Test func oneRuleSaysWhichLanguagesClaudeTakesWhileTyping() {
+    var settings = Settings()
+    #expect(!settings.claudeTakes(.nl, keyStored: true))
+    settings.claudeTyping = true
+    #expect(!settings.claudeTypingIsOn(keyStored: false))
+    #expect(settings.claudeTypingLanguages(keyStored: false).isEmpty)
+    #expect(settings.claudeTypingIsOn(keyStored: true))
+    #expect(settings.claudeTypingLanguages(keyStored: true) == [.nl, .fr])
+    settings.claudeLanguages = [.en: true, .nl: true, .fr: false]
+    #expect(settings.claudeTakes(.nl, keyStored: true))
+    #expect(!settings.claudeTakes(.fr, keyStored: true))
+    #expect(!settings.claudeTakes(.en, keyStored: true))
+    for key in [false, true] {
+        let router = EngineRouter(settings: settings, appleAvailability: nil, thermalPaused: false, claudeKeyPresent: key)
+        #expect(router.claudeTypingLanguages == settings.claudeTypingLanguages(keyStored: key))
+    }
+}
+
 @Test func theOnDeviceSwitchesAreNotReadForARoutedLanguage() {
     let router = claudeRouter(
         configure: { $0.typingChecks[.fr] = false; $0.modelChecks[.fr] = false },

@@ -36,7 +36,7 @@ private struct ClaudeTypingSection: View {
     let model: SettingsModel
 
     private var isOn: Binding<Bool> {
-        Binding(get: { model.settings.claudeTyping && model.claudeKeyStored }, set: { model.setClaudeTyping($0) })
+        Binding(get: { model.claudeTypingIsOn }, set: { model.setClaudeTyping($0) })
     }
 
     var body: some View {

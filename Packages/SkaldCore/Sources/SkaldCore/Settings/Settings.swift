@@ -118,6 +118,21 @@ public struct Settings: Codable, Equatable, Sendable {
         mode(app: bundleID) != .off
     }
 
+    /// Whether Claude checks while typing is on: the switch, and a stored key.
+    public func claudeTypingIsOn(keyStored: Bool) -> Bool {
+        claudeTyping && keyStored
+    }
+
+    /// The languages Claude takes while typing, whatever the app: never English.
+    public func claudeTypingLanguages(keyStored: Bool) -> [Language] {
+        guard claudeTypingIsOn(keyStored: keyStored) else { return [] }
+        return [Language.nl, .fr].filter { claudeLanguages[$0] == true }
+    }
+
+    public func claudeTakes(_ language: Language, keyStored: Bool) -> Bool {
+        claudeTypingLanguages(keyStored: keyStored).contains(language)
+    }
+
     public mutating func addNeverTouch(_ word: String) {
         neverTouch = Settings.normalised(neverTouch + [word])
     }
