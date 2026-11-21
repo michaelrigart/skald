@@ -9,12 +9,14 @@ public struct ScrollSettle<Reading: Equatable & Sendable>: Sendable {
 
     private enum State: Sendable {
         case showing
-        case hidden(lastScroll: Duration, previous: Reading?, reads: Int)
+        case hidden(lastScroll: Duration, previous: Reading?)
         case confirming(shown: Reading, agreed: Int)
     }
 
     private let ceiling: Duration?
     private var state: State = .showing
+    /// Reads taken since the last scroll event, across every restart a differing read causes.
+    private var reads = 0
 
     public init(ceiling: Duration?) {
         self.ceiling = ceiling
@@ -26,28 +28,31 @@ public struct ScrollSettle<Reading: Equatable & Sendable>: Sendable {
     }
 
     public mutating func scrolled(at now: Duration) -> [Action] {
-        state = .hidden(lastScroll: now, previous: nil, reads: 0)
+        state = .hidden(lastScroll: now, previous: nil)
+        reads = 0
         guard let ceiling else { return [.hide] }
         return [.hide, .read(after: ceiling)]
     }
 
     public mutating func read(_ reading: Reading, at now: Duration) -> [Action] {
-        guard let ceiling else { return [] }
+        guard let ceiling, reads < Self.maxReads else { return [] }
+        if case .showing = state { return [] }
+        reads += 1
+        let spent = reads >= Self.maxReads
         switch state {
         case .showing:
             return []
-        case let .hidden(lastScroll, previous, reads):
-            if let previous, previous == reading, now - lastScroll >= ceiling * 2 {
+        case let .hidden(lastScroll, previous):
+            if !spent, let previous, previous == reading, now - lastScroll >= ceiling * 2 {
                 state = .confirming(shown: reading, agreed: 0)
                 return [.show, .read(after: ceiling)]
             }
-            let taken = reads + 1
-            state = .hidden(lastScroll: lastScroll, previous: reading, reads: taken)
-            return taken >= Self.maxReads ? [] : [.read(after: ceiling)]
+            state = .hidden(lastScroll: lastScroll, previous: reading)
+            return spent ? [] : [.read(after: ceiling)]
         case let .confirming(shown, agreed):
             guard shown == reading else {
-                state = .hidden(lastScroll: now, previous: reading, reads: 1)
-                return [.hide, .read(after: ceiling)]
+                state = .hidden(lastScroll: now, previous: reading)
+                return spent ? [.hide] : [.hide, .read(after: ceiling)]
             }
             let total = agreed + 1
             if total >= Self.confirmingReads {
@@ -55,12 +60,13 @@ public struct ScrollSettle<Reading: Equatable & Sendable>: Sendable {
                 return []
             }
             state = .confirming(shown: shown, agreed: total)
-            return [.read(after: ceiling)]
+            return spent ? [] : [.read(after: ceiling)]
         }
     }
 
     /// A text or caret change drew fresh underlines: showing again, nothing pending.
     public mutating func redrawn() {
         state = .showing
+        reads = 0
     }
 }

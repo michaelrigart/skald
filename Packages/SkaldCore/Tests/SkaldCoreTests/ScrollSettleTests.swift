@@ -44,6 +44,14 @@ private func shown(_ reading: String, at time: Duration) -> ScrollSettle<String>
     #expect(settle.read("a", at: .milliseconds(350)) == [.show, .read(after: c)])
 }
 
+@Test func aScrollForgetsTheReadBeforeIt() {
+    var settle = ScrollSettle<String>(ceiling: c)
+    _ = settle.scrolled(at: .zero)
+    _ = settle.read("a", at: .milliseconds(100))
+    _ = settle.scrolled(at: .milliseconds(150))
+    #expect(settle.read("a", at: .milliseconds(350)) == [.read(after: c)])
+}
+
 @Test func aDifferingReadAfterShowingHidesAgainAndStartsOver() {
     var settle = shown("a", at: .milliseconds(200))
     #expect(settle.read("a", at: .milliseconds(300)) == [.read(after: c)])
@@ -84,4 +92,18 @@ private func shown(_ reading: String, at time: Duration) -> ScrollSettle<String>
     settle.redrawn()
     #expect(settle.read("a", at: .milliseconds(100)) == [])
     #expect(!settle.isHidden)
+}
+
+@Test func theBoundHoldsAcrossRestarts() {
+    var settle = ScrollSettle<String>(ceiling: c)
+    _ = settle.scrolled(at: .zero)
+    let readings = ["a", "a", "b", "b", "b", "c", "c", "c", "d", "d", "d", "e", "e", "e", "f", "f", "f", "g", "g", "h"]
+    for (index, reading) in readings.enumerated() {
+        let result = settle.read(reading, at: c * (index + 1))
+        #expect(result.isEmpty == (index == 19))
+    }
+    #expect(settle.isHidden)
+    #expect(settle.read("h", at: .seconds(10)) == [])
+    #expect(settle.read("h", at: .seconds(20)) == [])
+    #expect(settle.isHidden)
 }
