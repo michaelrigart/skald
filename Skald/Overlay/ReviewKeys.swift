@@ -14,6 +14,7 @@ final class ReviewKeys {
     /// How long a released key that never reports coming up stays held.
     static let lingerLimit: Duration = .seconds(1)
 
+    /// `isDown` is also how a press that repeats while the key is held is told from a new one.
     private struct Slot {
         let key: ReviewMode.Key
         let token: HotkeyToken
@@ -34,9 +35,10 @@ final class ReviewKeys {
     var isHolding: Bool { pressed != nil }
 
     /// All six or none: false, with nothing held, when any registration fails. A key left over from the last
-    /// `release` is freed first.
+    /// `release` is freed first, and one that is still down stays down in its new slot.
     func hold(_ pressed: @escaping @MainActor (ReviewMode.Key) -> Void) -> Bool {
         if isHolding { return true }
+        let stillDown = Set(slots.filter(\.value.isDown).keys)
         freeAll()
         for binding in Self.bindings {
             let code = binding.hotkey.keyCode
@@ -49,7 +51,7 @@ final class ReviewKeys {
                 freeAll()
                 return false
             }
-            slots[code] = Slot(key: binding.key, token: token)
+            slots[code] = Slot(key: binding.key, token: token, isDown: stillDown.contains(code))
         }
         self.pressed = pressed
         return true
@@ -74,9 +76,10 @@ final class ReviewKeys {
 
     private func pressed(_ code: UInt16) {
         guard var slot = slots[code] else { return }
+        let wasDown = slot.isDown
         slot.isDown = true
         slots[code] = slot
-        pressed?(slot.key)
+        if !wasDown { pressed?(slot.key) }
     }
 
     private func lifted(_ code: UInt16) {

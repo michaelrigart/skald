@@ -107,8 +107,34 @@ import Testing
 
     @Test func holdingTwiceRegistersOnce() {
         #expect(hold())
+        let tokens = registrar.held.map(\.token)
+        var second: [ReviewMode.Key] = []
+        #expect(keys.hold { second.append($0) })
+        #expect(registrar.held.map(\.token) == tokens)
+        registrar.press(36)
+        #expect(pressed == [.accept] && second.isEmpty)
+    }
+
+    @Test func aKeyHeldDownIsReportedOnce() {
+        _ = hold()
+        registrar.press(36)
+        registrar.press(36)
+        #expect(pressed == [.accept])
+        registrar.lift(36)
+        registrar.press(36)
+        #expect(pressed == [.accept, .accept])
+    }
+
+    @Test func aKeyStillDownStaysHeldThroughTheNextHold() {
+        _ = hold()
+        registrar.press(51)
+        keys.release()
         #expect(hold())
-        #expect(registrar.held.count == 6)
+        keys.release()
+        #expect(registrar.held.map(\.keyCode) == [51])
+        registrar.lift(51)
+        #expect(registrar.held.isEmpty)
+        #expect(pressed == [.dismiss])
     }
 
     @Test func releasingWithoutHoldingDoesNothing() {
@@ -124,6 +150,7 @@ import Testing
         #expect(hold())
         #expect(registrar.held.count == 6 && registrar.held.map(\.token).count == Set(registrar.held.map(\.token)).count)
         pressed = []
+        registrar.lift(36)
         registrar.press(36)
         #expect(pressed == [.accept])
     }
