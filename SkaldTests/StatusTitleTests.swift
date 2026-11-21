@@ -9,14 +9,37 @@ private let british = Locale(identifier: "en_GB")
 /// 2026-11-06 14:30:00 UTC.
 private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
 
+private func resolve(
+    trusted: Bool = true, pausedUntil: Date? = nil, now: Date = halfPastTwo, apple: UnavailableReason? = nil,
+    thermalPaused: Bool = false, claude: ClaudeStatus = .quiet, claudeLanguages: [Language] = [],
+    fallbacks: [ClaudeFallback] = []
+) -> StatusState {
+    StatusState.resolve(
+        trusted: trusted, pausedUntil: pausedUntil, now: now, apple: apple, thermalPaused: thermalPaused,
+        claude: claude, claudeLanguages: claudeLanguages, fallbacks: fallbacks
+    )
+}
+
 @Test func eachStateHasItsTitle() {
-    #expect(StatusState.on.title(locale: british, timeZone: utc) == "Skald is on")
+    #expect(StatusState.onThisMac.title(locale: british, timeZone: utc) == "Checking on this Mac")
     #expect(StatusState.paused(until: halfPastTwo).title(locale: british, timeZone: utc) == "Paused until 14:30")
     #expect(StatusState.spellingOnly(.appleIntelligenceOff).title(locale: british, timeZone: utc)
         == "Spelling only: Apple Intelligence is off")
     #expect(StatusState.spellingOnly(.thermalPause).title(locale: british, timeZone: utc)
         == "Spelling only: paused while this Mac is hot")
     #expect(StatusState.noAccessibility.title(locale: british, timeZone: utc) == "Skald needs Accessibility access")
+}
+
+@Test func claudeStatesNameTheLanguagesAndWhatTheyFellBackTo() {
+    #expect(StatusState.usingClaude([.nl, .fr]).title() == "Dutch and French checks use Claude")
+    #expect(StatusState.usingClaude([.nl]).title() == "Dutch checks use Claude")
+    #expect(StatusState.usingClaude([.fr]).title() == "French checks use Claude")
+    #expect(StatusState.claudeTrouble(.unreachable, fallbacks: [.init(language: .nl, route: .spellingOnly(.languageOff)), .init(language: .fr, route: .off)]).title()
+        == "Claude unreachable: Dutch is spelling only, French isn't checked while typing")
+    #expect(StatusState.claudeTrouble(.keyRejected, fallbacks: [.init(language: .nl, route: .model)]).title()
+        == "Claude has no valid API key: Dutch is checked on this Mac")
+    #expect(StatusState.claudeTrouble(.rateLimited, fallbacks: []).title() == "Claude is limiting requests")
+    #expect(StatusState.claudeTrouble(.declined, fallbacks: []).title() == "Claude declined a paragraph")
 }
 
 @Test func everyReasonHasItsOwnFixedText() {
@@ -32,45 +55,78 @@ private let halfPastTwo = Date(timeIntervalSince1970: 1_793_975_400)
 }
 
 @Test func missingAccessibilityOutranksEverythingElse() {
-    let state = StatusState.resolve(
+    let state = resolve(
         trusted: false, pausedUntil: halfPastTwo, now: halfPastTwo.addingTimeInterval(-60),
-        apple: .appleIntelligenceOff, thermalPaused: true
+        apple: .appleIntelligenceOff, thermalPaused: true,
+        claude: ClaudeStatus(sending: true, trouble: .unreachable), claudeLanguages: [.nl]
     )
     #expect(state == .noAccessibility)
 }
 
 @Test func aPauseInTheFutureOutranksSpellingOnly() {
-    let state = StatusState.resolve(
-        trusted: true, pausedUntil: halfPastTwo, now: halfPastTwo.addingTimeInterval(-60),
-        apple: .appleIntelligenceOff, thermalPaused: false
-    )
+    let state = resolve(pausedUntil: halfPastTwo, now: halfPastTwo.addingTimeInterval(-60), apple: .appleIntelligenceOff)
     #expect(state == .paused(until: halfPastTwo))
 }
 
 @Test func aPauseThatHasEndedNoLongerCounts() {
-    let state = StatusState.resolve(trusted: true, pausedUntil: halfPastTwo, now: halfPastTwo, apple: nil, thermalPaused: false)
-    #expect(state == .on)
+    #expect(resolve(pausedUntil: halfPastTwo, now: halfPastTwo) == .onThisMac)
 }
 
 @Test func appleUnavailabilityOutranksTheThermalPause() {
-    let apple = StatusState.resolve(trusted: true, pausedUntil: nil, now: halfPastTwo, apple: .modelNotReady, thermalPaused: true)
-    #expect(apple == .spellingOnly(.modelNotReady))
-    let hot = StatusState.resolve(trusted: true, pausedUntil: nil, now: halfPastTwo, apple: nil, thermalPaused: true)
-    #expect(hot == .spellingOnly(.thermalPause))
+    #expect(resolve(apple: .modelNotReady, thermalPaused: true) == .spellingOnly(.modelNotReady))
+    #expect(resolve(thermalPaused: true) == .spellingOnly(.thermalPause))
+}
+
+@Test func claudeTroubleRanksBelowPauseAndAboveClaudeAndApple() {
+    let fallbacks: [ClaudeFallback] = [.init(language: .nl, route: .model), .init(language: .fr, route: .off)]
+    let trouble = ClaudeStatus(sending: true, trouble: .unreachable)
+    #expect(resolve(pausedUntil: halfPastTwo.addingTimeInterval(60), claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
+        == .paused(until: halfPastTwo.addingTimeInterval(60)))
+    #expect(resolve(apple: .appleIntelligenceOff, claude: trouble, claudeLanguages: [.nl, .fr], fallbacks: fallbacks)
+        == .claudeTrouble(.unreachable, fallbacks: fallbacks))
+    #expect(resolve(apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: nil), claudeLanguages: [.nl, .fr])
+        == .usingClaude([.nl, .fr]))
+    #expect(resolve(apple: .appleIntelligenceOff, claude: ClaudeStatus(sending: true, trouble: nil)) == .spellingOnly(.appleIntelligenceOff))
+    #expect(resolve(claude: ClaudeStatus(sending: false, trouble: .rateLimited)) == .onThisMac)
+    #expect(resolve(claude: ClaudeStatus(sending: false, trouble: nil), claudeLanguages: [.nl]) == .onThisMac)
 }
 
 @Test func everyStateShowsTheMenuBarGlyphAsATemplateDescribedByItsTitle() throws {
-    let states: [StatusState] = [.on, .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility]
+    let states: [StatusState] = [
+        .onThisMac, .usingClaude([.nl]), .claudeTrouble(.unreachable, fallbacks: []),
+        .paused(until: halfPastTwo), .spellingOnly(.thermalPause), .noAccessibility,
+    ]
     let shared = try #require(NSImage(named: StatusState.glyphName))
     let glyph = try #require(shared.tiffRepresentation)
     for state in states {
-        let image = try #require(state.image())
+        let image = try #require(state.image(sendingToClaude: false))
         #expect(image.tiffRepresentation == glyph)
         #expect(image.isTemplate)
         #expect(image.accessibilityDescription == state.title())
     }
     #expect(Set(states.map { $0.title() }).count == states.count)
     #expect(shared.accessibilityDescription == nil)
+}
+
+@Test func theCloudGlyphShowsOnlyWhileSending() throws {
+    let plain = try #require(NSImage(named: StatusState.glyphName)?.tiffRepresentation)
+    let cloud = try #require(NSImage(named: StatusState.cloudGlyphName)?.tiffRepresentation)
+    #expect(plain != cloud)
+    let state = StatusState.usingClaude([.nl])
+    let sending = try #require(state.image(sendingToClaude: true))
+    let quiet = try #require(state.image(sendingToClaude: false))
+    #expect(sending.tiffRepresentation == cloud)
+    #expect(quiet.tiffRepresentation == plain)
+    #expect(sending.isTemplate)
+    #expect(quiet.isTemplate)
+    #expect(sending.accessibilityDescription == state.title())
+}
+
+@Test func turningOnAnAppThatShipsOffKeepsItOnThisMac() {
+    for bundleID in Settings.defaultOffApps {
+        #expect(StatusItemController.modeWhenTurnedOn(bundleID) == .thisMacOnly)
+    }
+    #expect(StatusItemController.modeWhenTurnedOn("com.apple.TextEdit") == .on)
 }
 
 @Test func theTestHostBuildsNoCompositionRoot() throws {

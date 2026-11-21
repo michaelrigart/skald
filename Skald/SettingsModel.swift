@@ -19,6 +19,8 @@ import struct SwiftUI.Binding
     private(set) var saveNote: String?
 
     @ObservationIgnored var onChange: ((Settings) -> Void)?
+    /// Called after a key is saved or removed, once the router's cached presence is current.
+    @ObservationIgnored var onClaudeKeyChange: (() -> Void)?
     @ObservationIgnored private let store: SettingsStore
     @ObservationIgnored private let keychain: KeychainStore
 
@@ -128,6 +130,7 @@ import struct SwiftUI.Binding
     private func claudeKeyChanged() {
         claudeKeyStored = keychain.containsValue()
         onChange?(settings)
+        onClaudeKeyChange?()
     }
 
     private static let readOnlyNote = "These settings were saved by a newer Skald, so changes last only until Skald quits."

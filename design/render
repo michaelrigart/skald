@@ -6,10 +6,11 @@ assets="$root/Skald/Assets.xcassets"
 contents="$assets/AppIcon.appiconset/Contents.json"
 out="${1:-$assets/AppIcon.appiconset}"
 menubar="${2:-$assets/SkaldMenuBar.imageset}"
+cloud="${3:-$assets/SkaldMenuBarCloud.imageset}"
 
 command -v rsvg-convert >/dev/null || { echo "needs rsvg-convert (Homebrew librsvg)" >&2; exit 1; }
 
-mkdir -p "$out" "$menubar"
+mkdir -p "$out" "$menubar" "$cloud"
 
 /usr/bin/python3 - "$contents" <<'PY' | while read -r file px; do
 import json, sys
@@ -22,3 +23,5 @@ done
 
 rsvg-convert -w 18 -h 18 "$root/design/menubar.svg" -o "$menubar/SkaldMenuBar@1x.png"
 rsvg-convert -w 36 -h 36 "$root/design/menubar.svg" -o "$menubar/SkaldMenuBar@2x.png"
+rsvg-convert -w 18 -h 18 "$root/design/menubar-cloud.svg" -o "$cloud/SkaldMenuBarCloud@1x.png"
+rsvg-convert -w 36 -h 36 "$root/design/menubar-cloud.svg" -o "$cloud/SkaldMenuBarCloud@2x.png"

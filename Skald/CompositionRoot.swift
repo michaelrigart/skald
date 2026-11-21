@@ -29,10 +29,13 @@ final class CompositionRoot {
     private var pauseEnd: Task<Void, Never>?
     private var frontApp: NSRunningApplication?
     private var applied: Settings
+    private var claudeStatus = ClaudeStatus.quiet
+    private var statusTask: Task<Void, Never>?
 
     private enum PipelineCommand: Sendable {
         case route(EngineRouter, Settings)
         case pause(Bool)
+        case claudeKeyChanged
     }
 
     struct Conditions {
@@ -52,10 +55,15 @@ final class CompositionRoot {
         self.switches = switches
         textAccess = SystemTextAccess(isAppEnabled: { switches.isEnabled($0) }, clock: ContinuousClock())
         apple = AppleEngine()
+        let claudeLog = ClaudeTypingLog()
+        let transport = transport
         liveRouter = LiveRouter(Self.router(settings, Self.conditions(claudeKeyPresent: model.claudeKeyStored)))
         pipeline = CheckPipeline(
             access: textAccess,
             apple: apple,
+            claude: { model in
+                LoggedEngine(ClaudeEngine(model: model, apiKey: { keychain.read() }, transport: transport, options: .typing), log: claudeLog)
+            },
             spelling: SpellingChecker(),
             detector: SystemLanguageDetector(),
             oracle: SystemWordOracle(),
@@ -75,13 +83,23 @@ final class CompositionRoot {
                     await pipeline.update(settings: settings)
                 case let .pause(paused):
                     await pipeline.setPaused(paused)
+                case .claudeKeyChanged:
+                    await pipeline.resetClaude()
                 }
+            }
+        }
+        statusTask = Task { [weak self, pipeline] in
+            for await status in pipeline.claudeStatus {
+                guard let self else { return }
+                claudeStatus = status
+                refreshStatus()
             }
         }
     }
 
     func start() {
         model.onChange = { [weak self] in self?.settingsChanged($0) }
+        model.onClaudeKeyChange = { [weak self] in self?.commands.yield(.claudeKeyChanged) }
         statusItem = StatusItemController(
             actions: .init(
                 pauseForAnHour: { [model] in model.pauseForAnHour() },
@@ -127,6 +145,7 @@ final class CompositionRoot {
         hotkeys.unregisterAll()
         panel?.close()
         pauseEnd?.cancel()
+        statusTask?.cancel()
         commands.finish()
     }
 
@@ -169,8 +188,9 @@ final class CompositionRoot {
         let conditions = currentConditions()
         model.appleUnavailable = conditions.apple
         model.thermalPaused = conditions.thermalPaused
-        commands.yield(.route(makeRouter(conditions), model.settings))
-        refreshStatus(conditions)
+        let router = makeRouter(conditions)
+        commands.yield(.route(router, model.settings))
+        refreshStatus(conditions, router)
     }
 
     /// Pauses the pipeline until `pausedUntil`, then clears it, which saves and resumes.
@@ -192,12 +212,20 @@ final class CompositionRoot {
         }
     }
 
-    private func refreshStatus(_ conditions: Conditions) {
+    private func refreshStatus() {
+        let conditions = currentConditions()
+        refreshStatus(conditions, makeRouter(conditions))
+    }
+
+    private func refreshStatus(_ conditions: Conditions, _ router: EngineRouter) {
+        let languages = router.claudeTypingLanguages
         let state = StatusState.resolve(
             trusted: AccessibilityPermission.isGranted, pausedUntil: model.settings.pausedUntil, now: .now,
-            apple: conditions.apple, thermalPaused: conditions.thermalPaused
+            apple: conditions.apple, thermalPaused: conditions.thermalPaused,
+            claude: claudeStatus, claudeLanguages: languages,
+            fallbacks: languages.map { ClaudeFallback(language: $0, route: router.onDevice($0)) }
         )
-        statusItem?.show(state)
+        statusItem?.show(state, sendingToClaude: claudeStatus.sending)
     }
 
     private func currentConditions() -> Conditions {
