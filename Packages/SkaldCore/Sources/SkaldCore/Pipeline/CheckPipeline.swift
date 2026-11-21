@@ -73,6 +73,7 @@ public actor CheckPipeline {
     private let apple: any Engine
     private let claude: (@Sendable (_ model: String) -> any Engine)?
     private let claudeOutcome: (@Sendable (ClaudeOutcome) -> Void)?
+    private let showClaude: (@Sendable (ClaudeStatus) async -> Void)?
     private let spelling: any SpellingChecking
     private let detector: any LanguageDetecting
     private let detections: DetectionMemo
@@ -124,6 +125,7 @@ public actor CheckPipeline {
         apple: any Engine,
         claude: (@Sendable (_ model: String) -> any Engine)? = nil,
         onClaudeRequest: (@Sendable (ClaudeOutcome) -> Void)? = nil,
+        showClaude: (@Sendable (ClaudeStatus) async -> Void)? = nil,
         spelling: any SpellingChecking,
         detector: any LanguageDetecting,
         oracle: any WordOracle,
@@ -138,6 +140,7 @@ public actor CheckPipeline {
         self.apple = apple
         self.claude = claude
         claudeOutcome = onClaudeRequest
+        self.showClaude = showClaude
         self.spelling = spelling
         self.detector = detector
         detections = DetectionMemo(detector)
@@ -443,10 +446,22 @@ public actor CheckPipeline {
         case .claude:
             guard let makeEngine = claude else { return .dropped }
             guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                if let trouble = backoff.trouble(forFailedText: chunk.text), !backoff.isSuspended(at: timing.elapsed()) {
+                    publishClaudeStatus(ClaudeStatus(sending: true, trouble: trouble))
+                }
                 return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
             }
+            let status = ClaudeStatus(sending: true, trouble: backoff.trouble)
+            publishClaudeStatus(status)
+            if let showClaude {
+                await showClaude(status)
+                let routed = await self.route(language, .model, app: app)
+                guard isCurrent(epoch, generation), routed == .claude else { return .dropped }
+                guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                    return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+                }
+            }
             let engine = makeEngine(settings.claudeTypingModel)
-            publishClaudeStatus(ClaudeStatus(sending: true, trouble: backoff.trouble))
             let (result, sent) = await ask(engine, request)
             if sent, let outcome = ClaudeOutcome(result) { claudeOutcome?(outcome) }
             switch result {

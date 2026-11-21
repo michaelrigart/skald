@@ -122,6 +122,7 @@ struct PipelineRig {
         claude: (any Engine)? = nil,
         key: Bool = false,
         onClaudeFactory: (@Sendable () -> Void)? = nil,
+        showClaude: (@Sendable (ClaudeStatus) async -> Void)? = nil,
         misspellings: [String: String] = ["teh": "the"],
         oracleGated: Bool = false,
         detector: any LanguageDetecting = FakeLanguageDetector()
@@ -146,6 +147,7 @@ struct PipelineRig {
             apple: engine,
             claude: factory,
             onClaudeRequest: { outcomes.record($0) },
+            showClaude: showClaude,
             spelling: spelling,
             detector: detector,
             oracle: oracle,

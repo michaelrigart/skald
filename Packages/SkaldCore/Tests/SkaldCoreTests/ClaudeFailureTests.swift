@@ -173,6 +173,29 @@ struct ClaudeFailureTests {
         #expect(await rig.modelIssues().map(\.word) == ["gisterren", "word"])
     }
 
+    @Test func aTextThatFailedBeforeShowsItsOwnTroubleWhenItIsNotAskedAgain() async {
+        let claude = FakeEngine { request, _ in
+            request.text == dutch ? .failure(.failed) : .success(replacingWords(in: request.text, corrections))
+        }
+        var onDevice = claudeSettings()
+        onDevice.modelChecks[.nl] = true
+        let rig = makeRig(onDevice, claude: claude, engine: .correcting(["word": "wordt"]))
+        await rig.focus(dutch, caret: 3)
+        await rig.check()
+        await type(variant(1), in: rig)
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
+
+        await type(dutch, in: rig)
+        #expect(await claude.texts == [dutch, variant(1)])
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: .unreachable))
+        #expect(await rig.engine.texts == [dutch, dutch])
+        #expect(await rig.modelIssues().map(\.engine) == [.thisMac])
+
+        await type(variant(2), in: rig)
+        #expect(await claude.requests.count == 3)
+        #expect(await status(rig) == ClaudeStatus(sending: true, trouble: nil))
+    }
+
     @Test func aTimeoutIsAFailure() async {
         let claude = FakeEngine.correcting(corrections, gated: true)
         let rig = makeRig(claude: claude)

@@ -131,7 +131,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let claudeTyping: Bool
     }
 
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let actions: Actions
     private let frontApp: () -> FrontApp?
     private var state = StatusState.onThisMac
