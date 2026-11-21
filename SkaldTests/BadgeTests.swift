@@ -39,4 +39,22 @@ struct BadgeTests {
         view.show(.tick, label: "No suggestions")
         #expect(view.accessibilityLabel() == "No suggestions" && view.content == .tick)
     }
+
+    @MainActor @Test func aCountIsAButtonVoiceOverCanPressAndATickIsNeither() {
+        let view = BadgeView()
+        var clicks = 0
+        view.onClick = { clicks += 1 }
+        view.show(.count(3), label: "3 suggestions: 3 spelling")
+        #expect(view.accessibilityRole() == .button)
+        #expect(view.accessibilityPerformPress() && clicks == 1)
+
+        view.show(.tick, label: "No suggestions")
+        #expect(view.accessibilityRole() != .button)
+        #expect(!view.accessibilityPerformPress() && clicks == 1)
+    }
+
+    @Test func onlyACountTakesClicksSoATickLetsThemThroughToTheField() {
+        #expect(BadgeContent.count(2).takesClicks)
+        #expect(!BadgeContent.tick.takesClicks)
+    }
 }

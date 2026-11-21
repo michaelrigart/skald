@@ -5,6 +5,12 @@ import SkaldCore
 enum BadgeContent: Equatable {
     case count(Int), tick
 
+    /// Only a count does anything when clicked; a tick lets the click through to the field.
+    var takesClicks: Bool {
+        if case .count = self { return true }
+        return false
+    }
+
     /// What the badge shows after a snapshot; nil hides it. A snapshot that isn't `checked` is a recheck of the
     /// same field in progress, or a new field, or a pause: the badge keeps what it showed only for the first.
     static func next(current: BadgeContent?, issues: Int, checked: Bool, sameField: Bool, paused: Bool) -> BadgeContent? {
@@ -30,7 +36,8 @@ struct BadgeState: Equatable {
 }
 
 /// A small circle with the field's issue count, or a tick. Clicking a count opens the cards as a list; the
-/// click never activates Skald or takes focus from the field's app, and a tick does nothing.
+/// click never activates Skald or takes focus from the field's app. A tick does nothing, and its panel lets
+/// clicks through to the field.
 final class BadgeView: NSView {
     static let tickOpacity: CGFloat = 0.6
 
@@ -40,7 +47,7 @@ final class BadgeView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityRole(.button)
+        setAccessibilityRole(.staticText)
     }
 
     @available(*, unavailable)
@@ -50,6 +57,7 @@ final class BadgeView: NSView {
         if content != self.content { needsDisplay = true }
         self.content = content
         alphaValue = content == .tick ? Self.tickOpacity : 1
+        setAccessibilityRole(content.takesClicks ? .button : .staticText)
         setAccessibilityLabel(label)
     }
 
@@ -58,7 +66,17 @@ final class BadgeView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        if case .count = content { onClick?() }
+        _ = press()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        press()
+    }
+
+    private func press() -> Bool {
+        guard content.takesClicks else { return false }
+        onClick?()
+        return true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -106,6 +124,7 @@ final class BadgePanel {
 
     func show(_ content: BadgeContent, label: String, at frame: CGRect) {
         view.show(content, label: label)
+        panel.ignoresMouseEvents = !content.takesClicks
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
