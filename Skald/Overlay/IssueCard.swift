@@ -139,6 +139,8 @@ private struct CardStackView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .environment(\.controlActiveState, .key)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggestions")
     }
 }
 
@@ -162,29 +164,56 @@ private struct IssueCardView: View {
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(change)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color(nsColor: CategoryPalette.color(card.kind.category)))
+                            .frame(width: 8, height: 8)
+                        Text(card.headline)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(change)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(card.label)
                 Spacer(minLength: 0)
                 if card.byClaude {
                     Text("Claude")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
             }
             switch card.phase {
             case .ready:
+                if card.offersAccept, !card.alternatives.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(card.alternatives.enumerated()), id: \.offset) { index, guess in
+                            Button(guess) { Task { await card.accept(alternative: index) } }
+                                .lineLimit(1)
+                                .accessibilityLabel("Use \(guess): \(card.label)")
+                        }
+                    }
+                }
                 HStack(spacing: 6) {
                     if card.offersAccept {
                         Button("Accept") { Task { await card.accept() } }
                             .buttonStyle(.borderedProminent)
+                            .accessibilityLabel("Accept: \(card.label)")
                     }
                     copyButton
-                    Button("Ignore") { card.ignore() }
-                    if let word = card.neverFlagWord {
-                        Button("Never flag “\(word)”") { card.neverFlag() }
-                            .lineLimit(1)
-                    }
+                    Button("Dismiss") { card.dismiss() }
+                        .accessibilityLabel("Dismiss: \(card.label)")
+                    Spacer(minLength: 0)
+                    moreMenu
+                }
+                if card.showsReviewKeys {
+                    Text(IssueCardModel.reviewKeys)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             case .working:
                 HStack(spacing: 6) {
@@ -199,6 +228,7 @@ private struct IssueCardView: View {
                 HStack(spacing: 6) {
                     copyButton
                     Button("Close") { card.close() }
+                        .accessibilityLabel("Close: \(card.label)")
                 }
             case .notice, .closed:
                 EmptyView()
@@ -212,6 +242,29 @@ private struct IssueCardView: View {
     @ViewBuilder private var copyButton: some View {
         if card.offersCopy {
             Button(card.copied ? "Copied" : "Copy fix") { card.copyFix() }
+                .accessibilityLabel("\(card.copied ? "Copied" : "Copy fix"): \(card.label)")
+        }
+    }
+
+    /// The panel never becomes key, so the menu opens over the field's app without activating Skald.
+    @ViewBuilder private var moreMenu: some View {
+        if card.hideTitle != nil || card.dictionaryTitle != nil || card.canCopyFix {
+            Menu {
+                if let title = card.hideTitle {
+                    Button(title) { card.hide() }
+                }
+                if let title = card.dictionaryTitle {
+                    Button(title) { card.addToDictionary() }
+                }
+                if card.canCopyFix {
+                    Button("Copy fix") { card.copyFix() }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More: \(card.label)")
         }
     }
 

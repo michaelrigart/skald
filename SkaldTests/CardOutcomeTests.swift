@@ -1,5 +1,6 @@
 import Foundation
 import SkaldCore
+import struct SkaldCore.Issue
 import Testing
 @testable import Skald
 
@@ -10,7 +11,7 @@ import Testing
     private func card(writes: Bool = true, answer: ReplaceOutcome = .replaced) -> IssueCardModel {
         IssueCardModel(
             issue: flagged, writes: writes, clipboard: spy,
-            actions: .init(accept: { _ in answer }, ignore: { _ in }, neverFlag: { _ in })
+            actions: .init(accept: { _, _ in answer }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
         )
     }
 
@@ -18,7 +19,7 @@ import Testing
         func model(_ engine: EngineKind?, source: IssueSource = .model) -> IssueCardModel {
             IssueCardModel(
                 issue: issue(in: "They is ready", revised: "They are ready", source: source, engine: engine), writes: true, clipboard: spy,
-                actions: .init(accept: { _ in .replaced }, ignore: { _ in }, neverFlag: { _ in })
+                actions: .init(accept: { _, _ in .replaced }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
             )
         }
         #expect(model(.claude).byClaude)
@@ -85,11 +86,11 @@ import Testing
         let card = IssueCardModel(
             issue: flagged, writes: true, clipboard: spy,
             actions: .init(
-                accept: { _ in
+                accept: { _, _ in
                     for await answer in answers { return answer }
                     return .failed
                 },
-                ignore: { _ in }, neverFlag: { _ in }
+                dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in }
             )
         )
         let accepting = Task { await card.accept() }
@@ -100,17 +101,103 @@ import Testing
         #expect(card.phase == .finished(reason: "The change didn't go through.", offersCopy: true))
     }
 
-    @Test func ignoreAndNeverFlagCloseTheCardAndNameTheIssue() {
-        var ignored: [UUID] = []
-        var neverFlagged: [UUID] = []
-        let actions = IssueCardModel.Actions(accept: { _ in .replaced }, ignore: { ignored.append($0) }, neverFlag: { neverFlagged.append($0) })
+    @Test func dismissAndAddToDictionaryCloseTheCardAndNameTheIssue() {
+        var dismissed: [UUID] = []
+        var added: [UUID] = []
+        let actions = IssueCardModel.Actions(
+            accept: { _, _ in .replaced }, dismiss: { dismissed.append($0) }, addToDictionary: { added.append($0) }, hide: { _ in }
+        )
         let first = IssueCardModel(issue: flagged, writes: true, clipboard: spy, actions: actions)
-        first.ignore()
+        first.dismiss()
         let second = IssueCardModel(issue: flagged, writes: true, clipboard: spy, actions: actions)
-        second.neverFlag()
+        second.addToDictionary()
         #expect(first.phase == .closed && second.phase == .closed)
-        #expect(ignored == [flagged.id] && neverFlagged == [flagged.id])
+        #expect(dismissed == [flagged.id] && added == [flagged.id])
         #expect(spy.writes.isEmpty)
+    }
+
+    // MARK: The kind, the alternatives, the menu and the labels
+
+    private func card(
+        _ issue: Issue, accept: @escaping (UUID, Int?) async -> ReplaceOutcome = { _, _ in .replaced }, hide: @escaping (IssueKind) -> Void = { _ in }
+    ) -> IssueCardModel {
+        IssueCardModel(
+            issue: issue, writes: true, clipboard: spy,
+            actions: .init(accept: accept, dismiss: { _ in }, addToDictionary: { _ in }, hide: hide)
+        )
+    }
+
+    /// A spelling issue on "teh end" whose first guess is its edit and whose other guesses are its alternatives.
+    private func spelling(guesses: [String]) -> Issue {
+        let text = "teh end"
+        let others = guesses.dropFirst().map { guess in
+            guard let edit = TextDiff.edits(from: text, to: "\(guess) end").first else { fatalError("no edit to \(guess)") }
+            return edit
+        }
+        return issue(in: text, revised: "\(guesses[0]) end", source: .spelling, alternatives: others)
+    }
+
+    @Test func theCardSaysItsKindAndOffersToHideOnlyAHideableOne() {
+        let verb = card(issue(in: "Het word morgen.", revised: "Het wordt morgen.", kind: .verbForm))
+        #expect(verb.headline == "Grammar · Verb form")
+        #expect(verb.hideTitle == #"Hide "Verb form" suggestions"#)
+        #expect(card(issue(in: "I has it.", revised: "I have it.", kind: .grammar)).hideTitle == nil)
+        #expect(card(issue(in: "teh end", revised: "the end", source: .spelling)).hideTitle == nil)
+        #expect(card(issue(in: "Fine", revised: "Fine.", kind: .punctuation)).hideTitle == #"Hide "Punctuation" suggestions"#)
+    }
+
+    @Test func theLabelNamesTheCategoryAndTheChange() {
+        #expect(card(issue(in: "Het word morgen.", revised: "Het wordt morgen.", kind: .verbForm)).label == "Grammar: word, change to wordt")
+        #expect(card(issue(in: "Fine", revised: "Fine.", kind: .punctuation)).label == "Punctuation: add .")
+        #expect(card(issue(in: "See you you soon.", revised: "See you soon.", kind: .repeatedWord)).label == "Grammar: remove you")
+    }
+
+    @Test func theLabelIsAvailableWithoutACard() {
+        let verb = issue(in: "Het word morgen.", revised: "Het wordt morgen.", kind: .verbForm)
+        #expect(IssueCardModel.label(for: verb) == card(verb).label)
+    }
+
+    @Test func hidingCallsTheActionWithTheKindAndCloses() {
+        var hidden: [IssueKind] = []
+        let card = card(issue(in: "Fine", revised: "Fine.", kind: .punctuation), hide: { hidden.append($0) })
+        card.hide()
+        #expect(hidden == [.punctuation] && card.phase == .closed)
+    }
+
+    @Test func aKindThatCannotBeHiddenIsNotHidden() {
+        var hidden: [IssueKind] = []
+        let card = card(issue(in: "I has it.", revised: "I have it.", kind: .grammar), hide: { hidden.append($0) })
+        card.hide()
+        #expect(hidden.isEmpty && card.phase == .ready)
+    }
+
+    @Test func anAlternativeIsAcceptedByItsIndex() async {
+        var asked: [Int?] = []
+        let card = card(spelling(guesses: ["the", "ten", "tea"]), accept: { _, index in asked.append(index); return .replaced })
+        #expect(card.alternatives == ["ten", "tea"])
+        await card.accept(alternative: 1)
+        #expect(asked == [1] && card.phase == .closed)
+    }
+
+    @Test func acceptWithoutAnAlternativeAsksForTheFix() async {
+        var asked: [Int?] = []
+        let card = card(spelling(guesses: ["the", "ten"]), accept: { _, index in asked.append(index); return .replaced })
+        await card.accept()
+        #expect(asked == [nil])
+    }
+
+    @Test func theDictionaryItemNamesTheWordAndAnInsertionHasNone() {
+        #expect(card(issue(in: "teh end", revised: "the end", source: .spelling)).dictionaryTitle == #"Add "teh" to dictionary"#)
+        #expect(card(issue(in: "Fine", revised: "Fine.", kind: .punctuation)).dictionaryTitle == nil)
+    }
+
+    @Test func theKeyLineShowsOnlyInReviewWhileTheCardIsReady() async {
+        let card = card(issue(in: "Fine", revised: "Fine.", kind: .punctuation))
+        #expect(!card.showsReviewKeys)
+        card.reviewing = true
+        #expect(card.showsReviewKeys)
+        await card.accept()
+        #expect(!card.showsReviewKeys)
     }
 
     /// The card keeps its own copy of the fix, since `accept` drops the issue whatever the outcome.
@@ -140,11 +227,11 @@ import Testing
         let card = IssueCardModel(
             issue: flagged, writes: true, clipboard: spy,
             actions: .init(
-                accept: { _ in
+                accept: { _, _ in
                     for await answer in answers { return answer }
                     return .failed
                 },
-                ignore: { _ in }, neverFlag: { _ in }
+                dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in }
             )
         )
         let accepting = Task { await card.accept() }
@@ -165,11 +252,11 @@ import Testing
         let card = IssueCardModel(
             issue: flagged, writes: true, clipboard: spy,
             actions: .init(
-                accept: { _ in
+                accept: { _, _ in
                     for await answer in answers { return answer }
                     return .failed
                 },
-                ignore: { _ in }, neverFlag: { _ in }
+                dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in }
             )
         )
         var after: CardParking.AfterFinish?
@@ -196,7 +283,7 @@ import Testing
         let shown = parking.received(IssueSnapshot(field: flagged.key.field, issues: [cached], checked: true))
         #expect(shown?.card === card)
         #expect(card.phase == .notice)
-        #expect(!card.offersAccept && !card.offersCopy && card.neverFlagWord == nil)
+        #expect(!card.offersAccept && !card.offersCopy && card.dictionaryTitle == nil && card.hideTitle == nil)
         #expect(parking.parked == nil)
 
         let revalidated = issue(in: "We was late today", revised: "We were late today")
@@ -244,7 +331,7 @@ import Testing
     @Test func aRefusedDeletionOffersNoCopyAndItsReasonSaysNoneIsOffered() async {
         let deletion = IssueCardModel(
             issue: issue(in: "It is is ready", revised: "It is ready"), writes: true, clipboard: spy,
-            actions: .init(accept: { _ in .unsupported }, ignore: { _ in }, neverFlag: { _ in })
+            actions: .init(accept: { _, _ in .unsupported }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
         )
         await deletion.accept()
         #expect(deletion.phase == .finished(reason: "Skald can't write in this field.", offersCopy: false))

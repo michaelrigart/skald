@@ -179,9 +179,10 @@ final class OverlayController {
         let model = IssueCardModel(
             issue: issue, writes: writes, clipboard: clipboard,
             actions: .init(
-                accept: { [pipeline] id in await pipeline.accept(id) },
-                ignore: { [pipeline] id in Task { await pipeline.ignore(id) } },
-                neverFlag: { [weak self] id in self?.neverFlag(id) }
+                accept: { [pipeline] id, alternative in await pipeline.accept(id, alternative: alternative) },
+                dismiss: { [pipeline] id in Task { await pipeline.ignore(id) } },
+                addToDictionary: { [weak self] id in self?.addToDictionary(id) },
+                hide: { [settings] kind in settings.hide(kind) }
             )
         )
         model.onFinish = { [weak self, weak model] in
@@ -201,7 +202,7 @@ final class OverlayController {
     }
 
     /// The pipeline drops every issue on the word; the settings model saves it and hands the new list on.
-    private func neverFlag(_ id: UUID) {
+    private func addToDictionary(_ id: UUID) {
         Task { [pipeline, settings] in
             guard let word = await pipeline.neverFlag(id) else { return }
             settings.addNeverTouch(word)

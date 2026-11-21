@@ -11,7 +11,7 @@ import Testing
         (0..<count).map { _ in
             IssueCardModel(
                 issue: issue(in: "They is ready", revised: "They are ready"), writes: true, clipboard: ClipboardSpy(),
-                actions: .init(accept: { _ in .replaced }, ignore: { _ in }, neverFlag: { _ in })
+                actions: .init(accept: { _, _ in .replaced }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
             )
         }
     }

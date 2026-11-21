@@ -69,9 +69,11 @@ struct CardContent: Equatable {
 /// card is between Accept and its outcome. It writes the clipboard only when Copy fix is pressed.
 @Observable final class IssueCardModel: Identifiable {
     struct Actions {
-        let accept: (UUID) async -> ReplaceOutcome
-        let ignore: (UUID) -> Void
-        let neverFlag: (UUID) -> Void
+        let accept: (UUID, _ alternative: Int?) async -> ReplaceOutcome
+        let dismiss: (UUID) -> Void
+        /// Still writes the never-touch list.
+        let addToDictionary: (UUID) -> Void
+        let hide: (IssueKind) -> Void
     }
 
     enum Phase: Equatable {
@@ -85,10 +87,14 @@ struct CardContent: Equatable {
     }
 
     static let clipboardNotice = "The last fix wasn't confirmed; the clipboard holds it."
+    static let reviewKeys = "↩ accept   ⌫ dismiss   ← → move   esc leave"
 
     let id: UUID
     let field: FieldID
+    let kind: IssueKind
     let content: CardContent
+    /// The other guesses' replacements, in order.
+    let alternatives: [String]
     /// Claude found the issue, so the card says so.
     let byClaude: Bool
     /// False in a read-only app, where Copy fix takes Accept's place.
@@ -97,26 +103,62 @@ struct CardContent: Equatable {
     private(set) var copied = false
     /// The write's outcome, once Accept has one.
     private(set) var outcome: ReplaceOutcome?
+    /// Set by the controller while review mode shows this card.
+    var reviewing = false
     @ObservationIgnored var onClose: (() -> Void)?
     /// Called once Accept's outcome left the card open with its reason.
     @ObservationIgnored var onFinish: (() -> Void)?
 
-    @ObservationIgnored private let fix: String
+    /// What Copy fix copies: the issue's fix, or the guess that was accepted.
+    @ObservationIgnored private var fix: String
     @ObservationIgnored private let clipboard: any Clipboard
     @ObservationIgnored private let actions: Actions
 
     init(issue: Issue, writes: Bool, clipboard: any Clipboard, actions: Actions) {
         id = issue.id
         field = issue.key.field
+        kind = issue.kind
         content = CardContent(issue: issue)
+        alternatives = issue.alternatives.map(\.replacement)
         byClaude = issue.engine == .claude
         fix = issue.edit.replacement
+        label = Self.label(for: issue)
         self.writes = writes
         self.clipboard = clipboard
         self.actions = actions
     }
 
+    var headline: String { kind.headline }
+
+    /// What VoiceOver says for the card, from the category and the change.
+    let label: String
+
+    static func label(for issue: Issue) -> String {
+        let edit = issue.edit
+        let change = switch (edit.original.isEmpty, edit.replacement.isEmpty) {
+        case (true, _): "add \(edit.replacement)"
+        case (_, true): "remove \(edit.original)"
+        default: "\(edit.original), change to \(edit.replacement)"
+        }
+        return "\(issue.kind.category.title): \(change)"
+    }
+
     var offersAccept: Bool { phase == .ready && writes }
+
+    /// Copy fix in the card's menu, whether or not the app also offers it as a button.
+    var canCopyFix: Bool { phase == .ready && !fix.isEmpty }
+
+    var showsReviewKeys: Bool { reviewing && phase == .ready }
+
+    /// "Hide "Verb form" suggestions", for a kind that can be hidden.
+    var hideTitle: String? {
+        phase == .ready && kind.isHideable ? #"Hide "\#(kind.title)" suggestions"# : nil
+    }
+
+    /// "Add "word" to dictionary", or nil for an insertion, which has no word.
+    var dictionaryTitle: String? {
+        phase == .ready && !content.original.isEmpty ? #"Add "\#(content.original)" to dictionary"# : nil
+    }
 
     var offersCopy: Bool {
         switch phase {
@@ -126,15 +168,14 @@ struct CardContent: Equatable {
         }
     }
 
-    /// The word Never flag adds, or nil for an insertion, which has none.
-    var neverFlagWord: String? {
-        phase == .ready && !content.original.isEmpty ? content.original : nil
-    }
-
-    func accept() async {
+    func accept(alternative: Int? = nil) async {
         guard offersAccept else { return }
+        if let alternative {
+            guard alternatives.indices.contains(alternative) else { return }
+            fix = alternatives[alternative]
+        }
         phase = .working
-        let outcome = await actions.accept(id)
+        let outcome = await actions.accept(id, alternative)
         self.outcome = outcome
         switch CardOutcome(outcome, canCopy: !fix.isEmpty) {
         case .close: close()
@@ -145,20 +186,26 @@ struct CardContent: Equatable {
     }
 
     func copyFix() {
-        guard offersCopy else { return }
+        guard offersCopy || canCopyFix else { return }
         clipboard.write(fix)
         copied = true
     }
 
-    func ignore() {
+    func dismiss() {
         guard phase == .ready else { return }
-        actions.ignore(id)
+        actions.dismiss(id)
         close()
     }
 
-    func neverFlag() {
-        guard neverFlagWord != nil else { return }
-        actions.neverFlag(id)
+    func addToDictionary() {
+        guard dictionaryTitle != nil else { return }
+        actions.addToDictionary(id)
+        close()
+    }
+
+    func hide() {
+        guard hideTitle != nil else { return }
+        actions.hide(kind)
         close()
     }
 
