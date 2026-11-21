@@ -37,9 +37,17 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
 /// The cards one panel shows: one from an underline, or the badge's list.
 @Observable final class CardStack {
     private(set) var cards: [IssueCardModel] = []
+    /// One line with no controls, shown instead of cards (review mode's "Checking…").
+    private(set) var status: String?
 
     func set(_ cards: [IssueCardModel]) {
         self.cards = cards
+        status = nil
+    }
+
+    func set(status: String) {
+        cards = []
+        self.status = status
     }
 
     func remove(_ id: UUID) {
@@ -84,10 +92,25 @@ final class CardPanel {
         panel.orderFrontRegardless()
     }
 
-    /// Keeps the cards for which `keep` holds and closes the panel when none is left.
+    /// One line, no controls, over the same anchor rules as a card; it stays until `clearStatus`, `show` or `close`.
+    func showStatus(_ text: String, anchor: CGRect, screen: CGRect) {
+        self.anchor = anchor
+        self.screen = screen
+        stack.set(status: text)
+        contentSize = nil
+        place(panel.contentView?.fittingSize ?? CGSize(width: Self.width, height: 40))
+        panel.orderFrontRegardless()
+    }
+
+    func clearStatus() {
+        if stack.status != nil { close() }
+    }
+
+    /// Keeps the cards for which `keep` holds and closes the panel when none is left; a status line is not a card
+    /// and stays.
     func retain(where keep: (IssueCardModel) -> Bool) {
         for card in stack.cards where !keep(card) { stack.remove(card.id) }
-        if stack.cards.isEmpty { close() }
+        if stack.cards.isEmpty, stack.status == nil { close() }
     }
 
     func close() {
@@ -126,6 +149,13 @@ private struct CardStackView: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
+                if let status = stack.status {
+                    Text(status)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ForEach(Array(stack.cards.enumerated()), id: \.element.id) { index, card in
                     if index > 0 { Divider() }
                     IssueCardView(card: card)

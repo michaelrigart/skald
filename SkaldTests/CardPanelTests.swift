@@ -45,4 +45,26 @@ import Testing
         }
         #expect(heights.allSatisfy { $0 > 40 }, "\(heights)")
     }
+
+    @Test func aStatusLineOpensThePanelWithoutCardsAndSurvivesRetainingCards() async {
+        let panel = CardPanel()
+        panel.showStatus("Checking…", anchor: anchor, screen: screen)
+        await settle()
+        #expect(panel.isOpen && panel.cards.isEmpty && panel.frame.height > 20)
+        panel.retain { _ in false }
+        #expect(panel.isOpen)
+        panel.clearStatus()
+        #expect(!panel.isOpen)
+    }
+
+    @Test func cardsReplaceTheStatusLine() async {
+        let panel = CardPanel()
+        panel.showStatus("Checking…", anchor: anchor, screen: screen)
+        panel.show(models(1), anchor: anchor, screen: screen)
+        await settle()
+        #expect(panel.cards.count == 1 && panel.frame.height > 40)
+        panel.clearStatus()
+        #expect(panel.isOpen)
+        panel.close()
+    }
 }

@@ -43,7 +43,7 @@ struct GeneralPane: View {
 }
 
 /// Shows the hotkey; Record takes the next key press with ⌘, ⌃ or ⌥ while this window is key. Escape cancels.
-private struct HotkeyRecorder: View {
+struct HotkeyRecorder: View {
     @Binding var hotkey: Hotkey
     @State private var monitor: Any?
 

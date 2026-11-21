@@ -26,6 +26,7 @@ final class CompositionRoot {
     private var panel: PanelController?
     private var panelWindow: PanelWindow?
     private var panelHotkey: HotkeyToken?
+    private var reviewHotkey: HotkeyToken?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var pauseEnd: Task<Void, Never>?
     private var frontApp: NSRunningApplication?
@@ -120,7 +121,8 @@ final class CompositionRoot {
             root.applyRouting()
         }
         let overlay = OverlayController(
-            pipeline: pipeline, access: textAccess, settings: model, clipboard: SystemClipboard(), clock: ContinuousClock()
+            pipeline: pipeline, access: textAccess, settings: model, clipboard: SystemClipboard(), clock: ContinuousClock(),
+            registrar: hotkeys, announcer: VoiceOverAnnouncer()
         )
         overlay.start()
         self.overlay = overlay
@@ -131,6 +133,7 @@ final class CompositionRoot {
         self.panelWindow = panelWindow
         self.panel = panel
         registerPanelHotkey()
+        registerReviewHotkey()
         syncLoginItem(launchAtLogin: model.settings.launchAtLogin, changed: false)
         applyPause()
         applyRouting()
@@ -182,6 +185,7 @@ final class CompositionRoot {
         if settings.launchAtLogin != previous.launchAtLogin { syncLoginItem(launchAtLogin: settings.launchAtLogin, changed: true) }
         if settings.pausedUntil != previous.pausedUntil { applyPause() }
         if settings.panelHotkey != previous.panelHotkey { registerPanelHotkey() }
+        if settings.reviewHotkey != previous.reviewHotkey { registerReviewHotkey() }
         applyRouting()
     }
 
@@ -203,6 +207,7 @@ final class CompositionRoot {
             if model.settings.pausedUntil != nil { model.resume() }
             return
         }
+        overlay?.leaveReview()
         commands.yield(.pause(true))
         let remaining = Duration.seconds(until.timeIntervalSinceNow)
         pauseEnd = Task { [weak self] in
@@ -254,7 +259,18 @@ final class CompositionRoot {
         if let panelHotkey { hotkeys.unregister(panelHotkey) }
         let hotkey = model.settings.panelHotkey
         panelHotkey = hotkeys.register(hotkey) { [weak self] in self?.panelHotkeyPressed() }
-        model.hotkeyNote = panelHotkey != nil ? nil : "macOS didn't accept \(hotkey.displayName); it may be reserved or taken by another app. Record another shortcut."
+        model.hotkeyNote = panelHotkey != nil ? nil : Self.refusal(of: hotkey)
+    }
+
+    private func registerReviewHotkey() {
+        if let reviewHotkey { hotkeys.unregister(reviewHotkey) }
+        let hotkey = model.settings.reviewHotkey
+        reviewHotkey = hotkeys.register(hotkey) { [weak self] in self?.overlay?.toggleReview() }
+        model.reviewHotkeyNote = reviewHotkey != nil ? nil : Self.refusal(of: hotkey)
+    }
+
+    private static func refusal(of hotkey: Hotkey) -> String {
+        "macOS didn't accept \(hotkey.displayName); it may be reserved or taken by another app. Record another shortcut."
     }
 
     /// Captures the focused field before the panel shows: the selection, or the caret's paragraph. With no

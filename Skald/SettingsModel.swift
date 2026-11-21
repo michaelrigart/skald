@@ -15,6 +15,8 @@ import struct SwiftUI.Binding
     var loginItemNote: String?
     /// Why the panel's hotkey isn't working, when the system refused it; set by the composition root.
     var hotkeyNote: String?
+    /// Why the review shortcut isn't working, when the system refused it; set by the composition root.
+    var reviewHotkeyNote: String?
     /// Why changes are not being kept, when they aren't.
     private(set) var saveNote: String?
 

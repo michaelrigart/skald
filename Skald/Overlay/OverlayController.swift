@@ -6,6 +6,8 @@ import SkaldPlatform27
 /// badge at the field's corner where it reports only the field's frame, nothing otherwise. Redraws on every
 /// issue snapshot, on the field's window moves and caret moves; hides the underlines on a scroll and shows
 /// them again once the app's bounds have settled (`ScrollSettle`); hides on focus loss.
+/// Review mode (`ReviewSession`) steps through the issues from the keyboard while its card is open; it takes
+/// snapshots, text changes, clicks elsewhere, a pause and `stop()` as the ways to end.
 /// It posts no events and never takes focus; the only clipboard write is Copy fix.
 final class OverlayController {
     static let hoverDelay: Duration = .milliseconds(300)
@@ -16,6 +18,8 @@ final class OverlayController {
     private let clipboard: any Clipboard
     private let sleep: (Duration) async throws -> Void
     private let stopwatch: Stopwatch
+    private let registrar: any KeyRegistering
+    private let announcer: any Announcing
 
     /// What one pass over the focused field reads: the marks, hover targets and badge place for a snapshot.
     private struct Layout {
@@ -54,6 +58,10 @@ final class OverlayController {
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
     private var parking = CardParking()
+    private lazy var review = makeReview()
+    /// The card review mode shows, and the read that places it when its word isn't drawn.
+    private var reviewCard: IssueCardModel?
+    private var reviewShow: Task<Void, Never>?
     /// The word a hover card belongs to, or nil while the badge's list or nothing is open.
     private var cardAnchor: CGRect?
     private var hover = HoverTracker()
@@ -65,7 +73,12 @@ final class OverlayController {
     private var monitors: [Any] = []
     private var screenObserver: NSObjectProtocol?
 
-    init<C: Clock<Duration>>(pipeline: CheckPipeline, access: SystemTextAccess, settings: SettingsModel, clipboard: any Clipboard, clock: C) {
+    init<C: Clock<Duration>>(
+        pipeline: CheckPipeline, access: SystemTextAccess, settings: SettingsModel, clipboard: any Clipboard, clock: C,
+        registrar: any KeyRegistering, announcer: any Announcing
+    ) {
+        self.registrar = registrar
+        self.announcer = announcer
         self.pipeline = pipeline
         self.access = access
         self.settings = settings
@@ -109,6 +122,7 @@ final class OverlayController {
     }
 
     func stop() {
+        review.left()
         streams.forEach { $0.cancel() }
         streams = []
         monitors.forEach { NSEvent.removeMonitor($0) }
@@ -117,6 +131,7 @@ final class OverlayController {
         screenObserver = nil
         dwell?.cancel()
         redraw?.cancel()
+        reviewShow?.cancel()
         scroller.cancel()
         hideMarks()
         parking.otherCardOpened()
@@ -135,9 +150,10 @@ final class OverlayController {
             scroller.cancel()
             scroller = makeScroller(for: new.field)
         }
+        let paused = settings.settings.pausedUntil.map { $0 > .now } ?? false
         badgeState = BadgeState.next(
             current: badgeState, issues: OverlayGeometry.distinct(new.issues), checked: new.checked,
-            sameField: new.field != nil && !fieldChanged, paused: settings.settings.pausedUntil.map { $0 > .now } ?? false
+            sameField: new.field != nil && !fieldChanged, paused: paused
         )
         snapshot = IssueSnapshot(field: new.field, issues: OverlayGeometry.distinct(new.issues), checked: new.checked)
         let visible = Set(snapshot.issues.map(\.id))
@@ -146,6 +162,9 @@ final class OverlayController {
             cards.show([parked.card], anchor: parked.anchor, screen: parked.screen)
             cardAnchor = nil
         }
+        // Every snapshot, in the order the pipeline publishes them: review mode waits for a recheck by their order.
+        review.snapshot(snapshot.issues, checked: new.checked, sameField: new.field != nil && !fieldChanged)
+        if paused { review.left() }
         if fieldChanged || snapshot.issues.isEmpty { hideUnderlines() }
         if fieldChanged || badgeState == nil { badge.hide() }
         requestRedraw()
@@ -155,11 +174,12 @@ final class OverlayController {
     /// moves the badge with its field; a window move or a caret move reads the marks again, and a window move closes a card that is only offering
     /// its choices; an edit closes a clipboard notice. A text or caret change also ends a scroll's hiding.
     private func moved(_ change: LayoutChange) {
+        if change == .edit { review.edited() }
         if change == .scroll {
             scroller.scrolled()
             return requestRedraw()
         }
-        if change != .caret { cards.retain { $0.survives(change) } }
+        if change != .caret, !review.isOpen { cards.retain { $0.survives(change) } }
         if change == .window { resetHover() }
         if change == .edit || change == .caret { scroller.redrawn() }
         requestRedraw()
@@ -182,7 +202,7 @@ final class OverlayController {
 
     /// A scroll hides the underlines and closes a card that is only offering its choices; the badge stays.
     private func scrollHid() {
-        cards.retain { $0.survives(.scroll) }
+        if !review.isOpen { cards.retain { $0.survives(.scroll) } }
         hideUnderlines()
     }
 
@@ -207,22 +227,127 @@ final class OverlayController {
         }
         switch hover.pointer(at: point, over: targets, covered: cards.isOpen ? cards.frame : nil) {
         case .unchanged: break
-        case .entered(let id): wait(for: id)
+        case .entered(let id): if !review.isOpen { wait(for: id) }
         case .left: dwell?.cancel()
         }
     }
 
     /// A click in another app closes every card except one still applying its fix.
     private func clickedElsewhere() {
+        review.left()
         cards.retain { $0.phase == .working }
         resetHover()
     }
 
     private func badgeClicked() {
+        review.left()
         guard !cards.isBusy else { return }
         if cards.isOpen, cardAnchor == nil { return cards.close() }
         guard let frame = badge.frame, !snapshot.issues.isEmpty else { return }
         open(snapshot.issues.map(card), anchor: frame, hoverAnchor: nil)
+    }
+
+    // MARK: Review
+
+    /// The review shortcut. The field's capabilities are read first when they aren't known yet, so a field that
+    /// takes a clean write isn't taken for a read-only one.
+    func toggleReview() {
+        guard !review.isOpen, let field = snapshot.field, capabilities?.field != field else { return review.toggle() }
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await capabilities(of: field)
+            review.toggle()
+        }
+    }
+
+    /// A pause, or anything else that ends review mode from outside the overlay.
+    func leaveReview() {
+        review.left()
+    }
+
+    private func makeReview() -> ReviewSession {
+        ReviewSession(
+            keys: ReviewKeys(registrar: registrar, sleep: sleep), announcer: announcer, sleep: sleep,
+            actions: .init(
+                issues: { [weak self] in self?.snapshot.issues ?? [] },
+                writes: { [weak self] in
+                    guard let self, let field = snapshot.field else { return false }
+                    return capabilities.map { $0.field == field && $0.value.contains(.cleanWrite) } ?? false
+                },
+                show: { [weak self] issue, _, _ in self?.showReviewCard(for: issue) },
+                accept: { [weak self] id in await self?.acceptReviewed(id) ?? .failed },
+                copy: { [weak self] id in self?.reviewCard(id)?.copyFix() },
+                dismiss: { [weak self] id in self?.dismissReviewed(id) },
+                showChecking: { [weak self] in self?.showChecking() },
+                close: { [weak self] in self?.reviewClosed() }
+            )
+        )
+    }
+
+    private func reviewCard(_ id: UUID) -> IssueCardModel? {
+        reviewCard.flatMap { $0.id == id ? $0 : nil }
+    }
+
+    /// The issue's card alone, over its drawn word.
+    private func showReviewCard(for issue: Issue) {
+        reviewShow?.cancel()
+        let model = card(issue)
+        model.reviewing = true
+        reviewCard = model
+        if let drawn = targets.first(where: { $0.id == issue.id })?.rect {
+            return open([model], anchor: drawn, hoverAnchor: nil)
+        }
+        reviewShow = Task { [weak self] in
+            guard let self else { return }
+            let anchor = await reviewAnchor(for: issue)
+            guard !Task.isCancelled, reviewCard === model else { return }
+            open([model], anchor: anchor, hoverAnchor: nil)
+        }
+    }
+
+    /// Where an issue's card goes when its word isn't drawn: the word's bounds read now, else the badge, else the
+    /// field's frame, else the pointer.
+    private func reviewAnchor(for issue: Issue) async -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        guard let field = snapshot.field else { return Self.pointer }
+        if let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil {
+            return OverlayGeometry.appKit(read, primaryHeight: primaryHeight)
+        }
+        if let badge = badge.frame { return badge }
+        if let frame = await access.frame(of: field) { return OverlayGeometry.appKit(frame, primaryHeight: primaryHeight) }
+        return Self.pointer
+    }
+
+    private static var pointer: CGRect { CGRect(origin: NSEvent.mouseLocation, size: .zero) }
+
+    private func acceptReviewed(_ id: UUID) async -> ReplaceOutcome {
+        guard let card = reviewCard(id) else { return .failed }
+        await card.accept()
+        return card.outcome ?? .failed
+    }
+
+    private func dismissReviewed(_ id: UUID) {
+        if let card = reviewCard(id) {
+            card.dismiss()
+        } else {
+            Task { [pipeline] in await pipeline.ignore(id) }
+        }
+    }
+
+    private func showChecking() {
+        parking.otherCardOpened()
+        cards.showStatus(ReviewSession.checking, anchor: cards.anchor, screen: cards.screen)
+        cardAnchor = nil
+    }
+
+    /// The mode ended: cards that are ready and the status line go; one still writing, or showing why a write
+    /// didn't go through, stays.
+    private func reviewClosed() {
+        reviewShow?.cancel()
+        reviewShow = nil
+        reviewCard = nil
+        cards.clearStatus()
+        cards.retain { $0.phase != .ready }
     }
 
     // MARK: Cards
@@ -239,7 +364,7 @@ final class OverlayController {
     /// The word is read again before its card opens: only where its underline was drawn does the card open;
     /// anywhere else, or unreadable, the marks are drawn again and the pointer must enter the word anew.
     private func rested(on id: UUID) async {
-        guard hover.current == id, !cards.isBusy, !cards.cards.contains(where: { $0.id == id }),
+        guard !review.isOpen, hover.current == id, !cards.isBusy, !cards.cards.contains(where: { $0.id == id }),
               let field = snapshot.field, let issue = snapshot.issues.first(where: { $0.id == id })
         else { return }
         let generation = self.generation
