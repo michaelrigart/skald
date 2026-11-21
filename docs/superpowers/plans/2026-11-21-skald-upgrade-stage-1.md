@@ -50,7 +50,7 @@
 | Panel in a kept app | Picker and default are This Mac only; a request for another engine is `.unavailable(engine, .keptOnThisMac, alternatives: [.thisMac])`. |
 | Request log | `Log.claude`, one line per typing request: `typing request N: answered` or the trouble's name. |
 | Eval | `--thinking on|off` and `--fallbacks on|off` (default off, i.e. `.typing`); `--out` required in claude mode; prices by exact model id; a request is refused unless spend so far plus its ceiling stays within `--max-cost`, and a sent request whose answer carries no usage (lost to a transport error or timeout) is charged its ceiling, so `--max-cost` is a strict bound; `--max-cost` above 0 and at most 5; latency bar 2 s for claude, none for replay; recall and clean paragraphs judged in every mode but spelling. |
-| Guard fix | A bare English word is a borrowed word only when the paragraph's dictionary rejects it; borrowing through an English stem ("gemerged", "mergé") is unchanged. Dutch keep row: "warm" → "warme". |
+| Guard fix | Narrowed in review (commit `bafd781`, spec "The guard fix"): a word the paragraph's dictionary accepts and English also has skips the borrowed check only when the edit replaces it one-for-one with a near-homophone native form; translations of a loanword stay dropped. Borrowing through an English stem ("gemerged", "mergé") is unchanged. Dutch keep row: "warm" → "warme". |
 | Memory | `/usr/bin/footprint -p Skald`, idle and after a TextEdit check, baseline vs. new Release build; numbers go in the PR description. |
 
 ## Review Focus
@@ -358,7 +358,7 @@ git commit -m "Add Claude and replay modes to the eval tool"
 - Test: `Packages/SkaldCore/Tests/SkaldCoreTests/EditGuardTests.swift`; the system run `Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/GuardOutcomeSystemTests.swift` picks up the rows by itself
 
 **Interfaces:**
-- Produces: no new API. `englishStem(_:_:)` returns `facts.englishStems[word]` when present (unchanged); the bare word itself only when `facts.english` **and** `facts.misspelled` contain it (the paragraph's dictionary rejects it). Everything downstream of `borrowedWordVerdict` is untouched.
+- Produces: no new API. Superseded in review by commit `bafd781`: `englishStem(_:_:)` is as in v1, and `borrowedWordVerdict` exempts a native-accepted word without an English stem only in a one-for-one edit whose replacement is its near-homophone (see the Values table). The steps below describe the first attempt, `2fb5c5d`.
 
 Mechanism found by review with synthetic cases; nothing from the held-out set feeds it.
 
@@ -1041,11 +1041,11 @@ Outside the sandbox (`open` needs it; Michael approves the prompt). Each step re
 
 ## Owed: the gate run (Michael)
 
-**Not a task for an implementer. No agent runs these commands.** It needs the new, separate, revocable key (Decision 2) and gates the PR leaving draft. The total of every `--max-cost` passed below must not exceed **$5**; the planned caps sum to $4.05, which leaves $0.95 for one re-run.
+**Not a task for an implementer. No agent runs these commands.** It needs the new, separate, revocable key (Decision 2) and gates the PR leaving draft. The total of every `--max-cost` passed below must not exceed **$5**; the planned caps sum to $4.05, which leaves $0.95 for one re-run. A claude run never overwrites: a re-run needs a new `--out` path, and `--max-cost` caps one run, not the total.
 
 ```sh
 cd ~/Code/skald-feat-skald-upgrade
-git switch --detach <the Task 2 commit>          # the guard as it was before the fix
+git switch --detach 814149a                      # the eval modes, with the guard as it was before the fix
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 read -s SKALD_EVAL_CLAUDE_KEY && export SKALD_EVAL_CLAUDE_KEY
 mkdir -p build/eval
