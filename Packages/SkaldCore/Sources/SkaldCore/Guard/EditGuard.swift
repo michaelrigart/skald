@@ -296,7 +296,7 @@ public struct EditGuard: Sendable {
 
     private static func englishStem(_ word: String, _ facts: WordFacts) -> String? {
         if let stem = facts.englishStems[word] { return stem }
-        return facts.english.contains(word) && facts.misspelled.contains(word) ? word : nil
+        return facts.english.contains(word) ? word : nil
     }
 
     private static func stemKeys(_ stem: String) -> Set<String> {
@@ -308,7 +308,11 @@ public struct EditGuard: Sendable {
     }
 
     private static func borrowedWordVerdict(_ original: [String], _ replacement: [String], _ facts: WordFacts) -> GuardVerdict? {
-        let stems = original.map { englishStem($0, facts) }
+        let stems = original.enumerated().map { index, word -> String? in
+            let nativeForm = original.count == replacement.count && facts.englishStems[word] == nil && !facts.misspelled.contains(word)
+                && isNearHomophone(word, replacement[index])
+            return nativeForm ? nil : englishStem(word, facts)
+        }
         guard stems.contains(where: { $0 != nil }) else { return nil }
         guard original.count == replacement.count else { return .drop(.borrowedWord) }
         for (index, stem) in stems.enumerated() {

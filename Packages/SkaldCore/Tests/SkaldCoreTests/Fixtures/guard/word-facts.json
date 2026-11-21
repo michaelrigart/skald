@@ -493,7 +493,19 @@
    "english": true,
    "misspelled": false
   },
+  "ce": {
+   "english": false,
+   "function": true,
+   "lemma": "ce",
+   "misspelled": false
+  },
   "ces": {
+   "english": false,
+   "function": true,
+   "lemma": "ce",
+   "misspelled": false
+  },
+  "cette": {
    "english": false,
    "function": true,
    "lemma": "ce",
@@ -513,6 +525,12 @@
   "dc": {
    "english": true,
    "misspelled": true
+  },
+  "de": {
+   "english": true,
+   "function": true,
+   "lemma": "de",
+   "misspelled": false
   },
   "deja": {
    "english": true,
@@ -560,6 +578,11 @@
   "est": {
    "english": false,
    "lemma": "être",
+   "misspelled": false
+  },
+  "fin": {
+   "english": true,
+   "lemma": "fin",
    "misspelled": false
   },
   "fusionné": {
@@ -706,6 +729,11 @@
    "lemma": "il",
    "misspelled": false
   },
+  "semaine": {
+   "english": false,
+   "lemma": "semaine",
+   "misspelled": false
+  },
   "septante": {
    "english": false,
    "lemma": "septante",
@@ -781,6 +809,11 @@
    "lemma": "version",
    "misspelled": false
   },
+  "weekend": {
+   "english": true,
+   "lemma": "weekend",
+   "misspelled": false
+  },
   "à": {
    "english": true,
    "function": true,
@@ -810,6 +843,14 @@
    "misspelled": false
   },
   "dan": {
+   "english": true,
+   "misspelled": false
+  },
+  "datum": {
+   "english": true,
+   "misspelled": false
+  },
+  "deadline": {
    "english": true,
    "misspelled": false
   },
@@ -931,6 +972,10 @@
    "misspelled": true
   },
   "tegen": {
+   "english": false,
+   "misspelled": false
+  },
+  "uiterste": {
    "english": false,
    "misspelled": false
   },
