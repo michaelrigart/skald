@@ -4,7 +4,8 @@ import SkaldPlatform27
 
 /// Shows the pipeline's issues over the focused field: underlines where the app reports range bounds, a
 /// badge at the field's corner where it reports only the field's frame, nothing otherwise. Redraws on every
-/// issue snapshot, on the field's window moves and caret moves, and on scrolling; hides on focus loss.
+/// issue snapshot, on the field's window moves and caret moves; hides the underlines on a scroll and shows
+/// them again once the app's bounds have settled (`ScrollSettle`); hides on focus loss.
 /// It posts no events and never takes focus; the only clipboard write is Copy fix.
 final class OverlayController {
     static let hoverDelay: Duration = .milliseconds(300)
@@ -14,6 +15,32 @@ final class OverlayController {
     private let settings: SettingsModel
     private let clipboard: any Clipboard
     private let sleep: (Duration) async throws -> Void
+    private let stopwatch: Stopwatch
+
+    /// What one pass over the focused field reads: the marks, hover targets and badge place for a snapshot.
+    private struct Layout {
+        let generation: Int
+        let marks: [UnderlineView.Mark]
+        let targets: [HoverTracker.Target]
+        /// In AppKit coordinates; nil where the app gives no field frame.
+        let badgeFrame: CGRect?
+    }
+
+    /// Time since `start()` on the injected clock, for `ScrollSettle`.
+    private final class Stopwatch {
+        private let mark: () -> () -> Duration
+        private var reader: () -> Duration = { .zero }
+
+        init<C: Clock<Duration>>(_ clock: C) {
+            mark = {
+                let origin = clock.now
+                return { origin.duration(to: clock.now) }
+            }
+        }
+
+        func start() { reader = mark() }
+        var elapsed: Duration { reader() }
+    }
 
     private var snapshot = IssueSnapshot(field: nil, issues: [], checked: false)
     /// Bumped by every snapshot, so a redraw read for an older one is dropped.
@@ -21,6 +48,8 @@ final class OverlayController {
     private var capabilities: (field: FieldID, value: AccessCapabilities)?
     /// What the badge shows for the focused field; nil hides it. Kept across a recheck, so it doesn't blink.
     private var badgeState: BadgeState?
+    /// One per focused field, made from its app's ceiling; hides the underlines on a scroll.
+    private lazy var scroller = makeScroller(for: nil)
     private var windows: [UnderlineWindow] = []
     private lazy var badge = BadgePanel { [weak self] in self?.badgeClicked() }
     private let cards = CardPanel()
@@ -42,11 +71,13 @@ final class OverlayController {
         self.settings = settings
         self.clipboard = clipboard
         sleep = { try await clock.sleep(for: $0) }
+        stopwatch = Stopwatch(clock)
         cards.onEmpty = { [weak self] in self?.cardAnchor = nil }
     }
 
     func start() {
         guard streams.isEmpty else { return }
+        stopwatch.start()
         buildWindows()
         let issues = pipeline.issues
         let geometry = access.geometryChanges
@@ -86,6 +117,7 @@ final class OverlayController {
         screenObserver = nil
         dwell?.cancel()
         redraw?.cancel()
+        scroller.cancel()
         hideMarks()
         parking.otherCardOpened()
         cards.close()
@@ -98,7 +130,11 @@ final class OverlayController {
     private func received(_ new: IssueSnapshot) {
         generation += 1
         let fieldChanged = new.field != snapshot.field
-        if fieldChanged { capabilities = nil }
+        if fieldChanged {
+            capabilities = nil
+            scroller.cancel()
+            scroller = makeScroller(for: new.field)
+        }
         badgeState = BadgeState.next(
             current: badgeState, issues: OverlayGeometry.distinct(new.issues), checked: new.checked,
             sameField: new.field != nil && !fieldChanged, paused: settings.settings.pausedUntil.map { $0 > .now } ?? false
@@ -115,12 +151,50 @@ final class OverlayController {
         requestRedraw()
     }
 
-    /// The words may be elsewhere now: the marks are read again, a window move or a scroll closes a card that is
-    /// only offering its choices, and an edit closes a clipboard notice.
+    /// The words may be elsewhere now. A scroll hides the underlines and leaves the reading to `scroller`; a
+    /// window move or a caret move reads the marks again, and a window move closes a card that is only offering
+    /// its choices; an edit closes a clipboard notice. A text or caret change also ends a scroll's hiding.
     private func moved(_ change: LayoutChange) {
+        if change == .scroll { return scroller.scrolled() }
         if change != .caret { cards.retain { $0.survives(change) } }
-        if change == .window || change == .scroll { resetHover() }
+        if change == .window { resetHover() }
+        if change == .edit || change == .caret { scroller.redrawn() }
         requestRedraw()
+    }
+
+    private func makeScroller(for field: FieldID?) -> ScrollSettler<Layout> {
+        ScrollSettler(
+            ceiling: field.flatMap { ScrollLag.ceiling(for: $0.app) },
+            sleep: sleep,
+            now: { [stopwatch] in stopwatch.elapsed },
+            layout: { [weak self] in
+                guard let self else { return Layout(generation: -1, marks: [], targets: [], badgeFrame: nil) }
+                return await self.readWhileHidden()
+            },
+            rects: { $0.marks.map(\.rect) },
+            hide: { [weak self] in self?.scrollHid() },
+            show: { [weak self] in self?.settled($0) }
+        )
+    }
+
+    /// A scroll hides the underlines and closes a card that is only offering its choices; the badge stays.
+    private func scrollHid() {
+        cards.retain { $0.survives(.scroll) }
+        hideUnderlines()
+    }
+
+    /// A read for the scroll rule; it moves the badge too, since a scroll can move the field.
+    private func readWhileHidden() async -> Layout {
+        let layout = await layout()
+        if layout.generation == generation { showBadge(at: layout.badgeFrame) }
+        return layout
+    }
+
+    /// The reads agreed: this layout is shown, unless a newer snapshot has made it stale, then it is read again.
+    private func settled(_ layout: Layout) {
+        guard layout.generation == generation else { return requestRedraw() }
+        show(layout.marks, targets: layout.targets)
+        showBadge(at: layout.badgeFrame)
     }
 
     private func pointerMoved() {
@@ -155,16 +229,27 @@ final class OverlayController {
         let sleep = self.sleep
         dwell = Task { [weak self] in
             do { try await sleep(Self.hoverDelay) } catch { return }
-            self?.rested(on: id)
+            await self?.rested(on: id)
         }
     }
 
-    private func rested(on id: UUID) {
+    /// The word is read again before its card opens: only where its underline was drawn does the card open;
+    /// anywhere else, or unreadable, the marks are drawn again and the pointer must enter the word anew.
+    private func rested(on id: UUID) async {
         guard hover.current == id, !cards.isBusy, !cards.cards.contains(where: { $0.id == id }),
-              let issue = snapshot.issues.first(where: { $0.id == id }),
-              let anchor = targets.first(where: { $0.id == id })?.rect
+              let field = snapshot.field, let issue = snapshot.issues.first(where: { $0.id == id })
         else { return }
-        open([card(issue)], anchor: anchor, hoverAnchor: anchor)
+        let generation = self.generation
+        let read = await access.bounds([OverlayGeometry.underlineRange(for: issue)], in: field).first ?? nil
+        guard !Task.isCancelled, generation == self.generation, hover.current == id,
+              let drawn = targets.first(where: { $0.id == id })?.rect
+        else { return }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        guard HoverTracker.isStill(drawn: drawn, read: read.map { OverlayGeometry.appKit($0, primaryHeight: primaryHeight) }) else {
+            resetHover()
+            return requestRedraw()
+        }
+        open([card(issue)], anchor: drawn, hoverAnchor: drawn)
     }
 
     private func open(_ models: [IssueCardModel], anchor: CGRect, hoverAnchor: CGRect?) {
@@ -233,11 +318,19 @@ final class OverlayController {
     }
 
     private func drawMarks() async {
+        let layout = await layout()
+        guard layout.generation == generation else { return }
+        // While a scroll hides the underlines only the badge is drawn, and there are no hover targets.
+        if !scroller.isHidden { show(layout.marks, targets: layout.targets) }
+        showBadge(at: layout.badgeFrame)
+    }
+
+    private func layout() async -> Layout {
         let generation = self.generation
         let snapshot = self.snapshot
-        guard let field = snapshot.field else { return hideMarks() }
+        let nothing = Layout(generation: generation, marks: [], targets: [], badgeFrame: nil)
+        guard let field = snapshot.field else { return nothing }
         let capabilities = await capabilities(of: field)
-        guard generation == self.generation else { return }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 
         if capabilities.contains(.rangeBounds) {
@@ -255,22 +348,19 @@ final class OverlayController {
                     targets.append(.init(id: issue.id, rect: OverlayGeometry.appKit(bounds, primaryHeight: primaryHeight)))
                 }
             }
-            guard generation == self.generation else { return }
-            show(marks, targets: targets)
-            showBadge(snapshot, frame: capabilities.contains(.fieldFrame) ? frame : nil, primaryHeight: primaryHeight)
+            let badgeFrame = capabilities.contains(.fieldFrame) ? frame.map { OverlayGeometry.badgeFrame(for: $0, primaryHeight: primaryHeight) } : nil
+            return Layout(generation: generation, marks: marks, targets: targets, badgeFrame: badgeFrame)
         } else if capabilities.contains(.fieldFrame), let frame = await access.frame(of: field) {
-            guard generation == self.generation else { return }
-            show([], targets: [])
-            showBadge(snapshot, frame: frame, primaryHeight: primaryHeight)
-        } else {
-            hideMarks()
+            let badgeFrame = OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight)
+            return Layout(generation: generation, marks: [], targets: [], badgeFrame: badgeFrame)
         }
+        return nothing
     }
 
     /// The badge at the field's corner for what `next` says, beside underlines too; hidden without a frame.
-    private func showBadge(_ snapshot: IssueSnapshot, frame: CGRect?, primaryHeight: CGFloat) {
+    private func showBadge(at frame: CGRect?) {
         guard let badgeState, let frame else { return badge.hide() }
-        badge.show(badgeState.content, label: badgeState.label, at: OverlayGeometry.badgeFrame(for: frame, primaryHeight: primaryHeight))
+        badge.show(badgeState.content, label: badgeState.label, at: frame)
     }
 
     private func capabilities(of field: FieldID) async -> AccessCapabilities {

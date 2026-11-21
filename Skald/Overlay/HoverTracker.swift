@@ -17,6 +17,9 @@ struct HoverTracker {
     /// The pointer counts this far outside a word, so the 2-point underline is easy to rest on.
     static let slack: CGFloat = 2
 
+    /// A word read again this far from where its underline was drawn, on either axis, counts as moved.
+    static let moveTolerance: CGFloat = 2
+
     private(set) var current: UUID?
 
     /// `covered` is the open card's frame: words under it can't be pointed at, only the card can.
@@ -36,6 +39,14 @@ struct HoverTracker {
     /// with, on the card, or between the two.
     static func keepsCard(at point: CGPoint, anchor: CGRect, card: CGRect) -> Bool {
         reach(anchor).union(card).contains(point)
+    }
+
+    /// False when the word is no longer where its underline was drawn: an edge more than `moveTolerance` away,
+    /// or unreadable. Both rects are in AppKit coordinates.
+    static func isStill(drawn: CGRect, read: CGRect?) -> Bool {
+        guard let read else { return false }
+        return abs(read.minX - drawn.minX) <= moveTolerance && abs(read.maxX - drawn.maxX) <= moveTolerance
+            && abs(read.minY - drawn.minY) <= moveTolerance && abs(read.maxY - drawn.maxY) <= moveTolerance
     }
 
     private static func reach(_ rect: CGRect) -> CGRect {

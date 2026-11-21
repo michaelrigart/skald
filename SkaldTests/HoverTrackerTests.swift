@@ -77,4 +77,19 @@ struct HoverTrackerTests {
         var tracker = HoverTracker()
         #expect(tracker.pointer(at: CGPoint(x: 120, y: 98.5), over: targets) == .entered(first))
     }
+
+    @Test func aWordThatMovedOrCannotBeReadIsNotStill() {
+        let drawn = CGRect(x: 100, y: 400, width: 40, height: 16)
+        #expect(HoverTracker.isStill(drawn: drawn, read: drawn.offsetBy(dx: 2, dy: -2)))
+        #expect(!HoverTracker.isStill(drawn: drawn, read: drawn.offsetBy(dx: 0, dy: 12)))
+        #expect(!HoverTracker.isStill(drawn: drawn, read: drawn.offsetBy(dx: 3, dy: 0)))
+        #expect(!HoverTracker.isStill(drawn: drawn, read: nil))
+    }
+
+    /// The word's far edges count too: a line that re-wrapped keeps its origin and loses its end.
+    @Test func aWordWhoseEndMovedIsNotStill() {
+        let drawn = CGRect(x: 100, y: 400, width: 40, height: 16)
+        #expect(!HoverTracker.isStill(drawn: drawn, read: CGRect(x: 100, y: 400, width: 20, height: 16)))
+        #expect(!HoverTracker.isStill(drawn: drawn, read: CGRect(x: 100, y: 400, width: 40, height: 22)))
+    }
 }
