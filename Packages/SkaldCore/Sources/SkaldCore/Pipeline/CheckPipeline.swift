@@ -10,6 +10,11 @@ public struct IssueSnapshot: Sendable, Equatable {
     }
 }
 
+/// What a route lookup is for: the on-device spelling switches, or the model check's engine.
+enum RouteLookup: Sendable {
+    case spelling, model
+}
+
 /// Turns field events into published issues: drives the scheduler on the injected clock, runs spelling and
 /// model checks by route, and publishes only results whose epoch, generation, paragraph and route still hold.
 public actor CheckPipeline {
@@ -58,10 +63,13 @@ public actor CheckPipeline {
         case dropped
     }
 
+    public static let claudeTimeout: Duration = .seconds(5)
+
     public nonisolated let issues: AsyncStream<IssueSnapshot>
     private let publisher: AsyncStream<IssueSnapshot>.Continuation
     private let access: any TextAccess
     private let apple: any Engine
+    private let claude: (@Sendable (_ model: String) -> any Engine)?
     private let spelling: any SpellingChecking
     private let detector: any LanguageDetecting
     private let detections: DetectionMemo
@@ -87,8 +95,8 @@ public actor CheckPipeline {
     private var backgroundJob: BackgroundJob?
     /// Every background spelling job still running, including those the scheduler has dropped.
     private var backgroundJobIDs: Set<UUID> = []
-    /// Called with the language before each route lookup; tests hold lookups here.
-    private var routeHook: (@Sendable (Language) async -> Void)?
+    /// Called with the language and the kind of lookup before each route lookup; tests hold lookups here.
+    private var routeHook: (@Sendable (Language, RouteLookup) async -> Void)?
     /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
     /// cancels is removed without a report, since the scheduler has already let it go.
     private var modelJobs: [Int: Task<Void, Never>] = [:]
@@ -106,6 +114,7 @@ public actor CheckPipeline {
     public init(
         access: any TextAccess,
         apple: any Engine,
+        claude: (@Sendable (_ model: String) -> any Engine)? = nil,
         spelling: any SpellingChecking,
         detector: any LanguageDetecting,
         oracle: any WordOracle,
@@ -117,6 +126,7 @@ public actor CheckPipeline {
         (issues, publisher) = AsyncStream.makeStream(of: IssueSnapshot.self, bufferingPolicy: .bufferingNewest(1))
         self.access = access
         self.apple = apple
+        self.claude = claude
         self.spelling = spelling
         self.detector = detector
         detections = DetectionMemo(detector)
@@ -161,6 +171,8 @@ public actor CheckPipeline {
     /// A running background check alone is forgotten and read for again, so its key is queued once it ends.
     public func update(settings new: Settings) {
         let switchesChanged = new.typingChecks != settings.typingChecks || new.modelChecks != settings.modelChecks
+            || new.claudeTyping != settings.claudeTyping || new.claudeLanguages != settings.claudeLanguages
+            || new.appOverrides != settings.appOverrides
         let background = backgroundJob
         let discarded = spellingJobs.values.contains { !backgroundJobIDs.contains($0) } || !modelJobs.isEmpty
         settings = new
@@ -231,7 +243,7 @@ public actor CheckPipeline {
         send(.field(event))
     }
 
-    func setRouteHook(_ hook: (@Sendable (Language) async -> Void)?) {
+    func setRouteHook(_ hook: (@Sendable (Language, RouteLookup) async -> Void)?) {
         routeHook = hook
     }
 
@@ -361,8 +373,10 @@ public actor CheckPipeline {
     }
 
     private func spell(_ key: ParagraphKey, chunk: Paragraph, language: Language, epoch: Int, id: UUID, inBackground: Bool = false) async {
-        guard await route(language) != .off else {
+        guard await route(language, .spelling, app: key.field.app) != .off else {
+            let keepsClaudeResult = await route(language, .model, app: key.field.app) == .claude
             guard spellingJobs[key] == id else { return }
+            if keepsClaudeResult { return }
             if epoch == self.epoch { tracker.clear(key) }
             if inBackground && epoch == self.epoch { return }
             return send(.forget([key]))
@@ -370,8 +384,8 @@ public actor CheckPipeline {
         let flags = await spelling.flags(in: chunk, language: language, neverTouch: Set(settings.neverTouch))
         let editGuard = self.editGuard
         let kept = await editGuard.resolve(flags, in: chunk.text, language: language, source: .spelling, oracle: oracle, confirmer: nil)
-        guard epoch == self.epoch, await route(language) != .off, epoch == self.epoch, spellingJobs[key] == id,
-              let issues = anchored(kept, key: key, source: .spelling, language: language)
+        guard epoch == self.epoch, await route(language, .spelling, app: key.field.app) != .off, epoch == self.epoch, spellingJobs[key] == id,
+              let issues = anchored(kept, key: key, source: .spelling, language: language, engine: nil)
         else {
             guard spellingJobs[key] == id else { return }
             return send(.forget([key]))
@@ -395,29 +409,97 @@ public actor CheckPipeline {
     }
 
     private func checkModel(_ key: ParagraphKey, chunk: Paragraph, language: Language, generation: Int, epoch: Int) async -> ModelOutcome {
-        guard isCurrent(epoch, generation), await route(language) == .model, isCurrent(epoch, generation) else { return .dropped }
-        let output: String
-        do {
-            output = try await apple.run(EngineRequest(action: .check, language: language, text: chunk.text))
+        let app = key.field.app
+        guard isCurrent(epoch, generation) else { return .dropped }
+        let route = await route(language, .model, app: app)
+        guard isCurrent(epoch, generation) else { return .dropped }
+        let request = EngineRequest(action: .check, language: language, text: chunk.text)
+        switch route {
+        case .claude:
+            guard let engine = claude?(settings.claudeTypingModel) else { return .dropped }
+            let result = await ask(engine, request)
+            return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .claude)
+        case .model:
+            let result = await runApple(request)
+            return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac)
+        case .spellingOnly, .off:
+            return .dropped
+        }
+    }
+
+    private func runApple(_ request: EngineRequest) async -> Result<String, EngineFailure> {
+        do throws(EngineFailure) {
+            return .success(try await apple.run(request))
         } catch {
-            if case .unavailable(let reason) = error, epoch == self.epoch { appleUnavailable = reason }
+            return .failure(error)
+        }
+    }
+
+    /// Judges and publishes an engine's answer while the epoch, the generation and the route for that engine still hold.
+    private func judged(
+        _ result: Result<String, EngineFailure>,
+        _ key: ParagraphKey,
+        chunk: Paragraph,
+        language: Language,
+        generation: Int,
+        epoch: Int,
+        engine: EngineKind
+    ) async -> ModelOutcome {
+        let output: String
+        switch result {
+        case .success(let text):
+            output = text
+        case .failure(let failure):
+            if case .unavailable(let reason) = failure, engine == .thisMac, epoch == self.epoch { appleUnavailable = reason }
             return .dropped
         }
         guard isCurrent(epoch, generation) else { return .dropped }
 
-        let answer = await ModelAnswer.judge(
+        let answered = await ModelAnswer.judge(
             output, for: chunk.text, language: language, editGuard: editGuard, detector: detector, oracle: oracle, confirmer: confirmer
         ) { [weak self] language in
-            await self?.mayConfirm(language, epoch: epoch, generation: generation) ?? false
+            await self?.mayConfirm(language, engine: engine, epoch: epoch, generation: generation) ?? false
         }
-        let kept: [Edit]? = if case .kept(let edits) = answer { edits } else { nil }
-        guard isCurrent(epoch, generation), await route(language) == .model, isCurrent(epoch, generation),
-              let issues = anchored(kept ?? [], key: key, source: .model, language: language)
+        let kept: [Edit]? = if case .kept(let edits) = answered { edits } else { nil }
+        let expected: TypingRoute = engine == .claude ? .claude : .model
+        guard isCurrent(epoch, generation), await route(language, .model, app: key.field.app) == expected, isCurrent(epoch, generation),
+              let issues = anchored(kept ?? [], key: key, source: .model, language: language, engine: engine)
         else { return .dropped }
         guard kept != nil else { return .checked }
         tracker.setModel(issues, for: key)
         publish()
         return .checked
+    }
+
+    /// Races the request against the deadline on the injected clock. At the deadline, or when the caller is
+    /// cancelled, the request's task is cancelled and its answer, if it comes, is never read.
+    private func ask(_ engine: any Engine, _ request: EngineRequest) async -> Result<String, EngineFailure> {
+        let (outcomes, continuation) = AsyncStream.makeStream(of: Result<String, EngineFailure>.self)
+        let deadline = timing.elapsed() + Self.claudeTimeout
+        let sleep = timing.sleep
+        let call = Task {
+            guard !Task.isCancelled else {
+                continuation.yield(.failure(.cancelled))
+                return
+            }
+            do throws(EngineFailure) {
+                continuation.yield(.success(try await engine.run(request)))
+            } catch {
+                continuation.yield(.failure(error))
+            }
+        }
+        let timer = Task {
+            if (try? await sleep(deadline)) != nil { continuation.yield(.failure(.timedOut)) }
+        }
+        let first = await withTaskCancellationHandler {
+            await outcomes.first { _ in true }
+        } onCancel: {
+            continuation.yield(.failure(.cancelled))
+        }
+        call.cancel()
+        timer.cancel()
+        continuation.finish()
+        return first ?? .failure(.cancelled)
     }
 
     private func finishModel(_ generation: Int, _ outcome: ModelOutcome) {
@@ -432,18 +514,30 @@ public actor CheckPipeline {
         epoch == self.epoch && modelJobs[generation] != nil && !Task.isCancelled
     }
 
-    private func mayConfirm(_ language: Language, epoch: Int, generation: Int) async -> Bool {
-        guard isCurrent(epoch, generation), await router.modelAllowed(language) else { return false }
-        return appleUnavailable == nil && isCurrent(epoch, generation)
+    /// Apple's answer is confirmed while the language's on-device switches allow the model; Claude's is confirmed
+    /// whenever Apple is available, whatever those switches say.
+    private func mayConfirm(_ language: Language, engine: EngineKind, epoch: Int, generation: Int) async -> Bool {
+        guard isCurrent(epoch, generation) else { return false }
+        let allowed = engine == .claude ? await router.current.canConfirmOnDevice : await router.modelAllowed(language)
+        return allowed && appleUnavailable == nil && isCurrent(epoch, generation)
     }
 
     // MARK: Routing and publication
 
-    private func route(_ language: Language) async -> TypingRoute {
-        await routeHook?(language)
-        let route = await router.current.onDevice(language)
-        if route == .model, let appleUnavailable { return .spellingOnly(appleUnavailable) }
+    /// Only a field whose app has a bundle identifier can route to Claude: `EngineRouter` treats any other app
+    /// name as one whose mode is on.
+    private func route(_ language: Language, _ lookup: RouteLookup, app: String) async -> TypingRoute {
+        await routeHook?(language, lookup)
+        let router = await router.current
+        var route = lookup == .model && claude != nil && Self.hasBundleIdentifier(app)
+            ? router.typing(language, app: app)
+            : router.onDevice(language)
+        if route == .model, let appleUnavailable { route = .spellingOnly(appleUnavailable) }
         return route
+    }
+
+    private static func hasBundleIdentifier(_ app: String) -> Bool {
+        !app.isEmpty && app != "unknown"
     }
 
     /// The paragraph's language by `LanguageDetecting.language(of:field:read:)`, read around in the latest snapshot of
@@ -458,11 +552,11 @@ public actor CheckPipeline {
     }
 
     /// Anchors kept edits to the key's paragraph in the latest snapshot, or returns nil when it is gone.
-    private func anchored(_ edits: [Edit], key: ParagraphKey, source: IssueSource, language: Language) -> [Issue]? {
+    private func anchored(_ edits: [Edit], key: ParagraphKey, source: IssueSource, language: Language, engine: EngineKind?) -> [Issue]? {
         guard let latest, let (parent, chunk) = ParagraphKeys.locate(key, in: latest.parents) else { return nil }
         return edits
             .filter { !editGuard.touchesNeverTouch($0, in: chunk.text) }
-            .map { Issue(key: key, parent: parent, chunk: chunk, edit: $0, source: source, language: language) }
+            .map { Issue(key: key, parent: parent, chunk: chunk, edit: $0, source: source, language: language, engine: engine) }
     }
 
     private func publish() {

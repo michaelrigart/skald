@@ -53,7 +53,8 @@ public struct IssueTracker: Sendable {
                     chunk: chunk,
                     edit: issue.edit,
                     source: issue.source,
-                    language: issue.language
+                    language: issue.language,
+                    engine: issue.engine
                 ))
                 continue
             }

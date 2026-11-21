@@ -5,23 +5,19 @@ import SkaldCoreTestSupport
 import struct SkaldCore.Issue
 import struct SkaldCore.TextRange
 
-private let fieldA = FieldID(app: "com.example.mail", token: "a")
-private let fieldB = FieldID(app: "com.example.mail", token: "b")
-private let pause = Duration.milliseconds(700)
+private typealias Rig = PipelineRig
+private let fieldA = PipelineRig.fieldA
+private let fieldB = PipelineRig.fieldB
 
 private let flew = "We flew to teh office in paris yesterday"
 private let talos = "Talos is down again since this morning"
 
 private func makeSettings(typing: Bool = true, model: Bool = true, neverTouch: [String] = []) -> Settings {
-    var settings = Settings()
-    settings.typingChecks = [.en: typing, .nl: typing, .fr: typing]
-    settings.modelChecks = [.en: model, .nl: model, .fr: model]
-    neverTouch.forEach { settings.addNeverTouch($0) }
-    return settings
+    PipelineRig.makeSettings(typing: typing, model: model, neverTouch: neverTouch)
 }
 
 private func engineRouter(_ settings: Settings, apple: UnavailableReason? = nil) -> EngineRouter {
-    EngineRouter(settings: settings, appleAvailability: apple, thermalPaused: false, claudeKeyPresent: false)
+    PipelineRig.engineRouter(settings, apple: apple)
 }
 
 /// About 1,000 UTF-16 units ending a sentence, so two of them never share a 1,200-unit chunk.
@@ -37,48 +33,6 @@ private func chunkTexts(_ text: String) -> [String] {
 private func thread(_ units: Int) -> String {
     let line = "Earlier message line in the thread.\n"
     return String(repeating: line, count: units / line.utf16.count + 1)
-}
-
-private actor GatedOracle: WordOracle {
-    private let inner: FakeWordOracle
-    private var gate: CallGate
-
-    init(misspelled: Set<String>, gated: Bool) {
-        let entries = Dictionary(uniqueKeysWithValues: misspelled.map {
-            ($0, FakeWordOracle.Entry(misspelled: true, english: false, stem: nil, lemma: nil, function: nil))
-        })
-        inner = FakeWordOracle(dictionary: ["en": entries])
-        gate = CallGate(closed: gated)
-    }
-
-    func facts(for words: Set<String>, language: Language) async -> WordFacts {
-        let index = gate.arrive()
-        if gate.mustWait(index) {
-            await withCheckedContinuation { gate.hold(index, $0) }
-        }
-        return await inner.facts(for: words, language: language)
-    }
-
-    func waitForCalls(_ count: Int) async {
-        let id = UUID()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { gate.wait(id, for: count, $0) }
-        } onCancel: {
-            Task { await self.stopWaiting(id) }
-        }
-    }
-
-    private func stopWaiting(_ id: UUID) {
-        gate.stopWaiting(id)
-    }
-
-    func release(_ index: Int) {
-        gate.release(index)
-    }
-
-    func open() {
-        gate.open()
-    }
 }
 
 /// Holds the first route lookup for a language until released.
@@ -116,93 +70,11 @@ private actor RouteHold {
     }
 }
 
-private actor RecordingConfirmer: EditConfirming {
-    private(set) var asked: [String] = []
-
-    func confirm(_ edit: Edit, in paragraph: String, language: Language) -> Bool? {
-        asked.append(edit.original)
-        return true
-    }
-}
-
-private struct Rig {
-    let access = FakeTextAccess()
-    let engine: FakeEngine
-    let spelling: FakeSpelling
-    let oracle: GatedOracle
-    let confirmer = RecordingConfirmer()
-    let clock = TestClock()
-    let router: LiveRouter
-    let pipeline: CheckPipeline
-
-    init(
-        _ settings: Settings,
-        engine: FakeEngine = .correcting(["teh": "the"]),
-        misspellings: [String: String] = ["teh": "the"],
-        oracleGated: Bool = false,
-        detector: any LanguageDetecting = FakeLanguageDetector()
-    ) {
-        self.engine = engine
-        spelling = FakeSpelling(misspellings)
-        oracle = GatedOracle(misspelled: Set(misspellings.keys.map { $0.lowercased() }), gated: oracleGated)
-        router = LiveRouter(engineRouter(settings))
-        pipeline = CheckPipeline(
-            access: access,
-            apple: engine,
-            spelling: spelling,
-            detector: detector,
-            oracle: oracle,
-            confirmer: confirmer,
-            clock: clock,
-            settings: settings,
-            router: router
-        )
-    }
-
-    func focus(_ text: String, caret: Int = 0) async {
-        await access.set(text, caret: caret, in: fieldA)
-        await pipeline.receive(.focused(fieldA))
-    }
-
-    /// Lets the typing pause run out; the timer's read and the checks it starts may still be running.
-    func pass() {
-        clock.advance(by: pause)
-    }
-
-    /// Moves the caret, lets the pause run out and waits for every check it starts.
-    func recheckAtCaret() async {
-        await pipeline.receive(.caretMoved(fieldA))
-        pass()
-        await pipeline.drain()
-    }
-
-    func check() async {
-        pass()
-        await pipeline.drain()
-    }
-
-    func visible(in field: FieldID = fieldA) async -> [Issue] {
-        await pipeline.tracker.visible(in: field)
-    }
-
-    func modelIssues() async -> [Issue] {
-        await visible().filter { $0.source == .model }
-    }
-
-    func update(_ settings: Settings, apple: UnavailableReason? = nil) async {
-        await router.set(engineRouter(settings, apple: apple))
-        await pipeline.update(settings: settings)
-    }
-}
-
 private func next(
     _ iterator: inout AsyncStream<IssueSnapshot>.Iterator,
     where matches: (IssueSnapshot) -> Bool
 ) async -> IssueSnapshot? {
-    while let snapshot = await iterator.next() {
-        if matches(snapshot) { return snapshot }
-    }
-    return nil
+    await PipelineRig.next(&iterator, where: matches)
 }
 
 @Suite(.timeLimit(.minutes(1)))
@@ -745,7 +617,7 @@ struct CheckPipelineTests {
         let line = "teh end"
         let text = [french, line, Self.englishLine, french + " Bis."].joined(separator: "\n")
         let hold = RouteHold(.fr)
-        await rig.pipeline.setRouteHook { await hold.arrive($0) }
+        await rig.pipeline.setRouteHook { language, _ in await hold.arrive(language) }
         await rig.focus(text, caret: (french + "\n" + line + "\n").utf16.count + 3)
         rig.pass()
         await hold.waitForLookup()

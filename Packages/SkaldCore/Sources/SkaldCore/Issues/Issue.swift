@@ -9,6 +9,8 @@ public struct Issue: Identifiable, Hashable, Sendable {
     public let edit: Edit
     public let source: IssueSource
     public let language: Language
+    /// The engine that found a model issue; nil for spelling.
+    public let engine: EngineKind?
 
     public init(
         id: UUID = UUID(),
@@ -17,7 +19,8 @@ public struct Issue: Identifiable, Hashable, Sendable {
         chunk: Paragraph,
         edit: Edit,
         source: IssueSource,
-        language: Language
+        language: Language,
+        engine: EngineKind? = nil
     ) {
         self.id = id
         self.key = key
@@ -26,6 +29,7 @@ public struct Issue: Identifiable, Hashable, Sendable {
         self.edit = edit
         self.source = source
         self.language = language
+        self.engine = engine
     }
 
     public var fieldRange: TextRange {

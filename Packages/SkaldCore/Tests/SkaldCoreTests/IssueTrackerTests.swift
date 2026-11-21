@@ -22,16 +22,24 @@ private func makeIssue(
     chunk: Paragraph? = nil,
     replacing word: String,
     with correction: String,
-    source: IssueSource = .spelling
+    source: IssueSource = .spelling,
+    engine: EngineKind? = nil
 ) -> Issue {
     let chunk = chunk ?? parent
     let edit = TextDiff.edits(from: chunk.text, to: chunk.text.replacingOccurrences(of: word, with: correction))[0]
-    return Issue(key: key, parent: parent, chunk: chunk, edit: edit, source: source, language: .en)
+    return Issue(key: key, parent: parent, chunk: chunk, edit: edit, source: source, language: .en, engine: engine)
 }
 
-private func issue(in snapshot: FieldSnapshot, paragraph index: Int = 0, replacing word: String, with correction: String, source: IssueSource = .spelling) -> Issue {
+private func issue(
+    in snapshot: FieldSnapshot,
+    paragraph index: Int = 0,
+    replacing word: String,
+    with correction: String,
+    source: IssueSource = .spelling,
+    engine: EngineKind? = nil
+) -> Issue {
     let (key, parent) = ParagraphKeys.keyed(snapshot)[index]
-    return makeIssue(key: key, parent: parent, replacing: word, with: correction, source: source)
+    return makeIssue(key: key, parent: parent, replacing: word, with: correction, source: source, engine: engine)
 }
 
 private func issue(in snapshot: FieldSnapshot, revisedTo revised: String, source: IssueSource) -> Issue {
@@ -164,6 +172,15 @@ private func longParagraph() -> String {
     #expect(moved.fieldRange == TextRange(location: 11, length: 2))
     #expect(moved.parent.range == TextRange(location: 6, length: 13))
     #expect(moved.expected == ExpectedText(range: TextRange(location: 6, length: 13), text: "They is ready"))
+}
+
+@Test func revalidationKeepsTheEngineThatFoundAnIssue() {
+    let before = wholeSnapshot("They is ready")
+    let key = ParagraphKeys.keyed(before)[0].0
+    var tracker = IssueTracker()
+    tracker.setModel([issue(in: before, replacing: "is", with: "are", source: .model, engine: .claude)], for: key)
+    #expect(tracker.revalidate(wholeSnapshot("Intro\nThey is ready")).isEmpty)
+    #expect(tracker.visible(in: fieldA).map(\.engine) == [.claude])
 }
 
 @Test func fieldsWithIdenticalTextKeepSeparateIssues() {
