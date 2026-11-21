@@ -188,14 +188,15 @@ private struct IssueCardView: View {
             }
             switch card.phase {
             case .ready:
-                if !card.alternatives.isEmpty {
+                if card.offersAlternatives {
                     HStack(spacing: 6) {
                         ForEach(Array(card.alternatives.enumerated()), id: \.offset) { index, guess in
-                            Button(guess) {
+                            let copied = card.copiedAlternative == index
+                            Button(copied ? "Copied" : guess) {
                                 if card.writes { Task { await card.accept(alternative: index) } } else { card.copy(alternative: index) }
                             }
                             .lineLimit(1)
-                            .accessibilityLabel("\(card.writes ? "Use" : "Copy") \(guess): \(card.label)")
+                            .accessibilityLabel("\(card.writes ? "Use" : copied ? "Copied" : "Copy") \(guess): \(card.label)")
                         }
                     }
                 }

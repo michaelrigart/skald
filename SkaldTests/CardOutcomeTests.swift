@@ -185,7 +185,34 @@ import Testing
         card.copy(alternative: 7)
         #expect(spy.writes.isEmpty && !card.copied)
         card.copy(alternative: 1)
-        #expect(spy.writes == ["tea"] && card.copied && card.phase == .ready)
+        #expect(spy.writes == ["tea"] && card.phase == .ready)
+        #expect(!card.copied && card.copiedAlternative == 1)
+        card.copyFix()
+        #expect(spy.writes == ["tea", "the"] && card.copied)
+    }
+
+    @Test func theAlternativesRowIsOfferedWhileReadyWhetherOrNotTheAppWrites() async {
+        let guesses = spelling(guesses: ["the", "ten", "tea"])
+        func model(_ issue: Issue, writes: Bool, accept: @escaping (UUID, Int?) async -> ReplaceOutcome = { _, _ in .replaced }) -> IssueCardModel {
+            IssueCardModel(
+                issue: issue, writes: writes, clipboard: spy,
+                actions: .init(accept: accept, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
+            )
+        }
+        #expect(model(guesses, writes: false).offersAlternatives)
+        #expect(model(guesses, writes: true).offersAlternatives)
+        #expect(!model(spelling(guesses: ["the"]), writes: true).offersAlternatives)
+
+        let (answers, answer) = AsyncStream.makeStream(of: ReplaceOutcome.self)
+        let working = model(guesses, writes: true) { _, _ in
+            for await answer in answers { return answer }
+            return .failed
+        }
+        let accepting = Task { await working.accept(alternative: 0) }
+        while working.phase != .working { await Task.yield() }
+        #expect(!working.offersAlternatives)
+        answer.yield(.replaced)
+        await accepting.value
     }
 
     @Test func acceptWithoutAnAlternativeAsksForTheFix() async {

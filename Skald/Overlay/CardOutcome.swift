@@ -101,6 +101,8 @@ struct CardContent: Equatable {
     let writes: Bool
     private(set) var phase: Phase = .ready
     private(set) var copied = false
+    /// The guess Copy last put on the clipboard, which the fix's own Copy fix doesn't change.
+    private(set) var copiedAlternative: Int?
     /// The write's outcome, once Accept has one.
     private(set) var outcome: ReplaceOutcome?
     /// Set by the controller while review mode shows this card.
@@ -148,6 +150,9 @@ struct CardContent: Equatable {
     /// Copy fix in the card's menu, whether or not the app also offers it as a button.
     var canCopyFix: Bool { phase == .ready && !fix.isEmpty }
 
+    /// The guesses show while the card is ready, whether Skald writes or copies.
+    var offersAlternatives: Bool { phase == .ready && !alternatives.isEmpty }
+
     var showsReviewKeys: Bool { reviewing && phase == .ready }
 
     /// "Hide "Verb form" suggestions", for a kind that can be hidden.
@@ -194,9 +199,8 @@ struct CardContent: Equatable {
     /// Where the app has no clean write, a guess is copied instead of accepted.
     func copy(alternative: Int) {
         guard phase == .ready, alternatives.indices.contains(alternative) else { return }
-        fix = alternatives[alternative]
-        clipboard.write(fix)
-        copied = true
+        clipboard.write(alternatives[alternative])
+        copiedAlternative = alternative
     }
 
     func dismiss() {
