@@ -390,10 +390,9 @@ Pending Michael's confirmation (this changes the spec):
   until the paragraph is checked again, so "moves to the next issue when the write is confirmed"
   has nothing to move to. A "Checking…" card shows, the keys stay held (only esc acts), and the
   mode goes on at the first checked result that follows the recheck's start (at once if the
-  recheck already finished before a paste write was confirmed), or ends after 6 s. Alternative:
+  recheck already finished before a paste write was confirmed), or ends after 8 s. A result is
+  checked once spelling and the model's recheck of that paragraph are both in. Alternative:
   carry the paragraph's other issues across Skald's own write.
-- The wait after an accept ends at the first checked result, even when Claude's answer for that
-  paragraph is still on its way.
 - While a write is applied or the recheck awaited, edits count as Skald's own: typing during
   "Checking…" doesn't leave the mode, and the keys pressed then are swallowed.
 
@@ -406,7 +405,7 @@ Inside the spec:
   focus retries ran out and the app has a window.
 - "Only esc is taken" while a write is applied means only esc acts; the other keys stay held so
   they can't reach the app mid-write. A key still down when the mode ends stays held until it
-  comes up (at most 1 s), and a held key acts once, not on every repeat.
+  is physically up, and a held key acts once, not on every repeat.
 - After an accept or a dismiss with no issue after the position, the mode goes to the last one
   before it.
 - Punctuation is "only punctuation or spacing changes", measured on the words joined together: an
