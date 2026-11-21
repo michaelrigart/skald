@@ -2,9 +2,9 @@
 
 Skald is a spelling and grammar checker for macOS that lives in the menu bar. It checks what
 you type in other apps, in English and Dutch, and in French in its panel, and runs on your
-Mac. It underlines issues in the field and offers the correction on a card. A small badge with
-a count of the issues sits on the field too, and where an app doesn't tell Skald where the text
-is, it is the only mark.
+Mac. It underlines issues in the field and offers the correction on a card. A small badge on
+the field shows the count of the issues, or a tick when there are none, and where an app doesn't
+tell Skald where the text is, it is the only mark.
 
 ## Features
 

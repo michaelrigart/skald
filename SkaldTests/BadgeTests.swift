@@ -45,11 +45,13 @@ struct BadgeTests {
         var clicks = 0
         view.onClick = { clicks += 1 }
         view.show(.count(3), label: "3 suggestions: 3 spelling")
+        #expect(view.isAccessibilityElement())
         #expect(view.accessibilityRole() == .button)
         #expect(view.accessibilityPerformPress() && clicks == 1)
 
         view.show(.tick, label: "No suggestions")
-        #expect(view.accessibilityRole() != .button)
+        #expect(view.isAccessibilityElement())
+        #expect(view.accessibilityRole() == .staticText)
         #expect(!view.accessibilityPerformPress() && clicks == 1)
     }
 

@@ -47,6 +47,7 @@ final class BadgeView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
     }
 
