@@ -67,6 +67,8 @@ public actor CheckPipeline {
 
     public nonisolated let issues: AsyncStream<IssueSnapshot>
     private let publisher: AsyncStream<IssueSnapshot>.Continuation
+    public nonisolated let claudeStatus: AsyncStream<ClaudeStatus>
+    private let statusPublisher: AsyncStream<ClaudeStatus>.Continuation
     private let access: any TextAccess
     private let apple: any Engine
     private let claude: (@Sendable (_ model: String) -> any Engine)?
@@ -110,6 +112,9 @@ public actor CheckPipeline {
     private var fieldLanguages = FieldLanguages()
     private var latest: LatestRead?
     private var appleUnavailable: UnavailableReason?
+    private var backoff = ClaudeBackoff()
+    /// The value last yielded on `claudeStatus`.
+    private(set) var lastClaudeStatus = ClaudeStatus.quiet
 
     public init(
         access: any TextAccess,
@@ -124,6 +129,7 @@ public actor CheckPipeline {
         router: LiveRouter
     ) {
         (issues, publisher) = AsyncStream.makeStream(of: IssueSnapshot.self, bufferingPolicy: .bufferingNewest(1))
+        (claudeStatus, statusPublisher) = AsyncStream.makeStream(of: ClaudeStatus.self, bufferingPolicy: .bufferingNewest(1))
         self.access = access
         self.apple = apple
         self.claude = claude
@@ -142,6 +148,7 @@ public actor CheckPipeline {
     deinit {
         events?.cancel()
         publisher.finish()
+        statusPublisher.finish()
     }
 
     public func start() {
@@ -163,6 +170,13 @@ public actor CheckPipeline {
         epoch += 1
         readRevision += 1
         send(p ? .paused : .resumed)
+        refreshClaudeStatus()
+    }
+
+    /// Call when the Claude key changes: the failures remembered so far were for another key.
+    public func resetClaude() {
+        backoff = ClaudeBackoff()
+        refreshClaudeStatus()
     }
 
     /// Call after the `LiveRouter` holds the router for these settings. The new epoch dooms every check in
@@ -193,6 +207,7 @@ public actor CheckPipeline {
         let touching = tracker.removeAll { editGuard.touchesNeverTouch($0.edit, in: $0.chunk.text) }
         if !touching.isEmpty { send(.forget(touching)) }
         publish()
+        refreshClaudeStatus()
     }
 
     /// The field's last confident language, kept for the newest fields across focus changes; the panel's
@@ -237,6 +252,7 @@ public actor CheckPipeline {
             currentField = field
             epoch += 1
             readRevision += 1
+            refreshClaudeStatus()
         case .edited(let field), .caretMoved(let field):
             if field == currentField { readRevision += 1 }
         }
@@ -416,15 +432,44 @@ public actor CheckPipeline {
         let request = EngineRequest(action: .check, language: language, text: chunk.text)
         switch route {
         case .claude:
-            guard let engine = claude?(settings.claudeTypingModel) else { return .dropped }
+            guard let makeEngine = claude else { return .dropped }
+            guard backoff.mayAsk(about: chunk.text, at: timing.elapsed()) else {
+                return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+            }
+            let engine = makeEngine(settings.claudeTypingModel)
+            publishClaudeStatus(ClaudeStatus(sending: true, trouble: backoff.trouble))
             let result = await ask(engine, request)
-            return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .claude)
+            switch result {
+            case .success:
+                backoff.succeeded()
+                await updateClaudeStatus()
+                return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .claude)
+            case .failure(let failure):
+                guard let trouble = ClaudeTrouble(failure) else { return .dropped }
+                backoff.failed(trouble, text: chunk.text, at: timing.elapsed())
+                await updateClaudeStatus()
+                return await fallBack(request, key, chunk: chunk, language: language, generation: generation, epoch: epoch)
+            }
         case .model:
             let result = await runApple(request)
             return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac)
         case .spellingOnly, .off:
             return .dropped
         }
+    }
+
+    /// What the language's on-device switches say, for a chunk Claude was not asked about or could not answer.
+    private func fallBack(
+        _ request: EngineRequest,
+        _ key: ParagraphKey,
+        chunk: Paragraph,
+        language: Language,
+        generation: Int,
+        epoch: Int
+    ) async -> ModelOutcome {
+        guard isCurrent(epoch, generation), await onDeviceRoute(language) == .model, isCurrent(epoch, generation) else { return .dropped }
+        let result = await runApple(request)
+        return await judged(result, key, chunk: chunk, language: language, generation: generation, epoch: epoch, engine: .thisMac, fallingBack: true)
     }
 
     private func runApple(_ request: EngineRequest) async -> Result<String, EngineFailure> {
@@ -443,7 +488,8 @@ public actor CheckPipeline {
         language: Language,
         generation: Int,
         epoch: Int,
-        engine: EngineKind
+        engine: EngineKind,
+        fallingBack: Bool = false
     ) async -> ModelOutcome {
         let output: String
         switch result {
@@ -462,7 +508,8 @@ public actor CheckPipeline {
         }
         let kept: [Edit]? = if case .kept(let edits) = answered { edits } else { nil }
         let expected: TypingRoute = engine == .claude ? .claude : .model
-        guard isCurrent(epoch, generation), await route(language, .model, app: key.field.app) == expected, isCurrent(epoch, generation),
+        let current = fallingBack ? await onDeviceRoute(language) : await route(language, .model, app: key.field.app)
+        guard isCurrent(epoch, generation), current == expected, isCurrent(epoch, generation),
               let issues = anchored(kept ?? [], key: key, source: .model, language: language, engine: engine)
         else { return .dropped }
         guard kept != nil else { return .checked }
@@ -531,9 +578,42 @@ public actor CheckPipeline {
     private func route(_ language: Language, _ lookup: RouteLookup, app: String) async -> TypingRoute {
         await routeHook?(language, lookup)
         let router = await router.current
-        var route = lookup == .model && claude != nil ? router.typing(language, app: app) : router.onDevice(language)
-        if route == .model, let appleUnavailable { route = .spellingOnly(appleUnavailable) }
+        updateClaudeStatus(router)
+        return withAppleAvailability(lookup == .model && claude != nil ? router.typing(language, app: app) : router.onDevice(language))
+    }
+
+    /// The route the language's on-device switches give, which is where a check falls back to.
+    private func onDeviceRoute(_ language: Language) async -> TypingRoute {
+        withAppleAvailability(await router.current.onDevice(language))
+    }
+
+    private func withAppleAvailability(_ route: TypingRoute) -> TypingRoute {
+        if route == .model, let appleUnavailable { return .spellingOnly(appleUnavailable) }
         return route
+    }
+
+    // MARK: Claude status
+
+    private func refreshClaudeStatus() {
+        guard claude != nil else { return }
+        track { await $0.updateClaudeStatus() }
+    }
+
+    private func updateClaudeStatus() async {
+        updateClaudeStatus(await router.current)
+    }
+
+    private func updateClaudeStatus(_ router: EngineRouter) {
+        guard claude != nil else { return }
+        let routed = currentField.flatMap { field in fieldLanguages[field].map { router.typing($0, app: field.app) == .claude } } ?? false
+        let sending = routed && !isPaused && !backoff.isSuspended(at: timing.elapsed())
+        publishClaudeStatus(ClaudeStatus(sending: sending, trouble: backoff.trouble))
+    }
+
+    private func publishClaudeStatus(_ status: ClaudeStatus) {
+        guard status != lastClaudeStatus else { return }
+        lastClaudeStatus = status
+        statusPublisher.yield(status)
     }
 
     /// The paragraph's language by `LanguageDetecting.language(of:field:read:)`, read around in the latest snapshot of

@@ -94,7 +94,7 @@ struct PipelineRig {
 
     let access = FakeTextAccess()
     let engine: FakeEngine
-    let claude: FakeEngine?
+    let claude: (any Engine)?
     let claudeModels = ModelLog()
     let key: Bool
     let spelling: FakeSpelling
@@ -107,7 +107,7 @@ struct PipelineRig {
     init(
         _ settings: Settings,
         engine: FakeEngine = .correcting(["teh": "the"]),
-        claude: FakeEngine? = nil,
+        claude: (any Engine)? = nil,
         key: Bool = false,
         onClaudeFactory: (@Sendable () -> Void)? = nil,
         misspellings: [String: String] = ["teh": "the"],
