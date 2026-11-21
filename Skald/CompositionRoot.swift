@@ -33,6 +33,10 @@ final class CompositionRoot {
     private var applied: Settings
     private var claudeStatus = ClaudeStatus.quiet
     private var statusTask: Task<Void, Never>?
+    private var unreadableTask: Task<Void, Never>?
+    /// Whether the frontmost app gave no focused element once its retries ran out, and what the focused field's app gives.
+    private var unreadable = false
+    private var fieldCapabilities: AccessCapabilities?
 
     private enum PipelineCommand: Sendable {
         case route(EngineRouter, Settings)
@@ -104,7 +108,7 @@ final class CompositionRoot {
         model.onClaudeKeyChange = { [weak self] in self?.commands.yield(.claudeKeyChanged) }
         statusItem = StatusItemController(
             actions: .init(
-                pauseForAnHour: { [model] in model.pause(for: 60 * 60) },
+                pause: { [model] in model.pause(for: $0) },
                 resume: { [model] in model.resume() },
                 setApp: { [model] in model.setApp($0, mode: $1) },
                 grantAccess: { [weak self] in self?.showOnboarding() },
@@ -124,8 +128,19 @@ final class CompositionRoot {
             pipeline: pipeline, access: textAccess, settings: model, clipboard: SystemClipboard(), clock: ContinuousClock(),
             registrar: hotkeys, announcer: VoiceOverAnnouncer()
         )
+        overlay.onFieldCapabilities = { [weak self] in
+            self?.fieldCapabilities = $0
+            self?.refreshStatus()
+        }
         overlay.start()
         self.overlay = overlay
+        unreadableTask = Task { [weak self, textAccess] in
+            for await app in textAccess.unreadableApp {
+                guard let self else { return }
+                unreadable = app != nil
+                refreshStatus()
+            }
+        }
         let panelWindow = PanelWindow()
         let panel = PanelController(window: panelWindow, clipboard: SystemClipboard())
         panelWindow.attach(panel)
@@ -150,6 +165,7 @@ final class CompositionRoot {
         panel?.close()
         pauseEnd?.cancel()
         statusTask?.cancel()
+        unreadableTask?.cancel()
         commands.finish()
     }
 
@@ -231,7 +247,8 @@ final class CompositionRoot {
             claude: claudeStatus, claudeLanguages: languages,
             fallbacks: languages.map { ClaudeFallback(language: $0, route: router.onDevice($0)) }
         )
-        statusItem?.show(state, sendingToClaude: claudeStatus.sending)
+        let note = FieldAccessNote.resolve(unreadable: unreadable, focused: fieldCapabilities != nil, capabilities: fieldCapabilities)
+        statusItem?.show(state, sendingToClaude: claudeStatus.sending, note: note)
     }
 
     private func currentConditions() -> Conditions {

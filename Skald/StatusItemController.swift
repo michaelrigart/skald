@@ -58,6 +58,16 @@ enum StatusState: Equatable {
         return "Last check failed: \(trouble.problem)"
     }
 
+    /// The menu's top lines: the state, its failure line, and the note on where Skald can't work. While a request
+    /// can leave, the Claude line stays first and the note follows it; paused or without Accessibility, no note.
+    func menuLines(note: FieldAccessNote?) -> [String] {
+        switch self {
+        case .paused, .noAccessibility: [title()]
+        case .usingClaude: [title(), detail, note?.line].compactMap { $0 }
+        case .onThisMac, .claudeTrouble, .spellingOnly: [note?.line, title()].compactMap { $0 }
+        }
+    }
+
     static let glyphName = "SkaldMenuBar", cloudGlyphName = "SkaldMenuBarCloud"
 
     /// The app's menu bar glyph, with the cloud while checks go to Claude; a copy, so the state's title doesn't
@@ -68,6 +78,27 @@ enum StatusState: Equatable {
         glyph.isTemplate = true
         glyph.accessibilityDescription = title()
         return glyph
+    }
+}
+
+/// Where Skald can't work in the focused app, for the status menu.
+enum FieldAccessNote: Equatable {
+    case cantRead, badgeOnly, cantShow
+
+    var line: String {
+        switch self {
+        case .cantRead: "Skald can't read text in this app"
+        case .badgeOnly: "Issues are listed at the badge here"
+        case .cantShow: "Skald can't show issues in this app"
+        }
+    }
+
+    /// `unreadable`: the frontmost app answered no focused element once the retries ran out.
+    static func resolve(unreadable: Bool, focused: Bool, capabilities: AccessCapabilities?) -> FieldAccessNote? {
+        if unreadable { return .cantRead }
+        guard focused, let capabilities else { return nil }
+        if capabilities.contains(.rangeBounds) { return nil }
+        return capabilities.contains(.fieldFrame) ? .badgeOnly : .cantShow
     }
 }
 
@@ -115,7 +146,7 @@ extension UnavailableReason {
 /// The menu bar item: its tooltip and description follow the state, and its menu is rebuilt each time it opens.
 final class StatusItemController: NSObject, NSMenuDelegate {
     struct Actions {
-        let pauseForAnHour: () -> Void
+        let pause: (_ interval: TimeInterval) -> Void
         let resume: () -> Void
         let setApp: (_ bundleID: String, _ mode: AppMode) -> Void
         let grantAccess: () -> Void
@@ -135,6 +166,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let actions: Actions
     private let frontApp: () -> FrontApp?
     private var state = StatusState.onThisMac
+    private var note: FieldAccessNote?
 
     init(actions: Actions, frontApp: @escaping () -> FrontApp?) {
         self.actions = actions
@@ -151,21 +183,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         NSStatusBar.system.removeStatusItem(item)
     }
 
-    func show(_ state: StatusState, sendingToClaude: Bool) {
+    func show(_ state: StatusState, sendingToClaude: Bool, note: FieldAccessNote? = nil) {
         self.state = state
+        self.note = note
         item.button?.image = state.image(sendingToClaude: sendingToClaude)
         item.button?.toolTip = state.title()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let heading = NSMenuItem(title: state.title(), action: nil, keyEquivalent: "")
-        heading.isEnabled = false
-        menu.addItem(heading)
-        if let detail = state.detail {
-            let failure = NSMenuItem(title: detail, action: nil, keyEquivalent: "")
-            failure.isEnabled = false
-            menu.addItem(failure)
+        for line in state.menuLines(note: note) {
+            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
         }
         menu.addItem(.separator())
         if let app = frontApp(), app.mode != .off {
@@ -177,6 +207,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if case .paused = state {
             menu.addItem(entry("Resume", #selector(resume)))
         } else {
+            menu.addItem(entry("Pause for 30 Minutes", #selector(pauseForHalfAnHour)))
             menu.addItem(entry("Pause for an Hour", #selector(pauseForAnHour)))
         }
         if let app = frontApp() {
@@ -190,6 +221,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(entry("Grant Accessibility Access…", #selector(grantAccess)))
         }
         menu.addItem(.separator())
+        menu.addItem(legendEntry())
         menu.addItem(entry("Settings…", #selector(openSettings), key: ","))
         let quit = NSMenuItem(title: "Quit Skald", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -201,7 +233,30 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return entry
     }
 
-    @objc private func pauseForAnHour() { actions.pauseForAnHour() }
+    /// The underline colours as a submenu. Its items are enabled without an action, so the dots aren't dimmed.
+    private func legendEntry() -> NSMenuItem {
+        let submenu = NSMenu(title: "Underline Colours")
+        submenu.autoenablesItems = false
+        for category in IssueCategory.allCases {
+            let item = NSMenuItem(title: category.title, action: nil, keyEquivalent: "")
+            item.image = Self.dot(CategoryPalette.color(category))
+            submenu.addItem(item)
+        }
+        let legend = NSMenuItem(title: "Underline Colours", action: nil, keyEquivalent: "")
+        legend.submenu = submenu
+        return legend
+    }
+
+    private static func dot(_ colour: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+            colour.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+    }
+
+    @objc private func pauseForHalfAnHour() { actions.pause(30 * 60) }
+    @objc private func pauseForAnHour() { actions.pause(60 * 60) }
     @objc private func resume() { actions.resume() }
     @objc private func grantAccess() { actions.grantAccess() }
     @objc private func openSettings() { actions.openSettings() }

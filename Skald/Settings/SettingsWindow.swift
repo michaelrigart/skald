@@ -34,6 +34,7 @@ struct SettingsView: View {
             TabView {
                 GeneralPane(model: model).tabItem { Label("General", systemImage: "gearshape") }
                 AppsPane(model: model).tabItem { Label("Apps", systemImage: "square.grid.2x2") }
+                SuggestionsPane(model: model).tabItem { Label("Suggestions", systemImage: "text.badge.checkmark") }
                 WordsPane(model: model).tabItem { Label("Words", systemImage: "text.book.closed") }
                 LanguagesPane(model: model).tabItem { Label("Languages", systemImage: "globe") }
                 EnginesPane(model: model).tabItem { Label("Engines", systemImage: "cpu") }

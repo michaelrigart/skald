@@ -113,6 +113,28 @@ private func resolve(
     #expect(StatusState.claudeTrouble(.declined, fallbacks: fallbacks).detail == nil)
 }
 
+@Test func theNoteSaysWhereSkaldCantWork() {
+    #expect(FieldAccessNote.resolve(unreadable: true, focused: false, capabilities: nil) == .cantRead)
+    #expect(FieldAccessNote.resolve(unreadable: false, focused: true, capabilities: [.read, .fieldFrame]) == .badgeOnly)
+    #expect(FieldAccessNote.resolve(unreadable: false, focused: true, capabilities: [.read]) == .cantShow)
+    #expect(FieldAccessNote.resolve(unreadable: false, focused: true, capabilities: [.read, .rangeBounds, .fieldFrame]) == nil)
+    #expect(FieldAccessNote.resolve(unreadable: false, focused: false, capabilities: nil) == nil)
+    #expect(FieldAccessNote.cantRead.line == "Skald can't read text in this app")
+    #expect(FieldAccessNote.badgeOnly.line == "Issues are listed at the badge here")
+    #expect(FieldAccessNote.cantShow.line == "Skald can't show issues in this app")
+}
+
+@Test func theNoteIsTheFirstLineUnlessARequestCanLeave() {
+    #expect(StatusState.onThisMac.menuLines(note: .badgeOnly) == ["Issues are listed at the badge here", "Checking on this Mac"])
+    #expect(StatusState.onThisMac.menuLines(note: nil) == ["Checking on this Mac"])
+    #expect(StatusState.usingClaude([.nl], lastFailure: .unreachable).menuLines(note: .badgeOnly)
+        == ["Dutch checks use Claude", "Last check failed: Claude unreachable", "Issues are listed at the badge here"])
+    #expect(StatusState.claudeTrouble(.unreachable, fallbacks: []).menuLines(note: .badgeOnly)
+        == ["Issues are listed at the badge here", "Claude unreachable"])
+    #expect(StatusState.noAccessibility.menuLines(note: .cantRead) == ["Skald needs Accessibility access"])
+    #expect(StatusState.paused(until: halfPastTwo).menuLines(note: .cantRead).count == 1)
+}
+
 @Test func everyStateShowsTheMenuBarGlyphAsATemplateDescribedByItsTitle() throws {
     let states: [StatusState] = [
         .onThisMac, .usingClaude([.nl], lastFailure: nil), .claudeTrouble(.unreachable, fallbacks: []),

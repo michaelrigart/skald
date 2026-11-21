@@ -12,6 +12,9 @@ import SkaldPlatform27
 final class OverlayController {
     static let hoverDelay: Duration = .milliseconds(300)
 
+    /// What the focused field's app gives, once read; nil when no field is focused or its capabilities are unread.
+    var onFieldCapabilities: ((AccessCapabilities?) -> Void)?
+
     private let pipeline: CheckPipeline
     private let access: SystemTextAccess
     private let settings: SettingsModel
@@ -147,6 +150,7 @@ final class OverlayController {
         let fieldChanged = new.field != snapshot.field
         if fieldChanged {
             capabilities = nil
+            onFieldCapabilities?(nil)
             scroller.cancel()
             scroller = makeScroller(for: new.field)
         }
@@ -507,7 +511,10 @@ final class OverlayController {
     private func capabilities(of field: FieldID) async -> AccessCapabilities {
         if let capabilities, capabilities.field == field { return capabilities.value }
         let value = await access.capabilities(for: field.app)
-        if snapshot.field == field { capabilities = (field, value) }
+        if snapshot.field == field {
+            capabilities = (field, value)
+            onFieldCapabilities?(value)
+        }
         return value
     }
 

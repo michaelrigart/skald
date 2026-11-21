@@ -11,7 +11,7 @@ private let terminal = "com.apple.Terminal"
 
     var actions: StatusItemController.Actions {
         .init(
-            pauseForAnHour: { [self] in calls.append("pause") },
+            pause: { [self] in calls.append("pause \(Int($0))") },
             resume: { [self] in calls.append("resume") },
             setApp: { [self] in calls.append("\($0) \($1.rawValue)") },
             grantAccess: { [self] in calls.append("grant") },
@@ -98,8 +98,42 @@ private let terminal = "com.apple.Terminal"
         #expect(menu.items.prefix(2).allSatisfy { !$0.isEnabled })
         #expect(menu.items.map(\.title).filter { !$0.isEmpty } == [
             "Dutch and French checks use Claude", "Last check failed: Claude unreachable",
-            "Keep App on This Mac", "Pause for an Hour", "Turn Off for App", "Settings…", "Quit Skald",
+            "Keep App on This Mac", "Pause for 30 Minutes", "Pause for an Hour", "Turn Off for App",
+            "Underline Colours", "Settings…", "Quit Skald",
         ])
         _ = controller
+    }
+
+    @Test func theMenuOffersTwoPausesWhenNotPaused() throws {
+        let recorder = Recorder()
+        let (running, controller) = menu(for: nil, recorder)
+        try choose("Pause for 30 Minutes", in: running)
+        try choose("Pause for an Hour", in: running)
+        #expect(recorder.calls == ["pause 1800", "pause 3600"])
+
+        let (paused, pausedController) = menu(for: nil, state: .paused(until: .now.addingTimeInterval(600)), recorder)
+        #expect(!paused.items.contains { $0.title.hasPrefix("Pause for") })
+        #expect(paused.items.contains { $0.title == "Resume" })
+        _ = (controller, pausedController)
+    }
+
+    @Test func theLegendSubmenuNamesTheCategoriesWithEnabledDots() throws {
+        let recorder = Recorder()
+        let (menu, controller) = menu(for: nil, recorder)
+        let legend = try #require(menu.items.first { $0.title == "Underline Colours" }?.submenu)
+        #expect(legend.items.map(\.title) == ["Spelling", "Punctuation", "Grammar"])
+        #expect(legend.items.allSatisfy { $0.isEnabled && $0.action == nil && $0.image?.size == NSSize(width: 10, height: 10) })
+        #expect(menu.items.firstIndex { $0.title == "Underline Colours" }! < menu.items.firstIndex { $0.title == "Settings…" }!)
+        _ = controller
+    }
+
+    @Test func theNoteJoinsTheDisabledLinesAtTheTop() {
+        let recorder = Recorder()
+        let controller = StatusItemController(actions: recorder.actions, frontApp: { nil })
+        controller.show(.onThisMac, sendingToClaude: false, note: .badgeOnly)
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        #expect(menu.items.prefix(3).map(\.title) == ["Issues are listed at the badge here", "Checking on this Mac", ""])
+        #expect(menu.items.prefix(2).allSatisfy { !$0.isEnabled })
     }
 }
