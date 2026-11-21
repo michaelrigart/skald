@@ -1,28 +1,28 @@
 import Foundation
-@testable import SkaldCore
+import SkaldCore
 
-actor StubTransport: HTTPTransport {
-    enum Reply: Sendable {
+public actor StubTransport: HTTPTransport {
+    public enum Reply: Sendable {
         case response(status: Int, body: Data)
         case failure(any Error)
     }
 
     private var replies: [Reply]
-    private(set) var requests: [URLRequest] = []
+    public private(set) var requests: [URLRequest] = []
 
-    init(_ replies: [Reply]) {
+    public init(_ replies: [Reply]) {
         self.replies = replies
     }
 
-    init(status: Int = 200, json: String) {
+    public init(status: Int = 200, json: String) {
         self.init([.response(status: status, body: Data(json.utf8))])
     }
 
-    init(failure: any Error) {
+    public init(failure: any Error) {
         self.init([.failure(failure)])
     }
 
-    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         requests.append(request)
         guard !replies.isEmpty else { throw URLError(.badServerResponse) }
         switch replies.removeFirst() {

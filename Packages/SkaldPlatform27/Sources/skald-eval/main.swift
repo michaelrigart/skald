@@ -33,17 +33,51 @@ do {
     stop("cannot read \(options.set): \(error)")
 }
 
-let run = await EvalRunner(mode: options.mode, guardOn: options.guardOn).run(cases)
-
-if let out = options.out {
+func write(_ outputs: [EvalOutput], to path: String) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     do {
-        let lines = try run.outputs.map { String(decoding: try encoder.encode($0), as: UTF8.self) + "\n" }.joined()
-        try lines.write(to: URL(filePath: out), atomically: true, encoding: .utf8)
+        let lines = try outputs.map { String(decoding: try encoder.encode($0), as: UTF8.self) + "\n" }.joined()
+        try lines.write(to: URL(filePath: path), atomically: true, encoding: .utf8)
     } catch {
-        stop("cannot write \(out): \(error)")
+        stop("cannot write \(path): \(error)")
     }
+}
+
+var costTracker: CostTrackingTransport?
+var engine: any Engine = AppleEngine()
+var replay: [String: String]?
+switch options.mode {
+case .claude:
+    let key: String
+    do throws(EvalUsageError) {
+        key = try EvalClaudeKey.read(from: ProcessInfo.processInfo.environment)
+    } catch {
+        stop(error.message)
+    }
+    guard let model = options.claudeModel, let price = ModelPrice.forModel(model), let maxCost = options.maxCost, let out = options.out else {
+        stop(EvalOptions.usage)
+    }
+    let tracker = CostTrackingTransport(inner: URLSessionTransport(), price: price, maxCost: maxCost, usageLog: URL(filePath: out + ".usage.jsonl"))
+    costTracker = tracker
+    engine = ClaudeEngine(model: model, apiKey: { key }, transport: tracker, options: options.claudeRequest)
+case .replay:
+    guard let path = options.outputs else { stop(EvalOptions.usage) }
+    do {
+        replay = try EvalReplay.load(URL(filePath: path))
+    } catch {
+        stop("cannot read \(path): \(error)")
+    }
+case .model, .spelling:
+    break
+}
+
+let run = await EvalRunner(mode: options.mode, guardOn: options.guardOn, engine: engine, replay: replay).run(cases)
+if let costTracker { print(await costTracker.summary) }
+
+if let out = options.out {
+    write(run.outputs, to: out)
+    if !run.raw.isEmpty { write(run.raw, to: out + ".raw.jsonl") }
 }
 
 let byID = Dictionary(cases.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

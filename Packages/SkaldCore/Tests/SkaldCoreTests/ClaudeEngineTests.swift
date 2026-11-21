@@ -1,4 +1,5 @@
 import Foundation
+import SkaldCoreTestSupport
 import Testing
 @testable import SkaldCore
 

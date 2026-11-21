@@ -28,11 +28,39 @@ swift run --package-path Packages/SkaldPlatform27 skald-eval --set Eval/heldout.
 cat Eval/seed.jsonl Eval/tuning.jsonl > build/eval/tuning-part.jsonl
 ```
 
-`skald-eval --set <path> --mode model|spelling [--guard on|off] [--out <path>]` prints the cases it
-got wrong, then each language's scores and the bar's verdict. A language with a failed request gets
-no verdict, which counts as a miss. It exits 0 when every language passes and 1 when any fails or
-has no verdict. `--guard off` skips the edit guard, for diagnosis only. Outputs stay under `build/`,
-which is not tracked.
+`skald-eval --set <path> --mode model|spelling|claude|replay [--guard on|off] [--out <path>]
+[--claude-model <id>] [--max-cost <dollars>] [--thinking on|off] [--fallbacks on|off]
+[--outputs <file.jsonl>]` prints the cases it got wrong, then each language's scores and the bar's
+verdict. A language with a failed request gets no verdict, which counts as a miss. It exits 0 when
+every language passes and 1 when any fails or has no verdict. `--guard off` skips the edit guard,
+for diagnosis only. Outputs stay under `build/`, which is not tracked.
+
+The four modes:
+
+- **model:** Apple's on-device model, as below.
+- **spelling:** the system spell checker, as below.
+- **claude:** each case is sent to Claude as the app's typing request, then judged like the model
+  path. It needs `--claude-model` (`claude-haiku-5-5`, `claude-sonnet-5-5` or `claude-opus-5-5`;
+  any other id has no price and is refused), `--max-cost` and `--out`, and the key in
+  `SKALD_EVAL_CLAUDE_KEY`; no other variable is read, and a missing key stops the run before any
+  request. `--thinking on|off` and `--fallbacks on|off` change the request, and both default to
+  off, which is the app's typing request. The latency bar is p90 under 2 s.
+- **replay:** the answers recorded in `--outputs` (a `.raw.jsonl` file, or the proxy runs'
+  `id`/`output` lines) go through the guard as if the engine had given them, in no time and at no
+  cost. A case without a recorded answer is a request error. This is how guard-off runs and later
+  re-grades are made, with no latency bar.
+
+A claude run writes three files: `--out` (the graded outputs), `<out>.raw.jsonl` (each answer as
+cleaned, before the guard, replayable) and `<out>.usage.jsonl` (one line per request with its
+tokens, cost and the running total). Each request also prints its usage line on stderr, and the run
+ends with a summary line: requests, tokens, cost against the limit, the cost of a check and of a
+month at 500 checks a day.
+
+`--max-cost` (above 0, at most 5) is a strict bound. A request is sent only when its ceiling
+(the body's bytes as input tokens, plus the 4096 output tokens the request allows) fits in what is
+left, and a request whose answer carries no usage, lost to an error or a timeout, is charged that
+ceiling. Cases left once the limit is reached are request errors, and the summary says the run
+stopped at the cost limit.
 
 The runner takes each case through the app's own path, one case at a time:
 
