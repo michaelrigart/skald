@@ -41,6 +41,52 @@ private func waitForCancelled(_ claude: FakeEngine, _ count: Int) async {
     Testing.Issue.record("fewer than \(count) Claude calls ended cancelled")
 }
 
+/// Records whether a request began and whether its task was cancelled.
+private final class RequestSensor: @unchecked Sendable { // reason: both flags are only touched under the lock
+    private let lock = NSLock()
+    private var began = false
+    private var cancelled = false
+
+    var hasBegun: Bool { lock.withLock { began } }
+    var wasCancelled: Bool { lock.withLock { cancelled } }
+
+    func begin() { lock.withLock { began = true } }
+    func cancel() { lock.withLock { cancelled = true } }
+
+    /// Waits for the request to begin, for at most five seconds.
+    func waitUntilBegun() async {
+        for _ in 0..<5_000 {
+            if hasBegun { return }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        Testing.Issue.record("the request never began")
+    }
+}
+
+/// An engine that answers only when cancelled, and says when its task is.
+private struct WaitingEngine: Engine {
+    let sensor: RequestSensor
+    var kind: EngineKind { .claude }
+
+    func run(_ r: EngineRequest) async throws(EngineFailure) -> String {
+        sensor.begin()
+        await withTaskCancellationHandler {
+            try? await Task.sleep(for: .seconds(30))
+        } onCancel: {
+            sensor.cancel()
+        }
+        throw .cancelled
+    }
+}
+
+extension CheckPipeline {
+    /// Pauses and reads `probe` in the same turn on the actor, before anything the pause cancelled has run on it.
+    func pauseThenRead(_ probe: @Sendable () -> Bool) -> Bool {
+        setPaused(true)
+        return probe()
+    }
+}
+
 enum ClaudeRecheck: CaseIterable {
     case switchOnOff, languageTicked, appKept
 
@@ -344,7 +390,7 @@ struct ClaudeTypingTests {
         #expect(await rig.modelIssues().isEmpty)
     }
 
-    @Test func aPauseAfterTheCheckAndBeforeTheRequestIsCreatedSendsNothing() async {
+    @Test func aJobCancelledBeforeItsRequestIsCreatedSendsNothing() async {
         let claude = FakeEngine.correcting(corrections)
         let rig = PipelineRig(
             claudeSettings(), claude: claude, key: true,
@@ -357,6 +403,19 @@ struct ClaudeTypingTests {
         #expect(rig.claudeModels.models == ["claude-haiku-5-5"])
         #expect(await claude.requests.isEmpty)
         #expect(await rig.modelIssues().isEmpty)
+    }
+
+    @Test func aPauseCancelsTheRequestInFlightAtOnce() async {
+        let sensor = RequestSensor()
+        let rig = PipelineRig(
+            claudeSettings(), claude: WaitingEngine(sensor: sensor), key: true,
+            misspellings: ["gisterren": "gisteren"]
+        )
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await sensor.waitUntilBegun()
+
+        #expect(await rig.pipeline.pauseThenRead { sensor.wasCancelled })
     }
 
     @Test func keepingTheAppOnThisMacBeforeTheSendSendsNothing() async {
