@@ -100,6 +100,8 @@ public actor CheckPipeline {
     private var backgroundJobIDs: Set<UUID> = []
     /// Called with the language and the kind of lookup before each route lookup; tests hold lookups here.
     private var routeHook: (@Sendable (Language, RouteLookup) async -> Void)?
+    /// Called in a request's task after its cancellation check and before it is sent; tests hold requests here.
+    private var requestHook: (@Sendable () async -> Void)?
     /// A generation is current while it is here. Its job reports how it ended; a generation the scheduler
     /// cancels is removed without a report, since the scheduler has already let it go.
     private var modelJobs: [Int: Task<Void, Never>] = [:]
@@ -264,6 +266,10 @@ public actor CheckPipeline {
 
     func setRouteHook(_ hook: (@Sendable (Language, RouteLookup) async -> Void)?) {
         routeHook = hook
+    }
+
+    func setRequestHook(_ hook: (@Sendable () async -> Void)?) {
+        requestHook = hook
     }
 
     /// Waits until no job is running and no due timer is left to fire; with `ignoringBackground`, background
@@ -527,49 +533,46 @@ public actor CheckPipeline {
 
     /// Races the request against the deadline on the injected clock. At the deadline, or when the caller is
     /// cancelled, the request's task is cancelled and its answer, if it comes, is never read. A caller already
-    /// cancelled sends nothing. `sent` is whether the engine was asked.
+    /// cancelled sends nothing. `sent` is whether the engine was asked: the request's task and the caller settle it
+    /// once through `RequestMarker`, so the engine is entered exactly when `sent` is true.
     private func ask(_ engine: any Engine, _ request: EngineRequest) async -> (result: Result<String, EngineFailure>, sent: Bool) {
         guard !Task.isCancelled else { return (.failure(.cancelled), false) }
-        enum Event: Sendable {
-            case sent
-            case ended(Result<String, EngineFailure>)
-        }
-        let (events, continuation) = AsyncStream.makeStream(of: Event.self)
+        let (events, continuation) = AsyncStream.makeStream(of: Result<String, EngineFailure>.self)
         let deadline = timing.elapsed() + Self.claudeTimeout
         let sleep = timing.sleep
+        let hook = requestHook
+        let marker = RequestMarker()
         let call = Task {
             guard !Task.isCancelled else {
-                continuation.yield(.ended(.failure(.cancelled)))
+                continuation.yield(.failure(.cancelled))
                 return
             }
-            continuation.yield(.sent)
+            if let hook { await hook() }
+            guard marker.send() else {
+                continuation.yield(.failure(.cancelled))
+                return
+            }
             do throws(EngineFailure) {
-                continuation.yield(.ended(.success(try await engine.run(request))))
+                continuation.yield(.success(try await engine.run(request)))
             } catch {
-                continuation.yield(.ended(.failure(error)))
+                continuation.yield(.failure(error))
             }
         }
         let timer = Task {
-            if (try? await sleep(deadline)) != nil { continuation.yield(.ended(.failure(.timedOut))) }
+            if (try? await sleep(deadline)) != nil { continuation.yield(.failure(.timedOut)) }
         }
-        var sent = false
         let result = await withTaskCancellationHandler {
-            for await event in events {
-                switch event {
-                case .sent: sent = true
-                case .ended(let result): return result
-                }
-            }
+            for await result in events { return result }
             return Result<String, EngineFailure>.failure(.cancelled)
         } onCancel: {
             call.cancel()
             timer.cancel()
-            continuation.yield(.ended(.failure(.cancelled)))
+            continuation.yield(.failure(.cancelled))
         }
         call.cancel()
         timer.cancel()
         continuation.finish()
-        return (result, sent)
+        return (result, marker.settle())
     }
 
     private func finishModel(_ generation: Int, _ outcome: ModelOutcome) {
@@ -660,6 +663,32 @@ public actor CheckPipeline {
         guard snapshot != lastPublished else { return }
         lastPublished = snapshot
         publisher.yield(snapshot)
+    }
+}
+
+/// Whether a request was sent, decided once by whichever of the request's task and its caller gets there first:
+/// the task sends only while the caller has not settled, and the caller's answer is whatever the task did by then.
+private final class RequestMarker: @unchecked Sendable { // reason: the state is only touched under the lock
+    private enum State { case idle, sent, abandoned }
+
+    private let lock = NSLock()
+    private var state = State.idle
+
+    /// Whether the request's task may enter the engine.
+    func send() -> Bool {
+        lock.withLock {
+            guard state == .idle else { return false }
+            state = .sent
+            return true
+        }
+    }
+
+    /// Whether the request was sent; a request not yet sent never will be.
+    func settle() -> Bool {
+        lock.withLock {
+            if state == .idle { state = .abandoned }
+            return state == .sent
+        }
     }
 }
 

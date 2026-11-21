@@ -69,8 +69,8 @@ private struct WaitingEngine: Engine {
     var kind: EngineKind { .claude }
 
     func run(_ r: EngineRequest) async throws(EngineFailure) -> String {
-        sensor.begin()
         await withTaskCancellationHandler {
+            sensor.begin()
             try? await Task.sleep(for: .seconds(30))
         } onCancel: {
             sensor.cancel()
@@ -112,6 +112,35 @@ private actor LookupHold {
     }
 
     func waitForLookup() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { gate.wait(id, for: 1, $0) }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
+        }
+    }
+
+    private func stopWaiting(_ id: UUID) {
+        gate.stopWaiting(id)
+    }
+
+    func release() {
+        gate.release(0)
+    }
+}
+
+/// Holds the request's task after its cancellation check, before it is sent, until released.
+private actor RequestHold {
+    private var gate = CallGate(closed: true)
+
+    func arrive() async {
+        let index = gate.arrive()
+        if gate.mustWait(index) {
+            await withCheckedContinuation { gate.hold(index, $0) }
+        }
+    }
+
+    func waitForArrival() async {
         let id = UUID()
         await withTaskCancellationHandler {
             await withCheckedContinuation { gate.wait(id, for: 1, $0) }
@@ -404,6 +433,41 @@ struct ClaudeTypingTests {
         #expect(await claude.requests.isEmpty)
         #expect(rig.claudeOutcomes.outcomes.isEmpty)
         #expect(await rig.modelIssues().isEmpty)
+    }
+
+    @Test func aCancelAfterTheCancellationCheckButBeforeTheSendSendsNothingAndReportsNothing() async {
+        let claude = FakeEngine.correcting(corrections)
+        let rig = makeRig(claude: claude)
+        let hold = RequestHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+
+        await rig.pipeline.setPaused(true)
+        await rig.pipeline.drain()
+        await hold.release()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await claude.requests.isEmpty)
+        #expect(rig.claudeOutcomes.outcomes.isEmpty)
+    }
+
+    @Test func aRequestIsSentOnlyIfItsOutcomeIsReported() async {
+        let claude = FakeEngine.correcting(corrections, gated: true)
+        let rig = makeRig(claude: claude)
+        let hold = RequestHold()
+        await rig.pipeline.setRequestHook { await hold.arrive() }
+        await rig.focus(dutch, caret: 3)
+        rig.pass()
+        await hold.waitForArrival()
+        await hold.release()
+        await claude.waitForRequests(1)
+
+        await rig.pipeline.setPaused(true)
+        await rig.pipeline.drain()
+        #expect(rig.claudeOutcomes.outcomes == [.cancelled])
+        #expect(await claude.requests.count == 1)
+        await claude.open()
     }
 
     @Test func aPauseCancelsTheRequestInFlightAtOnce() async {
