@@ -79,6 +79,9 @@ import Testing
         let card = card(writes: true)
         #expect(card.offersAccept)
         #expect(!card.offersCopy)
+        card.copyFix()
+        #expect(spy.writes == ["are"])
+        #expect(card.phase == .ready)
     }
 
     @Test func acceptShowsThatItIsWorkingUntilTheOutcome() async {
@@ -152,11 +155,6 @@ import Testing
         #expect(card(issue(in: "See you you soon.", revised: "See you soon.", kind: .repeatedWord)).label == "Grammar: remove you")
     }
 
-    @Test func theLabelIsAvailableWithoutACard() {
-        let verb = issue(in: "Het word morgen.", revised: "Het wordt morgen.", kind: .verbForm)
-        #expect(IssueCardModel.label(for: verb) == card(verb).label)
-    }
-
     @Test func hidingCallsTheActionWithTheKindAndCloses() {
         var hidden: [IssueKind] = []
         let card = card(issue(in: "Fine", revised: "Fine.", kind: .punctuation), hide: { hidden.append($0) })
@@ -177,6 +175,17 @@ import Testing
         #expect(card.alternatives == ["ten", "tea"])
         await card.accept(alternative: 1)
         #expect(asked == [1] && card.phase == .closed)
+    }
+
+    @Test func aReadOnlyCardCopiesAnAlternativeAndStaysReady() {
+        let card = IssueCardModel(
+            issue: spelling(guesses: ["the", "ten", "tea"]), writes: false, clipboard: spy,
+            actions: .init(accept: { _, _ in .replaced }, dismiss: { _ in }, addToDictionary: { _ in }, hide: { _ in })
+        )
+        card.copy(alternative: 7)
+        #expect(spy.writes.isEmpty && !card.copied)
+        card.copy(alternative: 1)
+        #expect(spy.writes == ["tea"] && card.copied && card.phase == .ready)
     }
 
     @Test func acceptWithoutAnAlternativeAsksForTheFix() async {

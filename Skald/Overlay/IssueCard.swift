@@ -184,17 +184,18 @@ private struct IssueCardView: View {
                     Text("Claude")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
                 }
             }
             switch card.phase {
             case .ready:
-                if card.offersAccept, !card.alternatives.isEmpty {
+                if !card.alternatives.isEmpty {
                     HStack(spacing: 6) {
                         ForEach(Array(card.alternatives.enumerated()), id: \.offset) { index, guess in
-                            Button(guess) { Task { await card.accept(alternative: index) } }
-                                .lineLimit(1)
-                                .accessibilityLabel("Use \(guess): \(card.label)")
+                            Button(guess) {
+                                if card.writes { Task { await card.accept(alternative: index) } } else { card.copy(alternative: index) }
+                            }
+                            .lineLimit(1)
+                            .accessibilityLabel("\(card.writes ? "Use" : "Copy") \(guess): \(card.label)")
                         }
                     }
                 }
@@ -252,12 +253,15 @@ private struct IssueCardView: View {
             Menu {
                 if let title = card.hideTitle {
                     Button(title) { card.hide() }
+                        .accessibilityLabel("\(title): \(card.label)")
                 }
                 if let title = card.dictionaryTitle {
                     Button(title) { card.addToDictionary() }
+                        .accessibilityLabel("\(title): \(card.label)")
                 }
                 if card.canCopyFix {
                     Button("Copy fix") { card.copyFix() }
+                        .accessibilityLabel("Copy fix: \(card.label)")
                 }
             } label: {
                 Image(systemName: "ellipsis")

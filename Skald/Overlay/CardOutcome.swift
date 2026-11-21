@@ -191,6 +191,14 @@ struct CardContent: Equatable {
         copied = true
     }
 
+    /// Where the app has no clean write, a guess is copied instead of accepted.
+    func copy(alternative: Int) {
+        guard phase == .ready, alternatives.indices.contains(alternative) else { return }
+        fix = alternatives[alternative]
+        clipboard.write(fix)
+        copied = true
+    }
+
     func dismiss() {
         guard phase == .ready else { return }
         actions.dismiss(id)
