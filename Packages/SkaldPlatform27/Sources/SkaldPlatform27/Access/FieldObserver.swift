@@ -3,7 +3,7 @@ import ApplicationServices
 import SkaldCore
 
 /// Asks again for the focused element at 1, 3, 6 and 10 s after activation, until it appears or focus moves;
-/// `ended` runs when the last of them still found nothing.
+/// each attempt is told whether it is the last.
 final class FocusRetries: @unchecked Sendable { // reason: the pending task is only touched under the lock
     private let timer: @Sendable () -> @Sendable (Duration) async throws -> Void
     private let lock = NSLock()
@@ -18,7 +18,7 @@ final class FocusRetries: @unchecked Sendable { // reason: the pending task is o
 
     /// Replaces any pending retries. The activation's own query was the first attempt and found nothing.
     @discardableResult
-    func start(_ attempt: @escaping @Sendable () async -> FocusAttempt, ended: @escaping @Sendable () async -> Void = {}) -> Task<Void, Never> {
+    func start(_ attempt: @escaping @Sendable (_ isLast: Bool) async -> FocusAttempt) -> Task<Void, Never> {
         let sleep = timer()
         let task = Task {
             var attempts = 1
@@ -26,9 +26,8 @@ final class FocusRetries: @unchecked Sendable { // reason: the pending task is o
             while let offset = TextAccessRules.nextFocusRetry(afterAttempts: attempts, outcome: outcome) {
                 do { try await sleep(offset) } catch { return }
                 attempts += 1
-                outcome = await attempt()
+                outcome = await attempt(TextAccessRules.nextFocusRetry(afterAttempts: attempts, outcome: .missing) == nil)
             }
-            if outcome == .missing, !Task.isCancelled { await ended() }
         }
         lock.withLock {
             pending?.cancel()
@@ -308,6 +307,11 @@ final class FieldObserver: FocusPort, @unchecked Sendable { // reason: state is 
 
     func emit(_ event: FieldEvent) {
         send(event)
+    }
+
+    func hasWindows(pid: pid_t) -> Bool {
+        guard let windows = AXElement.application(pid: pid).attribute(kAXWindowsAttribute) as? [AnyObject] else { return false }
+        return !windows.isEmpty
     }
 
     func unreadable(_ app: String?) {
