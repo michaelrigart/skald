@@ -184,6 +184,13 @@ public struct Settings: Codable, Equatable, Sendable {
         return Value(rawValue: raw)
     }
 
+    /// A value of the wrong type reads as absent, so one malformed key never makes the whole file unreadable.
+    private static func value<Value: Decodable>(
+        _ type: Value.Type, in container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys
+    ) -> Value? {
+        (try? container.decodeIfPresent(type, forKey: key)) ?? nil
+    }
+
     private static func languageChecks(
         in container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys, defaults: [Language: Bool]
     ) -> [Language: Bool] {
@@ -219,8 +226,8 @@ public struct Settings: Codable, Equatable, Sendable {
         panelDefaultEngine = Settings.lenient(EngineKind.self, in: container, forKey: .panelDefaultEngine) ?? defaults.panelDefaultEngine
         studio = try container.decodeIfPresent(StudioEndpoint.self, forKey: .studio) ?? defaults.studio
         claudeModel = try container.decodeIfPresent(String.self, forKey: .claudeModel) ?? defaults.claudeModel
-        claudeTyping = try container.decodeIfPresent(Bool.self, forKey: .claudeTyping) ?? defaults.claudeTyping
+        claudeTyping = Settings.value(Bool.self, in: container, forKey: .claudeTyping) ?? defaults.claudeTyping
         claudeLanguages = Settings.languageChecks(in: container, forKey: .claudeLanguages, defaults: defaults.claudeLanguages)
-        claudeTypingModel = try container.decodeIfPresent(String.self, forKey: .claudeTypingModel) ?? defaults.claudeTypingModel
+        claudeTypingModel = Settings.value(String.self, in: container, forKey: .claudeTypingModel) ?? defaults.claudeTypingModel
     }
 }

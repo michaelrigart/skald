@@ -344,3 +344,16 @@ private let v1File = """
         #expect(settings.neverTouch == ["Brightline"])
     }
 }
+
+@Test func malformedClaudeValuesReadAsTheirDefaultsAndKeepTheRest() throws {
+    let directory = makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try write(#"{"version":2,"claudeTyping":"true","claudeTypingModel":42,"neverTouch":["Brightline"]}"#, to: directory)
+    guard case .loaded(let settings) = SettingsStore(directory: directory).load() else {
+        Issue.record("expected .loaded")
+        return
+    }
+    #expect(!settings.claudeTyping)
+    #expect(settings.claudeTypingModel == "claude-haiku-5-5")
+    #expect(settings.neverTouch == ["Brightline"])
+}
