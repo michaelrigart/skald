@@ -668,7 +668,7 @@ public actor CheckPipeline {
 
 /// Whether a request was sent, decided once by whichever of the request's task and its caller gets there first:
 /// the task sends only while the caller has not settled, and the caller's answer is whatever the task did by then.
-private final class RequestMarker: @unchecked Sendable { // reason: the state is only touched under the lock
+final class RequestMarker: @unchecked Sendable { // reason: the state is only touched under the lock
     private enum State { case idle, sent, abandoned }
 
     private let lock = NSLock()

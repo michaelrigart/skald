@@ -32,11 +32,12 @@ private func units(_ text: String) -> Int {
 }
 
 /// Waits until the Claude fake has seen `count` calls end cancelled; a late call ends on its own task. A call
-/// that never ends fails the test after a bounded number of turns instead of waiting for the suite's limit.
+/// that never ends fails the test after five seconds instead of waiting for the suite's limit.
 private func waitForCancelled(_ claude: FakeEngine, _ count: Int) async {
-    for _ in 0..<50_000 {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
         if await claude.cancelled.count >= count { return }
-        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(1))
     }
     Testing.Issue.record("fewer than \(count) Claude calls ended cancelled")
 }
@@ -155,6 +156,23 @@ private actor RequestHold {
 
     func release() {
         gate.release(0)
+    }
+}
+
+struct RequestMarkerTests {
+    @Test func aRequestNotSentBeforeTheCallerSettlesIsNeverSent() {
+        let marker = RequestMarker()
+        #expect(!marker.settle())
+        #expect(!marker.send())
+        #expect(!marker.settle())
+    }
+
+    @Test func aRequestSentBeforeTheCallerSettlesIsReportedSentOnce() {
+        let marker = RequestMarker()
+        #expect(marker.send())
+        #expect(marker.settle())
+        #expect(!marker.send())
+        #expect(marker.settle())
     }
 }
 

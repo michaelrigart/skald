@@ -21,13 +21,13 @@ whether it is compatible with the one before. Each section says what changed.
   Check Dutch and French with Claude while typing, with your own Claude API key. Only the
   paragraph your caret is in is sent, whether you type in it or just click into it. Text Skald
   detects as English stays on your Mac, and a very short paragraph is treated as the field's
-  language. The menu bar icon shows a cloud while checks go to Claude. A card says when Claude found the issue. When Claude
-  can't answer, Skald falls back to your on-device settings and the menu says why. Removing the
-  key turns the switch off.
+  language. The menu bar icon shows a cloud while checks go to Claude. A card says when Claude
+  found the issue. When Claude can't answer, Skald falls back to your on-device settings and the
+  menu says why. Removing the key turns the switch off.
 - Each app can be On, This Mac only or Off, in Settings > Apps or with the menu's Keep on This
   Mac. Nothing you type in an app kept on this Mac goes to Claude, and the panel offers only
-  This Mac there. The menu's Turn On sets an app to This Mac only when it is off by
-  default or Claude checks while typing are on; untick Keep on This Mac to let it use Claude.
+  This Mac there. The menu's Turn On sets an app to This Mac only when it is off by default or
+  Claude checks while typing are on; untick Keep on This Mac to let it use Claude.
 - Install with Homebrew: `brew install --cask michaelrigart/tap/skald`.
 - Releases are signed with a stable certificate, so the Accessibility permission you give Skald
   should survive updates. Switching from a self-built ad hoc copy needs it once more.
