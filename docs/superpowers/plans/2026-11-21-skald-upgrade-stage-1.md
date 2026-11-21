@@ -222,7 +222,7 @@ Port from the untracked draft in `.superpowers/upgrade-evidence/eval-src/`, with
 - `--thinking on` → `.modelDefault`, `off` → `.disabled`; `--fallbacks on|off` → `serverFallbacks`.
 - Cap rule: before forwarding, refuse with `BudgetExceeded` (the inner transport is not called) when `spent + price.cost(input: httpBody byte count, output: ClaudeEngine.maxTokens) > maxCost`. A token is at least one byte, and the body's JSON keys outweigh the API's few template tokens, so the ceiling bounds the request. A forwarded request is charged its answer's `usage.input_tokens`/`output_tokens` at the exact price; when there is no usage to read (the inner transport threw, the request timed out, or the body has no `usage`), it is charged its ceiling, so `spent` never understates the bill and `--max-cost` is a strict bound.
 - Files in claude mode with `--out X`: `X` (graded outputs, as today), `X.raw.jsonl` (`EvalOutput` lines of `run.raw`, replayable), `X.usage.jsonl` (one `{"input_tokens":…,"output_tokens":…,"cost":…,"total_cost":…}` line per request). stderr gets `claude request: ` plus that line. After the run, `summary` is printed.
-- Summary format: `claude usage: N requests, I input tokens, O output tokens, $T of $L; $C a check, $M a month at 500 checks a day` (`T` `%.4f`, `L` `%.2f`, `C` `%.6f`, `M` = C × 500 × 30, `%.2f`), plus `, stopped at the cost limit` when a request was refused.
+- Summary format: `claude usage: N requests, I input tokens, O output tokens, $T of $L; $C a check, $M a month at 500 checks a day` (`T` `%.4f`, `L` `%.2f`, `C` `%.6f`, `M` = C × 500 × 30, `%.2f`), plus `, stopped at the cost limit` when a request was refused. A request charged its ceiling counts in `N` and in the cost, adds no tokens, and its `usage.jsonl` line holds the ceiling as `cost` with null token counts; `aLostAnswerIsChargedItsCeiling` checks the summary line too.
 - Order in `main.swift` for claude: options parsed (usage errors exit 2), cases loaded, key read (missing → exit 2 before any request).
 
 - [ ] **Step 1: Write the failing tests**
@@ -336,7 +336,6 @@ git add Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalRunner.swift \
   Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalInputs.swift \
   Packages/SkaldPlatform27/Sources/skald-eval/main.swift \
   Packages/SkaldCore/Sources/SkaldCoreTestSupport/StubTransport.swift \
-  Packages/SkaldCore/Tests/SkaldCoreTests/Support/StubTransport.swift \
   Packages/SkaldCore/Tests/SkaldCoreTests/ClaudeEngineTests.swift \
   Packages/SkaldCore/Tests/SkaldCoreTests/StudioEngineTests.swift \
   Packages/SkaldPlatform27/Tests/SkaldPlatform27Tests/EvalRunnerTests.swift \
@@ -344,7 +343,7 @@ git add Packages/SkaldPlatform27/Sources/SkaldPlatform27/Eval/EvalRunner.swift \
   Eval/README.md
 git commit -m "Add Claude and replay modes to the eval tool"
 ```
-(The old `StubTransport.swift` path stages its deletion.)
+(`git mv` already staged the old `StubTransport.swift` path's removal.)
 
 ---
 
@@ -901,7 +900,7 @@ Update `everyStateShowsTheMenuBarGlyph…` to `image(sendingToClaude: false)` an
 ```
 
 - [ ] **Step 2: Run, expect failure.** App suite → compile failure.
-- [ ] **Step 3: Draw and render the glyph.** `design/menubar-cloud.svg`: the menubar glyph with a small cloud at its top right, set off by the same gap as the check mark. Run `design/render` (needs `rsvg-convert`; if missing, stop and report, never install ad hoc). Check the two PNGs into the new image set.
+- [ ] **Step 3: Draw and render the glyph.** `design/menubar-cloud.svg`: the menubar glyph with a small cloud at its top right, set off by the same gap as the check mark. Run `design/render` (needs `rsvg-convert`; if missing, stop and report, never install ad hoc). Check the two PNGs into the new image set. `design/render` re-renders every icon: afterwards `git restore` any PNG outside the new image set that shows as modified.
 - [ ] **Step 4: Implement** the interfaces and wiring.
 - [ ] **Step 5: Run, expect pass.** App suite.
 - [ ] **Step 6: Commit**
