@@ -8,18 +8,15 @@ public enum IssueClassifier {
         let original = EditGuard.wordTokens(in: edit.original)
         let replacement = EditGuard.wordTokens(in: edit.replacement)
 
-        if original == replacement { return .punctuation }
-        if original.map({ $0.lowercased() }) == replacement.map({ $0.lowercased() }) { return .capital }
-        if original.map(fold) == replacement.map(fold) { return .accent }
-        if source == .spelling || original.contains(where: { isRejected($0, language, facts) }) { return .spelling }
+        let joinedOriginal = original.joined(), joinedReplacement = replacement.joined()
+
+        if joinedOriginal == joinedReplacement { return .punctuation }
+        if joinedOriginal.lowercased() == joinedReplacement.lowercased() { return .capital }
+        if fold(joinedOriginal) == fold(joinedReplacement) { return .accent }
+        if source == .spelling || original.contains(where: { EditGuard.isRejected($0.lowercased(), language, facts) }) { return .spelling }
         if isRepeatedWord(edit, original, replacement, in: paragraph) { return .repeatedWord }
         if language == .nl, original.count == 1, replacement.count == 1, isVerbForm(original[0], replacement[0], facts) { return .verbForm }
         return .grammar
-    }
-
-    private static func isRejected(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
-        let word = word.lowercased()
-        return facts.misspelled.contains(word) && !EditGuard.isFunctionWord(word, language, facts)
     }
 
     private static func fold(_ word: String) -> String {

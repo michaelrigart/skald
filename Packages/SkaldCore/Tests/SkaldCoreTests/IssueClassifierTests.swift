@@ -31,6 +31,10 @@ private func kind(
 @Test func anEditIsClassifiedByWhatItChanges() {
     #expect(kind("We shipped it. The logs look fine", "We shipped it. The logs look fine.") == .punctuation)
     #expect(kind("Thanks all good.", "Thanks, all good.") == .punctuation)
+    #expect(kind("Lets schedule it.", "Let's schedule it.") == .punctuation)           // an apostrophe inside a word
+    #expect(kind("It's status is fine.", "Its status is fine.") == .punctuation)
+    #expect(kind("We fallback to it.", "We fall back to it.") == .punctuation)         // a space inside a word
+    #expect(kind("It took alot of time.", "It took a lot of time.") == .punctuation)
     #expect(kind("We meet on friday.", "We meet on Friday.") == .capital)
     #expect(kind("Cette operation est lente.", "Cette opération est lente.", .fr) == .accent)
     #expect(kind("cette Operation est lente.", "cette opération est lente.", .fr) == .accent)
@@ -52,7 +56,7 @@ private func kind(
 @Test func theFirstMatchingRuleWins() {
     #expect(kind("We meet on friday.", "We meet on Friday.", source: .spelling, misspelled: ["friday"]) == .capital)
     #expect(kind("Il va a Paris", "Il va à Paris", .fr, source: .spelling) == .accent)
-    #expect(kind("See you youu tomorrow.", "See you you tomorrow.", misspelled: ["youu"]) == .spelling)
+    #expect(kind("I saw teh teh logs.", "I saw teh logs.", misspelled: ["teh"]) == .spelling)
     #expect(kind("Call getUserName first.", "Call getUsername first.", misspelled: ["getusername"]) == .capital)
 }
 

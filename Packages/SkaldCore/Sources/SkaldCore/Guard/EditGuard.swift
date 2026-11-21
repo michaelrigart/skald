@@ -95,7 +95,7 @@ public struct EditGuard: Sendable {
            let verdict = Self.borrowedWordVerdict(original.filter { !isFunctionWord($0) }, replacement.filter { !isFunctionWord($0) }, facts) {
             return verdict
         }
-        if original.contains(where: { facts.misspelled.contains($0) && !isFunctionWord($0) }) { return .keep }
+        if original.contains(where: { Self.isRejected($0, language, facts) }) { return .keep }
         if language == .en, original.count == 1, replacement.count == 1, Self.isSpellingVariant(original[0], replacement[0], facts) {
             return .drop(.spellingVariant)
         }
@@ -114,6 +114,11 @@ public struct EditGuard: Sendable {
 
     static func words(in edits: [Edit]) -> Set<String> {
         Set(edits.flatMap { words(in: $0.original) + words(in: $0.replacement) })
+    }
+
+    /// A lowercased word the dictionary rejects that is not a function word.
+    static func isRejected(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
+        facts.misspelled.contains(word) && !isFunctionWord(word, language, facts)
     }
 
     static func isFunctionWord(_ word: String, _ language: Language, _ facts: WordFacts) -> Bool {
