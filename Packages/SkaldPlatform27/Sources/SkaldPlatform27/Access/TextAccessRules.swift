@@ -247,13 +247,23 @@ enum TextAccessRules {
     }
 
     /// What the field shows after ⌘V: the paragraph with the replacement applied, the original one, or another.
+    /// A no-break space reads as a space: Mail's WebKit turns the spaces beside pasted text into no-break spaces.
     static func pasteRead(
         original: ExpectedText, revised: ExpectedText, read: (TextRange) -> String?, length: () -> Int?
     ) -> PastePlan.Read {
         guard length() != nil else { return .unreadable }
-        if paragraphUnchanged(revised, read: read, length: length) { return .expected }
-        if paragraphUnchanged(original, read: read, length: length) { return .original }
+        let shown: (TextRange) -> String? = { read($0).map(foldingNoBreakSpaces) }
+        if paragraphUnchanged(folded(revised), read: shown, length: length) { return .expected }
+        if paragraphUnchanged(folded(original), read: shown, length: length) { return .original }
         return .other
+    }
+
+    private static func folded(_ expected: ExpectedText) -> ExpectedText {
+        ExpectedText(range: expected.range, text: foldingNoBreakSpaces(expected.text))
+    }
+
+    private static func foldingNoBreakSpaces(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{A0}", with: " ")
     }
 
     /// The caret rule for a paste write: the selection to set, or nil to leave it. Skald left the caret after the

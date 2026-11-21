@@ -33,5 +33,6 @@ whether it is compatible with the one before. Each section says what changed.
   list and its count instead of twice.
 - Launch at login now adds Skald to the login items. It never did on a Mac that had not seen
   Skald before, and Settings said it couldn't.
+- Accepting a fix in Mail no longer says "The app didn't show the change" when the text did change.
 
 [Unreleased]: https://github.com/michaelrigart/skald/commits/main

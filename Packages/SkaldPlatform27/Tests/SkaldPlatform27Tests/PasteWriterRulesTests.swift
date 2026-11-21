@@ -276,6 +276,14 @@ private func read(_ text: String?) -> PastePlan.Read {
     #expect(read(nil) == .unreadable)
 }
 
+/// Mail's WebKit turns the spaces beside pasted text into no-break spaces; the paste still landed.
+@Test func aNoBreakSpaceReadsAsTheSpaceItReplaced() {
+    #expect(read("They\u{A0}are\u{A0}ready.") == .expected)
+    #expect(read("They are\u{A0}ready.") == .expected)
+    #expect(read("They\u{A0}is ready.") == .original)
+    #expect(read("They\u{A0}was ready.") == .other)
+}
+
 @Test func theSelectionCoversTheRangeOnlyWithItsExactText() {
     let range = TextRange(location: 5, length: 2)
     #expect(TextAccessRules.selectionCovers(range, text: "is", selection: range, selectedText: "is"))
